@@ -338,6 +338,60 @@ func (q *Queries) GetWarParticipant(ctx context.Context, arg GetWarParticipantPa
 	return i, err
 }
 
+const listActiveOrClaimedWarsByGame = `-- name: ListActiveOrClaimedWarsByGame :many
+SELECT id, game_id, origin_plan_id, status, started_at_row, ended_at_row, end_reason, created_at FROM wars w
+WHERE w.game_id = $1
+  AND (
+    w.status = 'active'
+    OR (
+      w.status = 'ended'
+      AND EXISTS (
+        SELECT 1 FROM war_surrender_claims c
+        WHERE c.war_id = w.id AND c.fulfilled_at IS NULL
+      )
+    )
+  )
+ORDER BY w.id
+`
+
+// What GET /wars lists: every active war, plus an ended war that still owes
+// its winners a surrender seizure (the claims keep the row blocked, see
+// ListOpenSurrenderClaimsByGame, so clients need the war to render the claim
+// form).
+//
+// One statement on purpose. This used to be two queries (active, then ended
+// with open claims) appended together; a war that ended between them was in
+// both, the client held it twice, and a keyed {#each} over its plans threw.
+// Postgres gives one statement one snapshot, so a war is in this list once.
+func (q *Queries) ListActiveOrClaimedWarsByGame(ctx context.Context, gameID int64) ([]War, error) {
+	rows, err := q.db.Query(ctx, listActiveOrClaimedWarsByGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []War{}
+	for rows.Next() {
+		var i War
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.OriginPlanID,
+			&i.Status,
+			&i.StartedAtRow,
+			&i.EndedAtRow,
+			&i.EndReason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveWarParticipants = `-- name: ListActiveWarParticipants :many
 SELECT war_id, player_id, side, joined_at_row, surrendered_at_row, entry_payment_complete FROM war_participants
 WHERE war_id = $1
@@ -484,48 +538,6 @@ func (q *Queries) ListBattleCostsForRow(ctx context.Context, arg ListBattleCosts
 			&i.Surrendered,
 			&i.CreatedAt,
 			&i.IsEntry,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listEndedWarsWithOpenClaimsByGame = `-- name: ListEndedWarsWithOpenClaimsByGame :many
-SELECT id, game_id, origin_plan_id, status, started_at_row, ended_at_row, end_reason, created_at FROM wars w
-WHERE w.game_id = $1 AND w.status = 'ended'
-  AND EXISTS (
-    SELECT 1 FROM war_surrender_claims c
-    WHERE c.war_id = w.id AND c.fulfilled_at IS NULL
-  )
-ORDER BY w.id
-`
-
-// A war that ended on a surrender still owes its winners their seizure; the
-// claims keep the row blocked (ListOpenSurrenderClaimsByGame), so clients need
-// the war to render the claim form.
-func (q *Queries) ListEndedWarsWithOpenClaimsByGame(ctx context.Context, gameID int64) ([]War, error) {
-	rows, err := q.db.Query(ctx, listEndedWarsWithOpenClaimsByGame, gameID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []War{}
-	for rows.Next() {
-		var i War
-		if err := rows.Scan(
-			&i.ID,
-			&i.GameID,
-			&i.OriginPlanID,
-			&i.Status,
-			&i.StartedAtRow,
-			&i.EndedAtRow,
-			&i.EndReason,
-			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

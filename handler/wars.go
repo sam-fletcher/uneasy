@@ -139,18 +139,15 @@ func ListWars(s *db.Store) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		wars, err := s.Q.ListActiveWarsByGame(ctx, gameID)
+		// One query, not "active" then "ended with claims": see the query's
+		// comment for the duplicate-war race the two-step read had.
+		wars, err := s.Q.ListActiveOrClaimedWarsByGame(ctx, gameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load wars", err)
 			return
 		}
-		ended, err := s.Q.ListEndedWarsWithOpenClaimsByGame(ctx, gameID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load wars", err)
-			return
-		}
-		out := make([]WarStateResponse, 0, len(wars)+len(ended))
-		for _, war := range append(wars, ended...) {
+		out := make([]WarStateResponse, 0, len(wars))
+		for _, war := range wars {
 			ws, err := buildWarState(ctx, s.Q, war)
 			if err != nil {
 				respondInternalErr(w, r, "could not build war state", err)

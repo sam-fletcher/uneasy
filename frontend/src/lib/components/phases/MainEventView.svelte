@@ -10,7 +10,7 @@
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
 	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
-	import { activeWarPlans, warGateActive, warGatePlans } from '$lib/warGate';
+	import { activeWarPlans, dedupeWars, warGateActive, warGatePlans } from '$lib/warGate';
 	// Both panels go through LazyPlanPanel rather than being imported directly:
 	// they are two of the heaviest in the app and render only in narrow
 	// situations (the simultaneous delay reveal, and the active-wars drawer),
@@ -127,7 +127,7 @@
 	async function refreshWars() {
 		try {
 			const data = await listWars(game.id);
-			wars = data.wars;
+			wars = dedupeWars(data.wars);
 		} catch { wars = []; }
 	}
 	function onWarEvent() { refreshWars(); }

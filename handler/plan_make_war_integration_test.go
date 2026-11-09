@@ -426,6 +426,60 @@ func TestMakeWarHTTP_EndedWarWithoutClaims_NotListed(t *testing.T) {
 	require.Empty(t, listedWarClaims(t, h, prepIdx))
 }
 
+// TestMakeWarHTTP_ListWars_NeverRepeatsAWarWhileItEnds: GET /wars lists active
+// wars plus an ended war that still owes a surrender claim. Read as two
+// queries, a war that ended between them was in both groups and came back
+// twice; the client then held it twice and a keyed {#each} over the war's plan
+// threw, freezing the table (the 2026-11-08 nightly e2e failure). The list is
+// one statement now, so a war that ends mid-read is listed once. This flips a
+// war between its two states while polling the list.
+func TestMakeWarHTTP_ListWars_NeverRepeatsAWarWhileItEnds(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+	_, margA := h.seedPeerWithMarginalia(prepIdx, "Sacrificed asset")
+	h.seedPeer(prepIdx, "Spoils of war")
+	h.jumpToRow(warRow + 1)
+	code, body := h.post(prepIdx, warRoute(planID, "pay-battle-cost"), map[string]any{
+		"opponent_id":   h.tg.Players[enemyIdx].ID,
+		"choice":        "break_asset",
+		"marginalia_id": margA,
+		"surrender":     true,
+	})
+	require.Equalf(t, http.StatusOK, code, "surrender pay: %v", body)
+	warID := mustWarID(t, h, planID)
+	require.Equal(t, map[int64]int{planID: 1}, listedWarClaims(t, h, prepIdx),
+		"setup: the ended war is listed for its open claim")
+
+	ctx, stop := context.WithCancel(context.Background())
+	flipperDone := make(chan struct{})
+	go func() {
+		defer close(flipperDone)
+		status := "active"
+		for ctx.Err() == nil {
+			_, _ = h.pool.Exec(ctx, "UPDATE wars SET status = $2 WHERE id = $1", warID, status)
+			if status == "active" {
+				status = "ended"
+			} else {
+				status = "active"
+			}
+		}
+	}()
+	t.Cleanup(func() { stop(); <-flipperDone })
+
+	path := "/api/tables/" + strconv.FormatInt(h.tg.Game.ID, 10) + "/wars"
+	for i := 0; i < 400; i++ {
+		code, body := h.get(prepIdx, path)
+		require.Equalf(t, http.StatusOK, code, "list wars: %v", body)
+		wars := body["wars"].([]any)
+		seen := map[int64]bool{}
+		for _, raw := range wars {
+			origin := int64(raw.(map[string]any)["origin_plan_id"].(float64))
+			require.Falsef(t, seen[origin], "poll %d: war for plan %d listed twice: %v", i, origin, wars)
+			seen[origin] = true
+		}
+	}
+}
+
 func mustWarID(t *testing.T, h *planLifecycle, planID int64) int64 {
 	t.Helper()
 	war, err := h.q.GetWarByOriginPlan(context.Background(), planID)
