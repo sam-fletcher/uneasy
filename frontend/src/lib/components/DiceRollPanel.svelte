@@ -295,6 +295,20 @@
 		return `${name} · ${intent} · ${p.is_ready ? 'ready' : 'not ready'}`;
 	}
 
+	// ── Footer tally ─────────────────────────────────────────────────────────
+	// Counts PLAYERS by side, in the same unit as "N of M ready" beside it and
+	// the roster chips above. It used to count dice in each pool, so the
+	// actor's two base dice read as "2 aid" and a player who had picked
+	// interfere but not yet committed a die read as "0 interfere". The dice
+	// themselves are already shown in the pools. The actor always aids; a
+	// player who hasn't picked a side counts on neither.
+	const aidCount = $derived(
+		participants.filter(p => p.player_id === roll.actor_id || p.intent === 'aid').length
+	);
+	const interfereCount = $derived(
+		participants.filter(p => p.player_id !== roll.actor_id && p.intent === 'interfere').length
+	);
+
 	// ── Commit feed ──────────────────────────────────────────────────────────
 	// Show every die EXCEPT the actor's two automatic base dice (no asset,
 	// not interference). Banked-die spends and leveraged assets both show up.
@@ -557,7 +571,7 @@
 
 				<!-- Footer summary -->
 				<p class="footer-summary">
-					{actorPool.length} aid · {intPool.length} interfere ·
+					{aidCount} aid · {interfereCount} interfere ·
 					{participants.filter(p => p.is_ready).length} of {participants.length} ready
 				</p>
 			{/if}
