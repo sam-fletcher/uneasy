@@ -42,7 +42,13 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`. On 2026-11-11 `ubuntu-latest` began to mean
+    # Ubuntu 26.04, which Playwright 1.60 cannot install Chromium on ("does not
+    # support chromium on ubuntu26.04-x64"), so the nightly failed before a
+    # single spec ran. Move this back when a Playwright release supports 26.04
+    # (docs/work/next/e2e-runner-unpin.md). The `report` job below runs no
+    # browser, so it stays on `ubuntu-latest`.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
 
     services:
