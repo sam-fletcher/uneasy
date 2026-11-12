@@ -1,0 +1,75 @@
+/* The house chip: a fully rounded control for choosing between a few things
+   (Aid / Interfere, a player, Events / Laws / Rumors, "Tones · 3 set").
+   Import as a side effect wherever a component needs .chip; <Chip> does so
+   for you and is the way to use it in new markup.
+
+   A chip is a CONTROL: it has a neutral border and a raised fill because a
+   player can press it, so anything that can't be pressed (a status, a label)
+   must not be drawn in this shape. A status word is plain small text; a
+   notice is a mark and coloured text.
+
+   SELECTED is a 2px bright gold border and bright gold text, and nothing is
+   filled: the border and the text colour carry the whole state. The second
+   pixel of that border is an inset shadow rather than a thicker border, so
+   choosing a chip never moves or resizes it or its neighbours. The same state on a game piece is the
+   bright border plus a tick; see the pieces' own files.
+
+   It is never drawn in a meaning colour or a player's colour: a choice is
+   told apart by its words and position. (A chip may CONTAIN a player's shape
+   and a name in their colour, as the player row does; that colour is the
+   child's.) Hover lightens the border (--color-border-control-hover); a
+   selected chip keeps its gold border on hover. */
+
+.chip {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-height: var(--size-tap);
+	padding: 0 var(--space-4);
+	border: 1px solid var(--color-border-control);
+	border-radius: var(--radius-chip);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font: inherit;
+	font-size: var(--text-body);
+	line-height: 1.2;
+	cursor: pointer;
+}
+/* Compact: for chips that navigate or filter and sit in a row of several
+   (sub-tabs, the player row, "Tones"). */
+.chip.compact {
+	padding: 0 var(--space-3);
+	font-size: var(--text-small);
+}
+
+.chip:hover:not(:disabled):not([aria-disabled='true']):not(.selected) {
+	border-color: var(--color-border-control-hover);
+}
+
+.chip.selected {
+	border-color: var(--color-you);
+	box-shadow: inset 0 0 0 1px var(--color-you);
+	color: var(--color-you);
+}
+
+.chip:focus-visible {
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
+}
+
+.chip:disabled,
+.chip[aria-disabled='true'] {
+	border-color: var(--color-border);
+	color: var(--color-text-faint);
+	cursor: not-allowed;
+}
+/* A chosen chip that is then locked still shows which one was picked: the
+   bright gold border (and the inset pixel from .selected) stays, but the text
+   goes faint, since it can no longer be pressed. Said outright because the
+   generic disabled rule above would otherwise grey the outer border while the
+   inset pixel stayed gold, leaving a two-tone ring. */
+.chip.selected:disabled,
+.chip.selected[aria-disabled='true'] {
+	border-color: var(--color-you);
+}

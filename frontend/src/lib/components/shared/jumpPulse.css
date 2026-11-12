@@ -1,4 +1,3 @@
-/* tokens: not migrated */
 /* The house "you landed here" flash: a brief accent wash over an element the
    app has just scrolled the reader to, fading to nothing. Import as a side
    effect wherever a component adds `.jump-pulse` to an element.
@@ -22,7 +21,7 @@
 
 .jump-pulse {
 	animation: jump-pulse 0.7s ease-out;
-	border-radius: 4px;
+	border-radius: var(--radius-piece);
 }
 
 @keyframes jump-pulse {

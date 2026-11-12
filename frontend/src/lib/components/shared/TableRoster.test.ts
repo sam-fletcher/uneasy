@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import TableRoster from './TableRoster.svelte';
+import { declarations, styleOf } from './cssTestKit';
 import type { Player } from '$lib/api';
 
 /*
  * TableRoster's contract is what a seat SAYS — on screen and to a screen
- * reader (adr/LOBBY_AND_CHECKLIST_PLAN.md D3). Colour carries three of its
- * four signals (identity dot, online ring, waiting fill), so the words that
- * stand in for them are the part worth pinning down. Rendered through
+ * reader (adr/LOBBY_AND_CHECKLIST_PLAN.md D3). Pictures carry its signals
+ * (identity colour, the waiting clock), so the words that stand in for them
+ * are the part worth pinning down. Rendered through
  * svelte/server like ChecklistRow.test.ts: no jsdom, and every assertion here
  * is about emitted markup rather than about clicks.
  */
@@ -105,5 +108,71 @@ describe('TableRoster — tappable rows', () => {
 		expect(body).toContain(
 			`aria-label="View bob's retinue — Peers 2, the game is waiting on them"`
 		);
+	});
+});
+
+describe('TableRoster — shapes and the waiting clock', () => {
+	it('draws each seat\'s shape in place of a colour dot', () => {
+		const { body } = render(TableRoster, {
+			props: { players: [alice, bob], currentPlayerID: 1 },
+		});
+		// Seats 1 and 2: the diamond and the triangle, always in that order.
+		expect(body).toContain('data-shape="diamond"');
+		expect(body).toContain('data-shape="triangle"');
+		// Exactly one shape per seat, and no stray colour-only mark beside it.
+		expect(body.match(/class="player-shape/g)).toHaveLength(2);
+		expect(body).not.toContain('seat-dot');
+		expect(body).not.toMatch(/background[^;"]*seat-color/);
+	});
+
+	it('draws no pill: a seat has no border, fill, shadow or corner of its own', () => {
+		// The old seat was a rounded, filled, bordered pill with a gold frame and
+		// a glow. Read with comments stripped; only the rule beneath a seat may
+		// be drawn, and the old .waiting and .mine looks must not come back.
+		const style = styleOf(readFileSync(join(__dirname, 'TableRoster.svelte'), 'utf8'));
+		const decls = declarations(style);
+		const boxy = decls.filter(
+			(d) =>
+				/^(background|box-shadow|outline|border-radius)/.test(d.prop) ||
+				(/^border/.test(d.prop) && d.prop !== 'border-bottom')
+		);
+		expect(boxy).toEqual([]);
+		expect(decls.filter((d) => /\.(waiting|mine)\b/.test(d.selector))).toEqual([]);
+	});
+
+	it('puts a bright-gold clock on you and a secondary one on others the game waits on', () => {
+		const { body } = render(TableRoster, {
+			props: {
+				players: [alice, bob, player(3, 'cleo')],
+				currentPlayerID: 1,
+				waitingPlayerIDs: new Set([1, 2]),
+			},
+		});
+		// One clock per waiting seat: alice (you) and bob, not cleo.
+		expect(body.match(/class="clock-mark/g)).toHaveLength(2);
+		expect(body).toContain('data-tone="you"');
+		expect(body).toContain('data-tone="other"');
+	});
+
+	it('draws no clock when the game is waiting on no one in the list', () => {
+		const { body } = render(TableRoster, {
+			props: { players: [alice, bob], currentPlayerID: 1 },
+		});
+		expect(body).not.toContain('clock-mark');
+	});
+
+	it('marks a tappable seat with an arrow, since it opens a sheet', () => {
+		const { body } = render(TableRoster, {
+			props: { players: [alice], currentPlayerID: 1, onSelect: () => {} },
+		});
+		expect(body).toContain('data-kind="arrow"');
+		expect(body).not.toContain('data-kind="caret"');
+	});
+
+	it('gives an inert seat no arrow: it opens nothing', () => {
+		const { body } = render(TableRoster, {
+			props: { players: [alice], currentPlayerID: 1 },
+		});
+		expect(body).not.toContain('row-mark');
 	});
 });

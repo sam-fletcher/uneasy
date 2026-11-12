@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!--
 	Quiet character counter for a length-capped field.
 
@@ -41,9 +40,9 @@
 
 <style>
 	.char-counter {
-		font-size: 0.75rem;
+		font-size: var(--text-label);
 		font-variant-numeric: tabular-nums;
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 		white-space: nowrap;
 		flex-shrink: 0;
 	}

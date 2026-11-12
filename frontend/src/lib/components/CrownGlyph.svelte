@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!--
   CrownGlyph.svelte — the line-of-succession marker (ADR-007, Phase D).
 
@@ -64,7 +63,7 @@
 	.crown {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.1rem;
+		gap: var(--space-1);
 		flex-shrink: 0;
 		line-height: 1;
 	}
@@ -74,7 +73,7 @@
 	.crown.successor { color: var(--color-accent-dim); }
 	.crown svg { display: block; }
 	.ordinal {
-		font-size: 0.62rem;
+		font-size: var(--text-label);
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		color: inherit;

@@ -517,6 +517,15 @@ A few things it encodes so you don't rediscover them:
   peer-targeting plans trip the MC-replacement gate unless you add one. The
   tool warns when it has had to fall back to an MC.
 
+### The styleguide (`/dev/styleguide`)
+
+Every token and shared component, in each state, on one page: open
+<http://localhost:8080/dev/styleguide> (or the same path on any server). It needs no
+login and no seeded game, and it ships to production unlinked. Use it to check a
+shared piece at 375px and at desktop width, and to see which piece already does the
+job before writing new CSS. See "The styleguide" in
+[STYLE_GUIDE.md](STYLE_GUIDE.md) for how it stays true.
+
 ### Screenshotting a table as a given player (`frontend/tests/shot.mjs`)
 
 The session cookie is per-origin, so one browser is one player: seeing what

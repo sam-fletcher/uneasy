@@ -11,6 +11,11 @@ until the last piece lands. Anything marked **retiring** still resolves
 (nothing has been deleted yet) but doesn't belong in new work. A guard test
 holds migrated files to the tokens; see "The migration marker" below.
 
+**To see what exists, open `/dev/styleguide`.** It renders every token and every
+shared piece below in each state, from the real components, with each value read
+from the browser, so it can't drift from the app. See "The styleguide" under
+Shared components.
+
 ## Tokens at a glance
 
 | what | tokens | where it's guarded |
@@ -20,6 +25,7 @@ holds migrated files to the tokens; see "The migration marker" below.
 | padding, margin, gap | `--space-1` … `--space-6` | `scaleTokens.test.ts` |
 | corner radius | `--radius-piece`, `-control`, `-chip`, `-sheet`, `-dot` | `scaleTokens.test.ts` |
 | widths, heights, breakpoints | see **Layout widths** below | `layoutTokens.test.ts` |
+| touch target | `--size-tap` (44px): the smallest a pressable thing may be | `tapTarget.test.ts`, for the shared recipes |
 
 A token's name describes its job rather than its pixels, so tuning a value
 means editing `app.css` and nothing else.
@@ -116,8 +122,9 @@ Keep bright gold off headings and off fills. **A selected thing gets a 2px
 card. The main button stays deep gold, which leaves bright gold for exactly
 three things: your picks, your focus and the waiting mark.
 
-Focus ring: `outline: 2px solid var(--color-you)`. Existing sites still say
-`--color-accent` until their file is migrated.
+Focus ring: `outline: 2px solid var(--color-you)`. The shared recipes (buttons,
+chips, rows, sheets) already use it; other sites still say `--color-accent`
+until their file is migrated.
 
 ### Meaning colours
 
@@ -155,11 +162,17 @@ Sapphire, Turquoise**.
   because colour-blind players separate them mostly by lightness. Each is also
   at least ΔE 15 from every meaning colour.
 - **A player colour is paired with a shape** wherever it stands for a player
-  and no name is nearby (owner marks, for instance, though not bylines). The
-  shapes come in the next piece of the redesign; until then the colour dot
-  stays. **Dice are the exception for now:** a die's edge keeps its owner's
-  colour and carries no shape. No player gets a circle (that is for status
-  dots) or a star (that is the main character).
+  and no name is nearby (owner marks, for instance, though not bylines), and
+  beside every name in the player row so the key is always on screen. The
+  shape replaces the old colour dot; it doesn't join it. In seat order:
+  **Lavender diamond, Peridot triangle, Rose square, Sapphire drop, Turquoise
+  gem.** `shared/PlayerShape.svelte` draws them from `lib/playerShape.ts`; a
+  seat's colour and shape both come from `seatIndex()` in `playerColor.ts`, so
+  pass the Player (or a seat) and never pick either by hand. 12px is the
+  smallest size. A screen that hasn't migrated still draws the colour dot.
+  Dice don't carry a shape yet: a die's edge stays in its owner's colour, and
+  the log names whoever committed it. A player's shape is never a circle (the
+  status dot's form) or a star (the main character's mark).
 - Selection is never shown in a player colour.
 
 Spend them sparingly: in chat a message colours its **byline only** (never
@@ -182,7 +195,8 @@ table-talk, and never means "a quieter player".
 - **Semantic names describe roles, not usage sites.**
 - **State variants are recipes, not hand-picked hexes**:
   - fill hover: `color-mix(in srgb, <fill> 92%, white)`
-  - border hover: `color-mix(in srgb, <border> 75%, white)`
+  - border hover: `color-mix(in srgb, <border> 75%, white)`; a control's is the
+    token `--color-border-control-hover`
 - `rgba(0,0,0,…)` / `rgba(255,255,255,…)` washes are fine: they're opacity
   effects (shadows, scrims), not palette. Only sheets cast shadows.
 
@@ -319,9 +333,11 @@ skips it:
 
 ## State channels on a player row
 
-*This describes the player row before the redesign. The piece that rebuilds the
-row rewrites it: a waiting glyph replaces the gold border, and player colours
-gain shapes.*
+*This describes the player row before the redesign. A waiting clock replaces the
+gold border, and player colours gain shapes. `shared/TableRoster.svelte` has
+already moved (a shape, the clock, and no pill); the header chips and the
+profile's table-card pills follow in their own pieces, which rewrite this
+section.*
 
 Wherever the app draws a player — the header chips, `TableRoster` (lobby
 seats, ready roster, retinue tallies), the profile's table-card pills —
@@ -403,7 +419,9 @@ never means "a quieter player."
   `lib/logMarkup.ts`; posts written before a mark existed simply render
   plain.
 - **Bold** is reserved for standalone numeric counters (rank/status
-  numbers, badge counts). Names, labels, and values stay regular weight.
+  numbers, badge counts), plus the label of the main button, where dark ink on
+  a gold fill needs the weight to stay legible. Names, labels, and values stay
+  regular weight.
 - **Headings are not an exception.** `+layout.svelte` resets `h1`–`h6` to
   weight 400, because the UA default would otherwise put every heading in
   the app on Spectral's 600 cut. Headings carry hierarchy through size,
@@ -455,7 +473,7 @@ Rules:
 ## Layout & interaction
 
 - **Mobile-first.** Design and verify at a narrow viewport (360px) before
-  desktop. Tap targets ≥ 44px (`min-height: 44px` on buttons/rows).
+  desktop. Tap targets ≥ 44px (`min-height: var(--size-tap)` on buttons and rows).
 - Chat is a bottom strip below 790px, a docked right column at ≥ 790px.
 - Wide content scrolls inside its own container — the page never scrolls
   horizontally.
@@ -477,8 +495,12 @@ Rules:
   filled triangle (see **Motion & the deck** — the app has no chevrons
   *among expanders*); the arrow is deliberately the one chevron, sized
   larger, because the two must never be mistaken for each other at phone
-  size. `shared/ChecklistRow.svelte` picks the mark from its `action` prop,
-  so use it rather than hand-rolling a row.
+  size. Both are drawn by `shared/RowMark.svelte` (from paths, not typed ▾
+  and › characters, which came from a different font on every platform).
+  `shared/ChecklistRow.svelte` picks the mark from its `action` prop, so use
+  it rather than hand-rolling a row. A tappable row has **no box**: it is a
+  44px line marked by its caret or arrow, with a thin rule beneath (see
+  Recipes).
 
   **Roles are named, not worn.** A player's role never rides on their seat as
   a title — the roster carries identity and state (colour, **You**, online,
@@ -506,21 +528,30 @@ Reuse before writing new CSS — these live in
 
 | file | what it is |
 |---|---|
-| `actionButton.css` | the standard button (primary gold / secondary muted) |
+| `actionButton.css` | **the** button: main (deep gold), secondary, greyed out; see Recipes |
+| `chip.css` + `Chip.svelte` | **the** chip: a fully rounded control for choosing among a few things. Selected = 2px bright gold border and bright gold text, no fill |
+| `tapRow.css` | **the** tappable row: a 44px line with a rule beneath, no box |
+| `RowMark.svelte` | the caret (expands in place) and the arrow (opens elsewhere) at the end of a tappable row |
+| `Notice.svelte` | **the** notice: a mark and coloured text, no box or tint |
+| `PlayerShape.svelte` | a player's shape in their colour: the five seat shapes, 12px and up |
+| `ClockMark.svelte` | the waiting glyph: bright gold for you, secondary for anyone else the game waits on |
+| `BarbuteMark.svelte` | war's mark, in war red |
+| `DieMark.svelte` | the die, in place of the 🎲 emoji |
+| `NewDot.svelte` | the pale "new since you looked" dot |
 | `choicePip.css` | the prologue choice pip — one gold disc with two homes (turn card ↔ category header), plus the spend animation |
-| `cornerBadge.css` | corner count badge on tiles |
+| `cornerBadge.css` | corner count badge on a glyph that is itself a count of secrets |
 | `jumpPulse.css` | the "you landed here" accent flash after the app scrolls the reader somewhere (chat jump, prologue claim). Carries its own reduced-motion guard |
 | `marginaliaTile.css` | the warm ledger tile for marginalia |
-| `modalShell.css` | sheet/modal frame |
+| `modalShell.css` | the sheet's scrim, close button and title, and the full-screen sheet variant; see Recipes |
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
-| `statusText.css` | status/annotation text conventions (incl. `.muted`) |
+| `statusText.css` | caption and error text (`.muted-text`, `.error-text`) and **the** status word (`.status-word`: small capitals in a colour, never a chip) |
 | `trackCode.css` | the prologue ranking track as three letters (`POW`/`KNO`/`EST`, and `ANY` dashed) — **the** way a track reaches the screen in a tight slot. Read the letters from `choosing.ts`'s `trackCode()`, never a literal |
-| `ChecklistRow.svelte` | **the** checklist/disclosure row: glyph · title+subtitle · state chip · caret-or-arrow, with an optional body. Used by the lobby's *While you wait* and the prologue's closing stage; `action` picks the affordance (see the caret rule above) |
-| `TableRoster.svelte` | who's at the table, as seats: colour dot, **You** for the current player, green ring for online, gold fill for waiting-on — and no role tags, see **Roles are named, not worn** below. Caller owns the heading, the count, per-row `trailing` content and the lobby's invite chair |
+| `ChecklistRow.svelte` | **the** checklist/disclosure row: glyph · title+subtitle · state word · caret-or-arrow, with an optional body. A `tapRow.css` row, so no box. Used by the lobby's *While you wait* and the prologue's closing stage; `action` picks the affordance (see the caret rule above) |
+| `TableRoster.svelte` | who's at the table, as plain lines: the seat's shape, **You** for the current player, a clock on whoever the game waits on (bright gold on you), an arrow when the row is tappable — and no role tags, see **Roles are named, not worn** below. Caller owns the heading, the count, per-row `trailing` content and the lobby's invite chair |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `HelpDisclosure.svelte` | the collapsible "? How X works" panel — a `ChecklistRow` specialisation. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
-| `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below |
+| `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`, `clock`, `war`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below. The newer marks have a component of their own that adds the size, colour rule and label |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
 undersells it, since it is reused outside the chat feed.
@@ -528,6 +559,74 @@ undersells it, since it is reused outside the chat feed.
 Plus `plans/shared/` (Buffet, DifficultyMeter, EndsNote: the one sentence under a submit
 that ends a plan or sub-flow; show it only in states where it is true) for plan flows and
 `HelpContent` for the ?-panel/lobby help.
+
+### Recipes
+
+The shared pieces above, as one list of rules. The files' header comments say
+more; `/dev/styleguide` shows every state.
+
+- **Buttons** (`actionButton.css`). One **main** button per step, in deep gold
+  with dark ink; everything else is **secondary** (raised surface, neutral
+  control border, main text). A button that can't be pressed yet is **greyed
+  out**: raised-twice surface, faint text, no border, never opacity. That is how
+  Send reads before there is text, and Join before there is a code. Use
+  `aria-disabled="true"` where a tap should say why. 44px tall at least; the
+  corner is `--radius-control`. `.action-btn.small` (36px) survives only for
+  the few dense spots that already use it, and goes in the cleanup piece so the
+  touch floor has no exceptions.
+- **Chips** (`chip.css`, `Chip.svelte`). A chip is a control, so it has a neutral
+  border and a raised fill; something that can't be pressed (a status, a label)
+  must not be drawn in that shape. **Selected is a 2px bright gold border and
+  bright gold text, with no fill**, and stays that way on hover. The second
+  pixel is an inset shadow, so choosing a chip never moves or resizes it. A
+  chosen chip that is locked keeps its gold border and takes faint text. A
+  choice wears no meaning colour and no player colour. Use `kind="tab"` for a
+  chip standing in for a tab (it sets `aria-current` instead of
+  `aria-pressed`).
+- **Tappable rows** (`tapRow.css`, `ChecklistRow.svelte`, `RowMark.svelte`). A 44px
+  line with a hairline under it and a caret or an arrow at the end. There is no
+  border or fill: the end mark is the only sign the row can be pressed. Hover
+  lifts the row to the raised surface; focus draws the ring inside it.
+- **Status words** (`.status-word` in `statusText.css`). Small capitals in a
+  colour: "Resolving", "Set aside", "Make", "Mar", a checklist state. Plain
+  secondary text for a state; a meaning colour only for a result, always beside
+  its word. Never a border or a fill.
+- **Notices** (`Notice.svelte`). A mark and coloured text, like a log line. A
+  notice sits inside a step, so it is a group and gets no box or tint. Pass a
+  house mark of the noun as `mark` when one fits better than the tone's default.
+  The update banner is the one place that keeps a tinted background, since it is
+  app chrome rather than game content.
+- **Sheets** (`RetinueSheet.svelte`, `modalShell.css`). A raised surface, rounded
+  on its top corners, with a scrim and a soft shadow: the one layer that floats
+  above the panes, so the only thing that casts a shadow. A 44px close button,
+  a deep gold `.sheet-title` first in the body, and no border. A control that
+  has to read as raised again inside it takes the raised-twice fill. Sheets
+  never nest.
+- **Marks** (`PlayerShape`, `ClockMark`, `BarbuteMark`, `DieMark`, `NewDot`). One
+  component each, so a mark is drawn once. The clock, barbute and die are
+  `LogMark` families that the component wraps. The new dot means "new since you
+  looked" everywhere. It is deliberately not gold: its form says "new", and
+  colour is kept for saying whose something is (bright gold means you).
+- **Focus** is always `outline: 2px solid var(--color-you)`, offset from the
+  edge (inside it for a row).
+
+### The styleguide
+
+`/dev/styleguide` (`frontend/src/routes/dev/styleguide/`) shows every token and
+every piece above, in each state, at any width. It is built to stay true:
+
+- It imports the **real components and stylesheets**, never copies, so a
+  restyled piece restyles the page.
+- Every token value and contrast ratio is **measured from the browser** at
+  render time. `tokens.ts` holds only names and one-line jobs, and
+  `styleguide.test.ts` fails if a text, gap or radius token exists in `app.css`
+  but not on the page, or the reverse.
+- It ships to the live site but **nothing links to it** (a test enforces that),
+  it carries a `noindex` meta tag, and it holds no game data or rule text.
+
+When you add a shared piece, add it to the page in the same PR. Hover and focus
+can't be frozen in a still, so they are described in a caption; tab or hover to
+see them.
 
 ### Local help
 
@@ -672,9 +771,10 @@ the throw wasn't ours.
 
 ### Log marks
 
-`LogMark.svelte` (`frontend/src/lib/components/`) holds 15 house SVG marks —
-14 for the chat log, one per system-post family, plus `chat` (see rule 5) —
-retiring the old Unicode
+`LogMark.svelte` (`frontend/src/lib/components/`) holds 17 house SVG marks —
+14 for the chat log, one per system-post family, plus three requested by name
+and never reached through `markForCode`: `chat` (rule 5), `clock` (the waiting
+glyph) and `war` (the barbute) — retiring the old Unicode
 `FAMILY_GLYPHS`, of which only `§` actually existed in Spectral (the rest each
 resolved to a different fallback font per platform, the real cause of the
 metric fudges the old CSS fought). House icon idiom, same as
