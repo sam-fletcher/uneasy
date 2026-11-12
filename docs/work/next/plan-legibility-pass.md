@@ -3,6 +3,8 @@ title: "Difficulty, stakes and watcher views across the plans"
 order: 72
 ---
 
+**Wait for the redesign:** each plan's part starts after its `redesign-plan-panels-*` item merges, so no plan file is restyled twice.
+
 The shared-component pass covered some plans. What's left:
 
 - **Difficulty derivation.** `DifficultyMeter` is only in Make Introductions and

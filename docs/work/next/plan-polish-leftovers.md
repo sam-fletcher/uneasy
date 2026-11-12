@@ -3,6 +3,8 @@ title: "Small plan UI gaps left from the October audit"
 order: 73
 ---
 
+**Wait for the redesign:** each plan's part starts after its `redesign-plan-panels-*` item merges, and the `RetinueView` and scene lines wait for `redesign-retinue-and-pieces` and `redesign-scenes`.
+
 Each was checked against the code on 2026-11-07, but re-check before building.
 
 **Exchange Courtiers**
