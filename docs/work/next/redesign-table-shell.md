@@ -11,6 +11,7 @@ order: 30
 This is the frame around the three panes, Public Record, Play and Chat. The panes' contents move in unchanged.
 
 - **Header:** Home, the table's title from the shared formatter ("Row 6 · Seek Answers"), and Help.
+  - The title's plan comes from the row state's `title_plan_type`. Don't pick a plan from the plan list: the server decides it once, so the title bar and the profile agree.
   - The phase badge goes.
   - The Tones, Laws, Rumors and War buttons go.
 - **The player row** spans the full width under the header:
