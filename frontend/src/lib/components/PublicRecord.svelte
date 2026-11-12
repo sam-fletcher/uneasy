@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- PublicRecord.svelte
   Two-state public-record sidebar.
 

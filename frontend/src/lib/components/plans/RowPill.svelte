@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- RowPill.svelte
   Small circular badge showing a row number. Mirrors the .rail-row visual in
   PublicRecord so the same shape appears wherever we reference a row (plan

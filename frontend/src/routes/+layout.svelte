@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';

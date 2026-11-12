@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Duel/BoutsPhase.svelte
   Bout loop with a visual tracker: each side's stakes (with their hidden /
   revealed dice) and the dice they've won so far, plus a pending pool for

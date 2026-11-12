@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- HandStrip.svelte
   Persistent hand of wilds for the active player during the prologue ranking
   declare step. Tap a card to commit it to the active track, tap a committed

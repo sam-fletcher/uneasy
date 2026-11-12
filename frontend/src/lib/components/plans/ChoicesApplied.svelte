@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ChoicesApplied.svelte
   Shared "Choices applied:" summary for plans whose make/mar resolution is a
   repeatable pick from a fixed option list (Seek Answers, Spread Rumors,

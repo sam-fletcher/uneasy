@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- shared/WeightMeter.svelte
   A prologue card's value as a 1–4 "weight", drawn as the house segmented meter
   (adr/PROLOGUE_UX_ROUND2_PLAN.md, decision 2 — the `.seg` idiom from

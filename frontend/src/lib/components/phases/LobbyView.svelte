@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- LobbyView.svelte
   Lobby phase: the two questions a player arrives with — *what am I supposed
   to do* and *who else is here* — answered in that order.

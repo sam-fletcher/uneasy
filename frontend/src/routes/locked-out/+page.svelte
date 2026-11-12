@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Logged-out "locked out?" intake (adr/FEEDBACK_AND_RESET_PLAN.md). There is
   no self-service reset: the owner verifies the requester socially via the
   stated contact channel and hand-generates a reset link. Honest copy only —

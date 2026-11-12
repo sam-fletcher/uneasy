@@ -1,3 +1,4 @@
+/* tokens: not migrated */
 /* The ranking track as three letters — POW / KNO / EST, and ANY for the wild
    heart. Import as a side effect wherever a component needs .track-code.
    The letters live in choosing.ts's SUIT_MEANINGS; read them through

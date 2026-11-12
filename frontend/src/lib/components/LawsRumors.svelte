@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- LawsRumors.svelte
   Sidebar list of enacted laws and active rumors. These are long-form
   narrative records written by players (Propose Decree → laws; Spread

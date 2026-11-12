@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Redemption side of the operator-driven password reset
   (adr/FEEDBACK_AND_RESET_PLAN.md). Reached via a single-use link an owner
   hand-generates with cmd/resetlink after verifying the requester socially.

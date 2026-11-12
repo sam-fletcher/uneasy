@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- TableRoster.svelte
   Who is at this table, as a list of seats.
 

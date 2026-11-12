@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ClosingStage.svelte
   "The Stage is Set" — the prologue's closing step (game.prologue_ranking_step
   === 'closing'; adr/PROLOGUE_CLOSING_STAGE_PLAN.md). Reads recap-first,

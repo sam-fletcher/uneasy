@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- SuggestionPicker.svelte
   Shared "write your own, with a nudge if you're stuck" control. The free-text
   field is always visible and is the only source of `value`; below it sits a

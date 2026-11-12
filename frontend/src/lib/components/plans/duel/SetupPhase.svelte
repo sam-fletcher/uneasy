@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Duel/SetupPhase.svelte
   Setup phase: who duels (a peer; the player's main character by default) +
   the secret stake-count reveal.

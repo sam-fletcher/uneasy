@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- StandingStrip.svelte
   Where the viewer currently stands on each of the three tracks, in ~87px,
   with the full TrackBoard one tap away.

@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- BattleCostForm.svelte
   Shared cost-of-battle picker used in two places:
    - cost mode: per-row cost-of-battle (break / leverage / propose peace),

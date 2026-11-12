@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- EndgameVotePanel.svelte
   Takeover panel for RowStateAwaitEndgameVote: row 7 is over, the public record
   is running out of rows, and the whole table votes on how the game ends before

@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- MainCharacterChoicePanel.svelte
   Takeover panel for RowStateAwaitMainCharacterChoice: one or more players lost
   their main character (it was taken, traded, or destroyed) and must choose a

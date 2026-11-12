@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- PrologueHelp.svelte
   The body of the prologue's local help disclosure, in its two variants.
 

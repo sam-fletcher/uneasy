@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Combined entry screen: title + log in / sign up in one mobile-first page. -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';

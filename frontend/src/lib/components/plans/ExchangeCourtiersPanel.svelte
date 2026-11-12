@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ExchangeCourtiersPanel.svelte
   Prep + resolve UI for the Exchange Courtiers plan.
   Resolve flow: fair trade → dice roll → make/mar choices → messy break

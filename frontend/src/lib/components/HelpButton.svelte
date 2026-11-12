@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!--
   Self-contained "?" button + How to play panel. Drop in anywhere (site
   header, a page's own corner) — it owns its open state and needs no props.

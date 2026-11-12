@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- PushBlockedHelp.svelte
   What to do when the browser has notifications blocked for this origin.
 

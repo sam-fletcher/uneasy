@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!--
 	Quiet character counter for a length-capped field.
 

@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- TargetPlanDemandOverlay.svelte
   Cross-cutting Stage 4 UI rendered at the top of every per-plan resolve view
   (except Make Demands itself and Make War, which can't be a demand target).

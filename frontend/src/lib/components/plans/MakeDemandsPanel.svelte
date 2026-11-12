@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- MakeDemandsPanel.svelte
   Prep + resolve UI for the Make Demands plan (Tier 3, Power, variable delay).
 

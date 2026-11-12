@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!--
 	ChatPanel.svelte — the unified game-wide chat surface.
 

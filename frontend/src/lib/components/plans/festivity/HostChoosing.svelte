@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Festivity/HostChoosing.svelte
   The host's extra-makes control — their spoils for hosting (one make) plus one
   per guest who marred or opted out. Host-only (the parent renders it only for

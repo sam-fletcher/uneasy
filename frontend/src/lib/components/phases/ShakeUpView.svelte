@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ShakeUpView.svelte
   Phase 4c — Shake-Up endgame UI.
 

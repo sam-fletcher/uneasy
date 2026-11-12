@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!--
   Retinue view for any player. Shows the player's assets as tiles with a
   2x2 marginalia sub-grid. The tile is the primary interactive surface;

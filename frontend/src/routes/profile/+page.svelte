@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/modalShell.css';

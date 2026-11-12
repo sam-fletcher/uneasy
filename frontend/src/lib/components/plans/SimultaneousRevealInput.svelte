@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- SimultaneousRevealInput.svelte
   Shared widget for simultaneous die-face reveals (liaise delay/redelay,
   make war delay, duel stake count). Each participant picks a face; nothing

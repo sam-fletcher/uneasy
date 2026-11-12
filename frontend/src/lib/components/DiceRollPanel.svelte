@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- DiceRollPanel.svelte
   Stage-driven dice roll panel. The server owns transitions
   (decide_vote → voting → leverage → resolved); clients call action

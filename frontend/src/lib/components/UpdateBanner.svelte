@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <script lang="ts">
 	// Site-level notice that this tab is running a build the server has since
 	// replaced. See $lib/appVersion for how the staleness is detected and why

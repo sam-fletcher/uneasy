@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- TrackBoard.svelte
   Three-column board for the prologue ranking stage. All three tracks
   render side-by-side so changes to commitments are visible across

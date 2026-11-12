@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- shared/Buffet.svelte
   Read-only "what can happen?" reference, shared across plans. Collapsible
   (collapsed by default) and fully interactive for everyone — switching tabs
