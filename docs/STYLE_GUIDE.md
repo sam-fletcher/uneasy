@@ -4,101 +4,325 @@ The living reference for Uneasy's visual language. Decision history lives
 in `adr/009-design-tokens.md` (colour architecture) and the git log; this
 file is what you consult while building.
 
+**The look is mid-migration.** A redesign replaced the palette and added a
+type scale, a gap scale and a set of corner radii. Every token below exists,
+but screens move onto them one file at a time, so the live app looks mixed
+until the last piece lands. Anything marked **retiring** still resolves
+(nothing has been deleted yet) but doesn't belong in new work. A guard test
+holds migrated files to the tokens; see "The migration marker" below.
+
+## Tokens at a glance
+
+| what | tokens | where it's guarded |
+|---|---|---|
+| colour | `--color-*` aliases of `--<family>-<step>` primitives | `designTokens.test.ts`: a colour literal anywhere but `app.css` fails |
+| font size | `--text-label`, `-small`, `-body`, `-heading`, `-title` | `scaleTokens.test.ts` |
+| padding, margin, gap | `--space-1` … `--space-6` | `scaleTokens.test.ts` |
+| corner radius | `--radius-piece`, `-control`, `-chip`, `-sheet`, `-dot` | `scaleTokens.test.ts` |
+| widths, heights, breakpoints | see **Layout widths** below | `layoutTokens.test.ts` |
+
+A token's name describes its job rather than its pixels, so tuning a value
+means editing `app.css` and nothing else.
+
 ## Colour
 
 Two tiers, both defined in [frontend/src/app.css](../frontend/src/app.css):
 
 1. **Primitives** — `--<family>-<step>` ramps (`--gold-400`, `--red-950`).
-   Eight families: `neutral`, `parchment`, `gold`, `orange`, `red`,
-   `green`, `blue`, `violet` (`amber` is retired — orange is the one
-   warning family; see `adr/COLOR_ROLES_PLAN.md`). Steps run 50
-   (lightest) → 950 (darkest). Primitives are the **only** place hex
-   literals may appear, app-wide — `src/lib/designTokens.test.ts` fails
-   the build otherwise.
+   Families: `neutral`, `parchment`, `gold`, `orange`, `red`, `green`, `blue`
+   and `violet` (retiring; `amber` is long gone). Steps run 50 (lightest) →
+   950 (darkest), with in-between steps such as `neutral-875` where the new
+   palette needed one. Primitives are the **only** place hex literals may
+   appear, app-wide.
 2. **Semantics** — `--color-*` aliases of primitives. Components reference
-   these wherever a role fits (`--color-danger`, `--color-surface-warm`);
-   go straight to a primitive only for a true one-off with no role.
+   these wherever a role fits; go straight to a primitive only for a true
+   one-off with no role.
 
-Rules of thumb:
+### Surfaces
+
+Three levels, one for each depth a box can reach (boxes nest at most two
+deep). Neighbouring levels are deliberately far enough apart to tell apart on
+a phone in daylight.
+
+| job | token | for |
+|---|---|---|
+| **page** | `--color-bg` | the panes themselves |
+| **raised** | `--color-surface` | game pieces, chips and sheets |
+| **raised twice** | `--color-surface-2` | a control standing on a raised thing (an input inside a sheet, say) |
+
+The names predate the ladder; they were kept so no component had to change
+when the values did. The page is a dark neutral grey rather than black, since
+light type on pure black looks smeared while a phone scrolls. Fills stay
+neutral: the warmth in the palette comes from the text, the golds and the
+borders of game pieces. And a fill says something about a *control* (its
+state), never about how important a region of the screen is.
+
+### Text
+
+Three parchment shades. **Faint is the dimmest any text gets**, and no text
+uses a cool grey.
+
+| job | token | on page | on raised | on raised twice |
+|---|---|---|---|---|
+| main | `--color-text` | 13.7:1 | 12.2:1 | 10.7:1 |
+| secondary: secondary lines, log lines, tab labels | `--color-text-secondary` | 9.1:1 | 8.1:1 | 7.1:1 |
+| faint: timestamps, captions | `--color-text-faint` | 5.0:1 | **4.49:1** | **3.9:1** |
+
+WCAG asks for 4.5:1 on small text, and faint falls under it on both raised
+surfaces. That is an open question for the owner (see `docs/work/questions/`).
+Until it is settled, put faint text on the page, and use secondary for
+anything on a raised surface that has to be read.
+
+Lines that used to be told apart by shade alone are now told apart by size
+and wording. `--color-text-muted`, `--color-text-tertiary-warm` and
+`--color-text-faint-warm` are **retiring** aliases of secondary and faint.
+
+### Borders
+
+| job | token | for |
+|---|---|---|
+| **piece** (warm) | `--color-border-piece` | game pieces: asset and peer cards, marginalia tiles |
+| **control** (neutral) | `--color-border-control` | controls: buttons, chips, inputs |
+| **divider** | `--color-border` | the thin line between neighbouring rows |
+| **quiet** | `--color-border-quiet` | quieter still: the rules between the record's rows |
+
+A die is a game piece, but it is the exception to the warm border: its edge
+keeps its owner's colour.
+
+Warm borders go on game pieces and neutral ones on controls, and a piece's
+fill stays neutral. Both box borders are drawn to reach about 3:1 against the
+page, the contrast WCAG expects of a control's edge, so that anything
+touchable has a visible outline. (Against a raised fill the same two lines
+measure about 2.7:1, and about 2.4:1 against raised twice.) The antique gold,
+`--color-border-warm-antique`, survives only as ornament: the engrailed
+divider and the duel's die tray.
+
+`--color-border` is still the box border on every screen that hasn't been
+migrated. The new box borders are separate names on purpose: a screen
+switches to them in the same piece that removes its nested boxes, because
+strong lines on a screen full of boxes inside boxes look heavy. Draw a box
+only around something a player can touch: a control, a game piece or a sheet.
+Group everything else (panes, steps, sections, lists) with a heading and
+spacing; the most a list needs is a divider line between its rows.
+
+### Gold: two tiers, two meanings
+
+| job | token | for |
+|---|---|---|
+| **deep gold**: the game | `--color-accent` | headings, the brand, the main button, crowns, top rank, important log lines |
+| **bright gold**: you | `--color-you` | the border of what you've picked, your focus ring, the waiting glyph on your chip |
+
+Keep bright gold off headings and off fills. **A selected thing gets a 2px
+`--color-you` border and no fill**, plus bright text on a chip or a tick on a
+card. The main button stays deep gold, which leaves bright gold for exactly
+three things: your picks, your focus and the waiting mark.
+
+Focus ring: `outline: 2px solid var(--color-you)`. Existing sites still say
+`--color-accent` until their file is migrated.
+
+### Meaning colours
+
+Never rely on colour alone. Pair each meaning colour with a word, and each
+player colour with a shape, so the screen still works for colour-blind
+players.
+
+- **red** (`--color-danger`, `--color-danger-muted`): things lost or at risk
+  (errors, at-risk assets, Mar, torn marks, the "never" tone), and war.
+- **orange** (`--color-warning*`, `--color-leveraged`): caution. Three jobs,
+  three names: `--color-warning-border` on dark grounds, `--color-warning-ink`
+  (same paint) on a **parchment** ground, and `--color-warning` for text.
+- **green** (`--color-success`, `--color-online`): success, Make, someone
+  online.
+- **blue** (`--color-highlight`, `--color-highlight-ink`, `--color-info`):
+  something to gain, or information. Use `--color-highlight-ink`, not
+  `--color-info`, for blue against a parchment card face.
+
+Options a player is choosing between stay uncoloured (Aid and Interfere are
+told apart by their words and position), because colouring one would steer
+the choice. Results and states may take a meaning colour. Status words such
+as "Resolving" or "Set aside" are plain secondary text, not chips.
+
+### Player colours
+
+Categorical, owned by `lib/playerColor.ts` (`DEFAULT_PALETTE`, with the names in
+its comments), with a reference block in `app.css` whose agreement
+`designTokens.test.ts` enforces. In seat order: **Lavender, Peridot, Rose,
+Sapphire, Turquoise**.
+
+- **Seats are filled in join order, and the table's creator is seat 1.** Most
+  tables are small, so they use the earliest, most distinct colours. Re-check
+  that order whenever a colour is tuned.
+- Their lightness differs on purpose, between about 5 and 9:1 on the page,
+  because colour-blind players separate them mostly by lightness. Each is also
+  at least ΔE 15 from every meaning colour.
+- **A player colour is paired with a shape** wherever it stands for a player
+  and no name is nearby (owner marks, for instance, though not bylines). The
+  shapes come in the next piece of the redesign; until then the colour dot
+  stays. **Dice are the exception for now:** a die's edge keeps its owner's
+  colour and carries no shape. No player gets a circle (that is for status
+  dots) or a star (that is the main character).
+- Selection is never shown in a player colour.
+
+Spend them sparingly: in chat a message colours its **byline only** (never
+byline + rule), a **system-log body colours the player names inside it** (the
+log reports what a player did, not what a character said; see the `playerMark`
+convention under Typography), and **in-character speech wears the muted
+mask-cast**, `color-mix(in srgb, <player> 55%, var(--color-text-secondary))`,
+because a character's words aren't the player's own voice. **A peer's colour is
+always its owning retinue's**, never the player currently roleplaying it; the
+byline's faint `(name)` tag identifies a borrower. Grey (`--player-unknown`) is
+a defensive fallback for when no player can be resolved at all: never used for
+table-talk, and never means "a quieter player".
+
+### Rules of thumb
 
 - **Adding a colour = picking an existing step.** A genuinely new primitive
   requires updating ADR-009 (the bar: no step within ΔE ≈ 6 fits the role).
-- **Never average, never invent midpoints** — when two colours should be
-  one, keep the incumbent (token first; it's the value most likely to be
-  deliberately tuned, e.g. `--neutral-300` is the AA floor on the page bg).
-- **Semantic names describe roles, not usage sites.** `--color-card-spent`
-  (grandfathered) is the anti-pattern; `--color-danger-muted` is the goal.
+- **Never average, never invent midpoints**: when two colours should be one,
+  keep the incumbent.
+- **Semantic names describe roles, not usage sites.**
 - **State variants are recipes, not hand-picked hexes**:
   - fill hover: `color-mix(in srgb, <fill> 92%, white)`
   - border hover: `color-mix(in srgb, <border> 75%, white)`
-  - tinted wash: `color-mix(in srgb, <hue> 12%, var(--color-surface))`
-  - focus ring: `outline: 2px solid var(--color-accent)` — one ring
-    colour app-wide, no per-component hues.
-- `rgba(0,0,0,…)` / `rgba(255,255,255,…)` washes are fine — they're
-  opacity effects (shadows, scrims), not palette.
+- `rgba(0,0,0,…)` / `rgba(255,255,255,…)` washes are fine: they're opacity
+  effects (shadows, scrims), not palette. Only sheets cast shadows.
 
-**Chip trios** — the one formula for tinted chips/badges/banners:
-`bg` = the family's darkest step, `border` = hue-700, `text` = hue-200
-(families without a 200 use their pale semantic). Quiet badges/banners use
-the trio as-is; *interactive selected or CTA states* (vote buttons,
-aid/interfere) may swap in the bright semantic (`--color-success`,
-`--color-danger`, `--color-accent`) for border+text — brightness marks
-tappability, not a new colour.
+### Retiring colour tokens
 
-| trio | bg | border | text |
-|---|---|---|---|
-| `--color-chip-red-*` | red-950 | red-700 | red-200 |
-| `--color-chip-green-*` | green-950 | green-700 | `--color-success` (green-300) |
-| `--color-chip-gold-*` | gold-850 | gold-700 | gold-200 |
-| `--color-chip-violet-*` | violet-950 | violet-600 | violet-200 |
-| `--color-chip-blue-*` | blue-950 | blue-700 | blue-200 |
-| warning (= the orange chip) | orange-900 | orange-**600** | `--color-warning` (orange-400) |
+Don't use these in new work; the cleanup piece deletes them once no screen
+references them.
 
-The orange row is the one that breaks the `hue-700 / hue-200` shape, and it
-is **not** a drift to be tidied away: orange-700 and orange-200 were the
-*war-button chip's* hand-tuned steps, not the warning trio's, and they were
-pruned in 2026-08-16 once that chip was regenerated onto `--color-warning-*`
-(ADR-009 open question 4 called this outcome). This table claimed them for
-three months after they stopped existing — check a token still resolves
-before trusting a row here. Orange joins green as a family whose chip text
-is its bright semantic rather than a `-200` step.
+| token | why it goes | use instead |
+|---|---|---|
+| `--color-surface-sunken` | the recessed panels that needed it are going, and it was barely distinguishable from the page | the page, or raised |
+| `--color-surface-active` | selected is a border now; gold tints over dark grey turn muddy brown | the selected recipe above |
+| `--color-border-warm-strong` | the sunken panels it framed are gone | `--color-border-piece` / `-control` |
+| `--color-text-muted`, `-tertiary-warm`, `-faint-warm` | six text shades in two families, folded into three | secondary, faint |
+| violet: `--violet-*`, `--color-chip-violet-*` | "resolving" and "set aside" are secondary text now, and the first seat colour sat near it | secondary text |
+| the other chip trios (`--color-chip-red/green/gold/blue-*`) | status words are plain coloured text and notices lose their tinted box, so the trios have no job left | plain coloured text; a control's border |
+| `--radius-sm`, `-md`, `-lg` | named by size, not by the kind of thing | `--radius-*` below |
+| `--neutral-850` | replaced by `neutral-875` | |
 
-Family meanings (the role map — `adr/COLOR_ROLES_PLAN.md` rulings):
+Also **superseded** for new work, though the redesign's rulings don't name
+them: `--color-border-warm` and `--color-border-strong` (the old box borders;
+`--color-border-piece` and `--color-border-control` are the one resting shade
+each) and `--color-accent-bright` (the old pale "picked" gold, which
+`--color-you` replaces).
 
-- **gold** — the brand: accent, active/selected states, warm borders.
-- **parchment** — paper and body text; the warm ledger/sheet ground (never
-  bright white).
-- **neutral** — cool chrome: the elevation ladder, borders, plain text.
-- **orange** — the one warning family: leveraged, pending-war, and every
-  "careful now" signal. Three jobs, three names: `--color-warning-border`
-  on dark grounds, `--color-warning-ink` (same paint) for the warning mark
-  on a **parchment** ground — plan sheets — and `--color-warning` for text,
-  plus the bright step an interactive element's border may take (the
-  chip-trio rule above). `--color-warning-ink` is orange's answer to
-  `--color-highlight-ink`; before it existed, two plan-panel rules reached
-  past the semantic layer to raw `var(--orange-600)` because the role had
-  no name.
-- **red** — danger, which *includes* the at-risk game state (one concept),
-  and war. (`--color-suit-red` retired 2026-08-04 with the last playing-card
-  face — see **Motion & the deck** below.)
-- **green** — success and tone-include.
-- **blue** — attention *and* **opportunity**: `--color-highlight`
-  (activity/prepare cue, and the prologue take chip on dark grounds),
-  `--color-highlight-ink` (the same cue as a fill under light text),
-  `--color-info` (calm informational fill). The take marking moved here from orange on
-  2026-08-01 — a take is something the viewer stands to *gain*, so marking it
-  with the warning family told the wrong story — and the family was rebuilt
-  from two steps to six in the same pass (ADR-009 "Blue ramp, rev 2"). Use
-  `--color-highlight-ink`, not `--color-info`, for blue against a parchment
-  card face.
-- **violet** — procedural, "the machinery of resolution is in motion":
-  roll voting, stage chips, the prologue track.
+## Type, gaps and corners
 
-Ledger warmth lives in the **frame, not the fill**: asset/marginalia tiles
-use the plain surface ladder for backgrounds and `--color-border-warm`
-(gold-850) for borders. There is no warm fill scale.
+Three scales, each with a fixed number of steps and one job per step. Adding
+a step is the owner's decision, not a convenience: a case that seems to need
+13px is a case for changing the copy or the layout. Before the redesign,
+sizes and gaps had drifted into dozens of near-duplicates differing by
+fractions of a pixel, which is what the guard now prevents.
 
-### State channels on a player row
+### Text sizes
+
+Sizes are in rem, so the browser's text-size setting still applies. **12px is
+the smallest anything gets**: thin serif strokes start to fragment on a phone
+below it.
+
+| token | px | for |
+|---|---|---|
+| `--text-label` | 12 | timestamps, uppercase labels |
+| `--text-small` | 14 | secondary lines, log lines, chip names, tab labels, finished steps |
+| `--text-body` | 16 | chat, step text, **every input** |
+| `--text-heading` | 18 | the open step's heading, sheet titles, the title bar |
+| `--text-title` | 22 | page titles |
+| `--text-display` | fluid | the landing page's cover title only, in `--font-display`: the one documented exception |
+
+Inputs use `--text-body` without exception: iOS Safari zooms the whole page
+when a focused input is set below 16px.
+
+### Gaps
+
+One set for `padding`, `margin` and `gap`, in rem. The steps are spread far
+enough apart that you can see which is which, so spacing alone can show what
+belongs together, and that is what makes most boxes unnecessary.
+
+| token | px |
+|---|---|
+| `--space-1` | 4 |
+| `--space-2` | 8 |
+| `--space-3` | 12 |
+| `--space-4` | 16 |
+| `--space-5` | 24 |
+| `--space-6` | 32 |
+
+### Corner radius
+
+A corner radius tells you what sort of object you're looking at.
+
+| token | px | for |
+|---|---|---|
+| `--radius-piece` | 4 | game pieces: asset and peer cards, marginalia tiles, dice. Close to square, like paper or a card |
+| `--radius-control` | 8 | buttons and inputs |
+| `--radius-chip` | fully round | chips |
+| `--radius-sheet` | 12 | sheets, on the **top corners only**: `var(--radius-sheet) var(--radius-sheet) 0 0` |
+| `--radius-dot` | circle | status dots only: a player's mark is a shape, so circles are reserved for status |
+
+### Choosing a step
+
+Pick by what the thing **is**, not by the nearest value. A `0.82rem` caption
+becomes `--text-small` or `--text-label` according to its job, even if that
+moves it by a pixel or two. Never nudge a size or a gap to cure a single word
+stranded on a last line: `app.css` sets `text-wrap: balance` on headings,
+labels and buttons and `text-wrap: pretty` on paragraphs, once, for the whole
+app. A single stubborn case is fixed by editing the copy.
+
+### What the guard accepts
+
+`scaleTokens.test.ts` fails any `font-size`, `font`, `padding*`, `margin*`,
+`gap`, `row-gap`, `column-gap` or `border-*radius*` whose value isn't a token.
+It reads `<style>` blocks and style attributes: `style="…"`, `style={…}` and
+`style:prop`, including string and template literals inside their expressions.
+
+- **Allowed:** `0`; `auto`; `normal`; `inherit`, `initial`, `unset`, `revert`;
+  a `var()` of the right family; a local custom property
+  (`var(--chat-strip-height)`), though its fallback is judged too; and
+  `calc()`, `min()`, `max()` and `clamp()` whose every operand is a token, `0`
+  or a bare multiplier. A **negative margin** is `calc(-1 * var(--space-2))`;
+  padding around a notch is `calc(var(--space-3) + env(safe-area-inset-bottom))`.
+- **Rejected:** any other number with a unit, including `em`, `%` and `vw` (even
+  inside `calc`), keyword sizes such as `small`, a token of the wrong family
+  (`padding: var(--text-body)`), a token that doesn't exist (`--space-7` would
+  silently render as nothing), the retiring `--radius-sm/md/lg`, and a gap
+  smuggled through a custom property: one named `*-gap`, `*-gutter`,
+  `*-padding`, `*-margin`, `*-radius` or `*-font-size` is held to the same rule.
+  Writing `!important` after a literal doesn't help.
+- **Not its job:** widths and heights (`layoutTokens.test.ts`), `line-height`,
+  `letter-spacing`, border widths, and styles set from a `<script>` block.
+
+### The migration marker
+
+The redesign moves the app onto the scales one file at a time. A file that
+still has literals starts with a marker on its **first line**, and the guard
+skips it:
+
+```svelte
+<!-- tokens: not migrated -->
+```
+
+```css
+/* tokens: not migrated */
+```
+
+- **The piece that migrates a file deletes its marker.** The guard also fails a
+  marker on a file with nothing left to migrate, so a marker can't outlive its
+  job and a migrating PR can't forget it.
+- A marker anywhere but line 1, or in the wrong comment style for the file
+  type, is an error: it would do nothing, and its author would think it did.
+- A new file is never marked. Write it on the tokens.
+- There is deliberately **no list of unmigrated files** anywhere: every
+  migration PR would edit it and they would conflict on every merge.
+- To see what's left: `grep -rl "tokens: not migrated" frontend/src`.
+
+## State channels on a player row
+
+*This describes the player row before the redesign. The piece that rebuilds the
+row rewrites it: a waiting glyph replaces the gold border, and player colours
+gain shapes.*
 
 Wherever the app draws a player — the header chips, `TableRoster` (lobby
 seats, ready roster, retinue tallies), the profile's table-card pills —
@@ -165,6 +389,7 @@ never means "a quieter player."
 
 ## Typography
 
+- **Sizes** are the five `--text-*` steps above. Fonts follow.
 - **Fully serif.** `--font-serif` (Spectral) drives body, headings, prose.
   `--font-display` (IM Fell English) is texture: the big cover-style hero
   **only** — never at small sizes.
