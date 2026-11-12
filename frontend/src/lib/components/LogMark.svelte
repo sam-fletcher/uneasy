@@ -131,6 +131,27 @@
 			     the doubled bubbles now on `rumor`. Still clear of `scene`,
 			     which is a pair of quotation marks. -->
 			<path d="M5.5 3.5H18.5a3 3 0 0 1 3 3V12.5a3 3 0 0 1-3 3H10l-4.5 4V15.5a3 3 0 0 1-3-3V6.5a3 3 0 0 1 3-3z" />
+		{:else if family === 'clock'}
+			<!-- clock face with two hands: the WAITING glyph. It reads clearly at
+			     16px, the size it is drawn at on a player's chip. Like `chat`, it
+			     has no system_code and is requested by name; it lives here so the
+			     app still has one place its marks are drawn. Use <ClockMark>
+			     (components/shared) rather than this family directly: it carries
+			     the gold-for-you, grey-for-others colouring rule. No deadline
+			     mark may be a clock, since this one means "waiting". -->
+			<circle cx="12" cy="12" r="9" />
+			<path d="M12 7.5V12l3 2" />
+		{:else if family === 'war'}
+			<!-- barbute: an open-faced helmet with a T-shaped opening, WAR's mark.
+			     A rounded crown over an open bottom looks like no other mark in
+			     the set (the flag is every plan's and the crossed swords are
+			     seize's). Rendered in war red wherever it appears; <BarbuteMark>
+			     carries that colour. -->
+			<path d="M5 20.5V11a7 7 0 0 1 14 0V20.5" />
+			<path d="M5 20.5H9" />
+			<path d="M15 20.5H19" />
+			<path d="M8 11.5H16" />
+			<path d="M12 11.5V20.5" />
 		{/if}
 	</svg>
 {/if}

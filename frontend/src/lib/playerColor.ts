@@ -26,8 +26,8 @@ import type { Player } from './api';
  * Each sits between about 5 and 9:1 on the page (Sapphire is 5.0 there, and
  * drops to 4.49 on a raised surface), and at least ΔE 15 from every meaning
  * colour (red, orange, green, blue, the golds). Wherever a colour stands for
- * a player with no name nearby it is paired with a shape; the shapes are a
- * separate piece of work.
+ * a player with no name nearby it is paired with a shape (`playerShape.ts`,
+ * drawn by `PlayerShape.svelte`).
  */
 const DEFAULT_PALETTE = [
 	'#C5AEFE', // Lavender
@@ -61,10 +61,24 @@ export function playerColor(player: Pick<Player, 'token_color' | 'seat_order'> |
 	if (player.token_color && player.token_color.trim() !== '') {
 		return player.token_color;
 	}
-	const seat = player.seat_order ?? 1;
-	const idx = ((seat - 1) % DEFAULT_PALETTE.length + DEFAULT_PALETTE.length) % DEFAULT_PALETTE.length;
-	return DEFAULT_PALETTE[idx];
+	return DEFAULT_PALETTE[seatIndex(player.seat_order)];
 }
+
+/**
+ * Which of the five slots a seat takes, 0-based. Seat 1 is slot 0 and seat 6
+ * wraps round to slot 0 again; a missing seat counts as seat 1. This is the
+ * one place that arithmetic lives: a player's colour (above) and a player's
+ * shape (`playerShape.ts`) both come from it, so the two can never disagree
+ * about which seat they belong to. A `token_color` override changes the colour
+ * only; the shape still follows the seat.
+ */
+export function seatIndex(seatOrder: number | null | undefined): number {
+	const n = DEFAULT_PALETTE.length;
+	return ((((seatOrder ?? 1) - 1) % n) + n) % n;
+}
+
+/** How many seat slots there are before colours (and shapes) start repeating. */
+export const PLAYER_SLOTS = DEFAULT_PALETTE.length;
 
 /**
  * Convenience: look up a player by id from a list and return their color.
