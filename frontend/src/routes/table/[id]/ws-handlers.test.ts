@@ -1,24 +1,31 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { handleWSMessage, type WSContext } from './ws-handlers';
+import { handleWSMessage, syncActiveRoll, type WSContext } from './ws-handlers';
 import { EventTypes } from '$lib/ws';
 import { breakableAssets } from '$lib/components/plans/shared';
 import { atRiskCountByPlayer } from '$lib/tableHeader';
-import { getPlan, getRoll, type DiceRoll, type DiceRollDie, type Plan, type RecordRow } from '$lib/api';
+import {
+	getActiveRollForGame, getPlan, getRoll,
+	type ActiveRollPayload, type DiceRoll, type DiceRollDie, type Plan, type RecordRow,
+} from '$lib/api';
 
-// Only getPlan and getRoll are stubbed; the rest of the client is never reached
-// by these tests.
+// Only getPlan, getRoll and getActiveRollForGame are stubbed; the rest of the
+// client is never reached by these tests.
 vi.mock('$lib/api', async importOriginal => ({
 	...(await importOriginal<typeof import('$lib/api')>()),
 	getPlan: vi.fn(),
 	getRoll: vi.fn(),
+	getActiveRollForGame: vi.fn(),
 }));
 const getPlanMock = vi.mocked(getPlan);
 const getRollMock = vi.mocked(getRoll);
+const getActiveRollMock = vi.mocked(getActiveRollForGame);
 beforeEach(() => {
 	getPlanMock.mockReset();
 	getPlanMock.mockRejectedValue(new Error('unstubbed'));
 	getRollMock.mockReset();
 	getRollMock.mockRejectedValue(new Error('unstubbed'));
+	getActiveRollMock.mockReset();
+	getActiveRollMock.mockRejectedValue(new Error('unstubbed'));
 });
 
 // Minimal Plan factory — only the fields the record-sync logic reads.
@@ -537,5 +544,315 @@ describe('active roll fetch ordering', () => {
 
 		expect(ctx.activeRoll?.id).toBe(9);
 		expect(ctx.activeRollDice.map(d => d.id)).toEqual([99]);
+	});
+
+	// The page's resync (loadGameState) reads the active roll too, through
+	// syncActiveRoll, which shares the roll events' sequence counter so neither
+	// can undo the other.
+	describe('page resync', () => {
+		const noRoll: ActiveRollPayload = { roll: null, dice: [], votes: [], participants: [] };
+		const leverage = (id: number) => ({
+			type: EventTypes.RollLeverageAdded,
+			payload: { roll_id: 9, die: makeDie(id) },
+		});
+
+		// What loadGameState does with the roll read: hand it to syncActiveRoll, in
+		// the same tick. The read is held until the test lands (or fails) it, as a
+		// slow response would be.
+		function resync(ctx: WSContext, opts?: { votes?: boolean }) {
+			let land!: (d: ActiveRollPayload) => void;
+			let fail!: (e: Error) => void;
+			getActiveRollMock.mockImplementationOnce(() => new Promise((res, rej) => { land = res; fail = rej; }));
+			const done = syncActiveRoll(ctx, getActiveRollForGame(1), opts);
+			return { land: (d: ActiveRollPayload) => land(d), fail: (e: Error) => fail(e), done };
+		}
+
+		it('installs its snapshot when nothing newer has happened', async () => {
+			const ctx = makeCtx({ activeRollVotes: [{ roll_id: 4, player_id: 7, voted: true }] } as unknown as Partial<WSContext>);
+			const read = resync(ctx);
+			read.land(detail(makeRoll(), {
+				dice: [makeDie(1)],
+				votes: [{ roll_id: 9, player_id: 7, voted: true }],
+				participants: [{ roll_id: 9, player_id: 7, intent: null, is_ready: false }],
+			}));
+			await read.done;
+
+			expect(ctx.activeRoll?.id).toBe(9);
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+			expect(ctx.activeRollVotes.map(v => v.roll_id)).toEqual([9]);
+			expect(ctx.activeRollParticipants.map(p => p.player_id)).toEqual([7]);
+		});
+
+		it('clears the roll when the snapshot has none', async () => {
+			const ctx = makeCtx({ activeRoll: makeRoll(), activeRollDice: [makeDie(1)] } as unknown as Partial<WSContext>);
+			const read = resync(ctx);
+			read.land(noRoll);
+			await read.done;
+
+			expect(ctx.activeRoll).toBeNull();
+			expect(ctx.activeRollDice).toEqual([]);
+			expect(ctx.activeRollVotes).toEqual([]);
+		});
+
+		it('the endgame resync leaves the ballot alone (votes: false)', async () => {
+			const ballot = [{ roll_id: 9, player_id: 7, voted: true }];
+			const ctx = makeCtx({ activeRollVotes: ballot } as unknown as Partial<WSContext>);
+			const shown = resync(ctx, { votes: false });
+			shown.land(detail(makeRoll(), { votes: [] }));
+			await shown.done;
+			expect(ctx.activeRoll?.id).toBe(9);
+			expect(ctx.activeRollVotes).toBe(ballot);
+
+			const cleared = resync(ctx, { votes: false });
+			cleared.land(noRoll);
+			await cleared.done;
+			expect(ctx.activeRoll).toBeNull();
+			expect(ctx.activeRollVotes).toBe(ballot);
+		});
+
+		it('a read that failed and was tolerated (null) changes nothing, and spares a fetch out', async () => {
+			const ctx = makeCtx();
+			const landFetch = holdFirstFetch(detail(makeRoll(), { dice: [makeDie(1)] }));
+			handleWSMessage(ctx, created(makeRoll()));
+
+			await syncActiveRoll(ctx, Promise.resolve(null));
+			landFetch(detail(makeRoll(), { dice: [makeDie(1)] }));
+			await flush();
+
+			expect(ctx.activeRoll?.id).toBe(9);
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+		});
+
+		it('a read that throws rejects, changes nothing, and spares a fetch out', async () => {
+			const ctx = makeCtx();
+			const landFetch = holdFirstFetch(detail(makeRoll(), { dice: [makeDie(1)] }));
+			handleWSMessage(ctx, created(makeRoll()));
+
+			const read = resync(ctx);
+			read.fail(new Error('offline'));
+			await expect(read.done).rejects.toThrow('offline');
+			landFetch(detail(makeRoll(), { dice: [makeDie(1)] }));
+			await flush();
+
+			expect(ctx.activeRoll?.id).toBe(9);
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+		});
+
+		it('a resync that threw is not left pending: roll.resolved for a roll nobody is loading is ignored again', async () => {
+			const ctx = makeCtx();
+			const read = resync(ctx);
+			read.fail(new Error('offline'));
+			await expect(read.done).rejects.toThrow('offline');
+
+			handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1)]));
+
+			expect(ctx.activeRoll).toBeFalsy();
+			expect(getRollMock).not.toHaveBeenCalled();
+		});
+
+		// Race 1: the snapshot was read before the roll resolved and lands after.
+		it('a snapshot read before the roll resolved cannot put the unresolved roll back', async () => {
+			const ctx = makeCtx({ activeRoll: makeRoll(), activeRollDice: [makeDie(1)] } as unknown as Partial<WSContext>);
+			const fill = detail(resolvedRoll(), {
+				dice: [makeDie(1), makeDie(2)],
+				participants: [{ roll_id: 9, player_id: 7, intent: null, is_ready: true }],
+			});
+			getRollMock.mockResolvedValue(fill);
+			const read = resync(ctx);
+
+			// The event arrives while the read is out, so it counts as newer than
+			// it: this is also what pins the ticket being taken before the await.
+			handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1), makeDie(2)]));
+			read.land(detail(makeRoll(), { dice: [makeDie(1)] }));
+			await read.done;
+			await flush();
+
+			expect(ctx.activeRoll?.outcome).toBe('make');
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2]);
+			// The event carries no participants, so the roll was refetched for them.
+			expect(ctx.activeRollParticipants.map(p => p.player_id)).toEqual([7]);
+			expect(getRollMock).toHaveBeenCalledTimes(1);
+		});
+
+		it('the same, when the page has nothing on screen yet to patch', async () => {
+			const ctx = makeCtx();
+			getRollMock.mockResolvedValue(detail(resolvedRoll(), { dice: [makeDie(1)] }));
+			const read = resync(ctx);
+
+			// Installed from the event's own payload, not left for the resync.
+			handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1)]));
+			expect(ctx.activeRoll?.outcome).toBe('make');
+
+			read.land(detail(makeRoll(), { dice: [] }));
+			await read.done;
+			await flush();
+
+			expect(ctx.activeRoll?.outcome).toBe('make');
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+		});
+
+		// Race 2: the snapshot found no roll (its plan has finished) while a roll
+		// fetch from before it was still out.
+		it('a snapshot with no roll also drops a roll fetch still out', async () => {
+			const ctx = makeCtx();
+			const landFetch = holdFirstFetch(detail(makeRoll(), { dice: [makeDie(1)] }));
+			handleWSMessage(ctx, created(makeRoll()));
+
+			const read = resync(ctx);
+			read.land(noRoll);
+			await read.done;
+			landFetch(detail(makeRoll(), { dice: [makeDie(1)] }));
+			await flush();
+
+			expect(ctx.activeRoll).toBeNull();
+			expect(ctx.activeRollDice).toEqual([]);
+		});
+
+		it('a roll fetch that starts after the resync did wins over its snapshot', async () => {
+			const ctx = makeCtx();
+			getRollMock.mockResolvedValueOnce(detail(makeRoll(), { dice: [makeDie(1)] }));
+			const read = resync(ctx);
+
+			handleWSMessage(ctx, created(makeRoll()));
+			await flush();
+			read.land(noRoll);
+			await read.done;
+
+			expect(ctx.activeRoll?.id).toBe(9);
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+		});
+
+		it('a roll event while the resync is out refetches the roll on screen, so the older snapshot is not the last word', async () => {
+			const ctx = makeCtx({ activeRoll: makeRoll(), activeRollDice: [makeDie(1)] } as unknown as Partial<WSContext>);
+			getRollMock.mockResolvedValueOnce(detail(makeRoll(), { dice: [makeDie(1), makeDie(2)] }));
+			const read = resync(ctx);
+
+			handleWSMessage(ctx, leverage(2));
+			read.land(detail(makeRoll(), { dice: [makeDie(1)] }));
+			await read.done;
+			await flush();
+
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2]);
+			expect(getRollMock).toHaveBeenCalledTimes(1);
+		});
+
+		it('an event about a roll that is not on screen leaves the snapshot to bring it', async () => {
+			const ctx = makeCtx();
+			const read = resync(ctx);
+
+			handleWSMessage(ctx, leverage(2));
+			expect(getRollMock).not.toHaveBeenCalled();
+			read.land(detail(makeRoll(), { dice: [makeDie(1)] }));
+			await read.done;
+
+			expect(ctx.activeRoll?.id).toBe(9);
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1]);
+		});
+
+		it("a snapshot read before the plan resolved cannot bring the plan's roll back", async () => {
+			const linked = makeRoll({ plan_id: 42 });
+			const ctx = makeCtx({
+				plans: [makePlan({ id: 42, status: 'resolving' })],
+				activeRoll: linked,
+			} as unknown as Partial<WSContext>);
+			getPlanMock.mockResolvedValue({ plan: makePlan({ id: 42, status: 'resolved', result: 'make' }) } as Awaited<ReturnType<typeof getPlan>>);
+			const read = resync(ctx);
+
+			handleWSMessage(ctx, { type: EventTypes.PlanResolved, payload: { plan_id: 42, result: 'make' } });
+			read.land(detail(linked));
+			await read.done;
+			await flush();
+
+			expect(ctx.activeRoll).toBeNull();
+		});
+
+		// Two resyncs overlap when the socket reconnects while the first is still
+		// out. The newest read wins, whichever order they land in: the first to
+		// land used to apply, and the newer answer was dropped as stale.
+		describe('two resyncs overlapping', () => {
+			// A read before the plan resolved still has the roll; B, started later,
+			// read after it resolved and has none.
+			const withRoll = () => detail(makeRoll(), { dice: [makeDie(1)] });
+
+			it('the older lands first: only the newer answer applies', async () => {
+				const ctx = makeCtx();
+				const a = resync(ctx);
+				const b = resync(ctx);
+
+				a.land(withRoll());
+				await a.done;
+				expect(ctx.activeRoll).toBeFalsy();
+				b.land(noRoll);
+				await b.done;
+
+				expect(ctx.activeRoll).toBeNull();
+			});
+
+			it('the newer lands first: the older answer cannot apply over it', async () => {
+				const ctx = makeCtx();
+				const a = resync(ctx);
+				const b = resync(ctx);
+
+				b.land(noRoll);
+				await b.done;
+				a.land(withRoll());
+				await a.done;
+
+				expect(ctx.activeRoll).toBeNull();
+			});
+
+			it('the older landing does not end the newer one: a roll.resolved meanwhile is still caught', async () => {
+				const ctx = makeCtx();
+				getRollMock.mockResolvedValue(detail(resolvedRoll(), { dice: [makeDie(1)] }));
+				const a = resync(ctx);
+				const b = resync(ctx);
+
+				a.land(withRoll());
+				await a.done;
+				// B is still out, so the resolution is installed rather than dropped...
+				handleWSMessage(ctx, resolved(resolvedRoll(), [makeDie(1)]));
+				expect(ctx.activeRoll?.outcome).toBe('make');
+				// ...and B's snapshot, read before it, does not put the roll back.
+				b.land(withRoll());
+				await b.done;
+				await flush();
+
+				expect(ctx.activeRoll?.outcome).toBe('make');
+			});
+		});
+
+		// Two lines of the fix that no case above reaches on its own.
+		it('after one roll event has superseded the resync, a second does not fetch again', async () => {
+			const ctx = makeCtx({ activeRoll: makeRoll(), activeRollDice: [makeDie(1)] } as unknown as Partial<WSContext>);
+			getRollMock.mockResolvedValueOnce(detail(makeRoll(), { dice: [makeDie(1), makeDie(2)] }));
+			const read = resync(ctx);
+
+			handleWSMessage(ctx, leverage(2));
+			await flush(); // the fetch it started lands
+			handleWSMessage(ctx, leverage(3));
+			read.land(detail(makeRoll(), { dice: [makeDie(1)] }));
+			await read.done;
+
+			expect(getRollMock).toHaveBeenCalledTimes(1);
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2, 3]);
+		});
+
+		it('after a resync has applied, a roll event does not fetch again for a fetch it dropped', async () => {
+			const ctx = makeCtx();
+			const landFetch = holdFirstFetch(detail(makeRoll(), { dice: [makeDie(1)] }));
+			handleWSMessage(ctx, created(makeRoll()));
+			expect(getRollMock).toHaveBeenCalledTimes(1);
+
+			const read = resync(ctx);
+			read.land(detail(makeRoll(), { dice: [makeDie(1)] }));
+			await read.done;
+			// The fetch the resync dropped is not "still out" to this event.
+			handleWSMessage(ctx, leverage(2));
+			landFetch(detail(makeRoll(), { dice: [] }));
+			await flush();
+
+			expect(getRollMock).toHaveBeenCalledTimes(1);
+			expect(ctx.activeRollDice.map(d => d.id)).toEqual([1, 2]);
+		});
 	});
 });
