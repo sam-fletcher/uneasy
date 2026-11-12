@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- ChecklistRow.svelte
   The house checklist row: one 44px line that names something a player could
   (or must) do, plus an optional body underneath it.
@@ -9,7 +8,7 @@
   adr/LOBBY_AND_CHECKLIST_PLAN.md D2.
 
   WHAT THE ROW STATES. Three things, in order: a leading GLYPH (what kind of
-  item this is), the TITLE + optional subtitle, and a right-hand STATE chip
+  item this is), the TITLE + optional subtitle, and a right-hand STATE word
   (where this item stands). The affordance at the far right says what tapping
   does, and that is a house rule (D1, docs/STYLE_GUIDE.md "Layout &
   interaction"):
@@ -21,12 +20,24 @@
   A caret over something that opens a sheet is a lie, so pick by what happens,
   never by how important the row is.
 
+  NO BOX. The row is the house tappable row (tapRow.css): a 44px line with a
+  thin rule under it. Its caret or arrow is the only thing that says it can be
+  pressed; there is no border or fill. The state is a small uppercase word in
+  its colour (statusText.css .status-word), not a chip, and a tone colours the
+  title and the state word, never a border or a wash. A row that is merely
+  one of several things you could do stays quiet; only a deadline or a risk
+  takes a colour.
+
   THE BODY IS THE CALLER'S MARKUP, so it carries the CALLER's scope class, not
   this component's — anything styled here has to reach it through :global().
   Keep that to structure (flow, spacing); let each caller style its own prose.
 -->
 <script lang="ts">
+	import '$lib/components/shared/tapRow.css';
+	import '$lib/components/shared/statusText.css';
 	import type { Snippet } from 'svelte';
+	import HelpGlyph from '$lib/components/HelpGlyph.svelte';
+	import RowMark from './RowMark.svelte';
 
 	interface Props {
 		/** Phrased as the thing to do ("Turn on notifications"), not a noun. */
@@ -34,13 +45,15 @@
 		/** One short line under the title. Optional — most rows don't need it. */
 		subtitle?: string;
 		/**
-		 * Right-hand state chip, e.g. { text: 'off', tone: 'off' }. Tones:
-		 * neutral = a plain fact ("4 set") · on = confirmed good (green) ·
-		 * off = a switch worth turning on (orange, the warning family) ·
-		 * warn = a deadline (gold, "the game needs you") · risk = red.
+		 * Right-hand state word, e.g. { text: 'off', tone: 'off' }: small
+		 * uppercase text in a colour, not a chip. Tones:
+		 * neutral = a plain fact ("4 set", secondary) · on = confirmed good
+		 * (green) · off = a switch worth turning on, and warn = a deadline
+		 * (both orange, the warning family, so a warn row's title and its state
+		 * word are one colour) · risk = red.
 		 */
 		state?: { text: string; tone?: 'neutral' | 'on' | 'off' | 'warn' | 'risk' };
-		/** Row emphasis (border + fill). */
+		/** Row emphasis: colours the title (and the glyph, for done). Never a border or a fill. */
 		tone?: 'default' | 'primary' | 'done' | 'blocker' | 'warn' | 'risk';
 		/** Leading mark: a Snippet for a custom icon, or one of the house marks. */
 		glyph?: Snippet | 'help' | 'tick' | 'circle';
@@ -88,6 +101,10 @@
 	// never be collapsible (R4: a hidden blocker is a stuck table), and a
 	// navigate row has nothing to hold.
 	const bodyShown = $derived(children != null && (action !== 'expand' || open));
+
+	// The state word's colour comes from the shared status-word recipe, so a
+	// checklist state and a record line's "Mar" are the same kind of text.
+	const STATE_CLASS = { neutral: '', on: 'success', off: 'warning', warn: 'warning', risk: 'danger' };
 </script>
 
 {#snippet headContent()}
@@ -96,11 +113,15 @@
 			{#if typeof glyph === 'function'}
 				{@render glyph()}
 			{:else if glyph === 'help'}
-				?
+				<HelpGlyph size={16} />
 			{:else if glyph === 'tick'}
-				✓
+				<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M5 12.5l4.5 4.5L19 7.5" />
+				</svg>
 			{:else}
-				○
+				<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+					<circle cx="12" cy="12" r="8" />
+				</svg>
 			{/if}
 		</span>
 	{/if}
@@ -109,33 +130,36 @@
 		{#if subtitle}<span class="row-subtitle">{subtitle}</span>{/if}
 	</span>
 	{#if stateChip}
-		<span class="row-state" data-tone={stateChip.tone ?? 'neutral'}>{stateChip.text}</span>
+		<span
+			class="row-state status-word {STATE_CLASS[stateChip.tone ?? 'neutral']}"
+			data-tone={stateChip.tone ?? 'neutral'}>{stateChip.text}</span
+		>
 	{/if}
 {/snippet}
 
 <!-- Two flags, not one: `open` is the expander's state and turns the caret;
-     `has-body` is whether anything is rendered under the head, and closes the
-     seam between the two boxes. A blocker (action='none' + a body) is never
-     "open" but always needs the seam gone. -->
+     `has-body` is whether anything is rendered under the head, and moves the
+     closing rule from under the head to under the body. A blocker
+     (action='none' + a body) is never "open" but always needs that. -->
 <section class="checklist-row" class:open class:has-body={bodyShown} data-tone={tone}>
 	{#if action === 'expand'}
 		<button
 			type="button"
-			class="row-head"
+			class="tap-row row-head"
 			aria-expanded={open}
 			aria-controls={open ? id : undefined}
 			onclick={() => (open = !open)}
 		>
 			{@render headContent()}
-			<span class="row-caret" aria-hidden="true">▾</span>
+			<RowMark kind="caret" {open} />
 		</button>
 	{:else if action === 'navigate'}
-		<button type="button" class="row-head" onclick={onSelect}>
+		<button type="button" class="tap-row row-head" onclick={onSelect}>
 			{@render headContent()}
-			<span class="row-arrow" aria-hidden="true">›</span>
+			<RowMark kind="arrow" />
 		</button>
 	{:else}
-		<div class="row-head">
+		<div class="tap-row row-head">
 			{@render headContent()}
 		</div>
 	{/if}
@@ -152,186 +176,62 @@
 		flex-direction: column;
 		min-width: 0;
 	}
-	.row-head {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		width: 100%;
-		/* Touch minimum (docs/STYLE_GUIDE.md). Rows are the primary control on
-		   both screens that use them, so this is a floor, never a target. */
-		min-height: 44px;
-		padding: 0.5rem 0.7rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-	}
-	/* Only the two interactive variants are buttons, so the pointer and the
-	   hover/focus affordances ride on the element type rather than a class. */
-	button.row-head { cursor: pointer; }
-	button.row-head:hover { border-color: var(--color-border-strong); }
-	button.row-head:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
-	}
-	/* A row and its body are one box: drop the seam between them. */
-	.checklist-row.has-body .row-head {
-		border-bottom-color: transparent;
-		border-bottom-left-radius: 0;
-		border-bottom-right-radius: 0;
-	}
+	/* .tap-row (tapRow.css) owns the 44px line, the rule under it and the
+	   hover and focus states. */
+	/* A row and its body share one closing rule: it moves from under the head
+	   to under the body, so the two read as one entry. */
+	.checklist-row.has-body .row-head { border-bottom-color: transparent; }
 
 	/* ── Row tones ────────────────────────────────────────────────────────
-	   Borders and (for the two soft nudges) a 12% wash, carried over from the
-	   closing stage's .check-card so the rebuilt rows look like the cards they
-	   replace. Gold arrives as the LABEL, never as a fill (chat-bar ruling,
-	   2026-07-25): a gold surface keeps its one meaning, "the game needs you". */
-	.checklist-row[data-tone='primary'] .row-head {
-		border-color: var(--color-border-warm-antique);
-	}
+	   A tone colours TEXT, never a border or a wash (a notice is a mark and
+	   coloured text, and gold is a label, not a fill). The words in the state
+	   say the same thing, so colour is never the only signal. */
 	.checklist-row[data-tone='primary'] .row-title,
 	.checklist-row[data-tone='blocker'] .row-title {
 		color: var(--color-accent);
 	}
-	.checklist-row[data-tone='blocker'] .row-head {
-		border-color: var(--color-border-strong);
-	}
-	.checklist-row[data-tone='done'] .row-head {
-		border-color: var(--color-chip-green-border);
-	}
 	.checklist-row[data-tone='done'] .row-glyph { color: var(--color-success); }
-	/* The deadline row takes the BRIGHT semantic for its stroke while keeping
-	   the quiet trio for its wash. That is the chip-trio rule, not a one-off:
-	   quiet badges wear the trio as-is, interactive things may swap in the
-	   bright semantic for border+text (docs/STYLE_GUIDE.md "Chip trios") —
-	   and this row is a navigate row, it takes you to the tones sheet. The
-	   same swap already exists on `.plan-card.finale-bonus:hover`.
-	   The wash deliberately still mixes from --color-warning-border, so the
-	   fill is unchanged: it was never the muddy one. What made it read brown
-	   was the gold slab that used to sit under it at ΔE 4.8 (see
-	   TableRoster.svelte); with that gone, a brighter stroke is all it needed
-	   (owner, 2026-08-16). */
-	.checklist-row[data-tone='warn'] .row-head {
-		border-color: var(--color-warning);
-		background: color-mix(in srgb, var(--color-warning-border) 12%, var(--color-surface-sunken));
-	}
-	.checklist-row[data-tone='risk'] .row-head {
-		border-color: var(--color-danger-muted);
-		background: color-mix(in srgb, var(--color-danger-muted) 12%, var(--color-surface-sunken));
-	}
+	.checklist-row[data-tone='warn'] .row-title { color: var(--color-warning); }
+	.checklist-row[data-tone='risk'] .row-title { color: var(--color-danger); }
 
 	/* ── Pieces ───────────────────────────────────────────────────────────── */
 	.row-glyph {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 18px;
-		height: 18px;
-		color: var(--color-text-muted);
-		font-size: 0.95rem;
+		width: 16px;
+		height: 16px;
+		color: var(--color-text-secondary);
 		flex: none;
 	}
-	/* No line-height here on purpose: the flex box already centres the mark,
-	   and setting one shifts the "?" a fraction against the frame this row
-	   inherited from HelpDisclosure. Measured, not guessed. */
 	/* The circled "?" — HelpDisclosure's mark, and the reason this row exists. */
-	.row-glyph.help {
-		border-radius: 50%;
-		border: 1px solid var(--color-accent);
-		color: var(--color-accent);
-		font-size: 0.7rem;
-	}
+	.row-glyph.help { color: var(--color-accent); }
 	.row-text {
 		flex: 1;
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
+		gap: var(--space-1);
 	}
 	.row-title {
-		color: var(--color-text-secondary);
-		font-size: 0.88rem;
+		color: var(--color-text);
+		font-size: var(--text-body);
 		min-width: 0;
 	}
 	.row-subtitle {
-		color: var(--color-text-faint);
-		font-size: 0.78rem;
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
 		line-height: 1.35;
 	}
-	.row-state {
-		flex: none;
-		padding: 0.1rem 0.4rem;
-		border-radius: 999px;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-2);
-		color: var(--color-text-muted);
-		font-size: 0.72rem;
-		white-space: nowrap;
-	}
-	.row-state[data-tone='on'] {
-		background: var(--color-chip-green-bg);
-		border-color: var(--color-chip-green-border);
-		color: var(--color-success);
-	}
-	.row-state[data-tone='off'] {
-		background: var(--color-warning-bg);
-		border-color: var(--color-warning-border);
-		color: var(--color-warning);
-	}
-	.row-state[data-tone='warn'] {
-		background: var(--color-chip-gold-bg);
-		border-color: var(--color-chip-gold-border);
-		color: var(--color-chip-gold-text);
-	}
-	.row-state[data-tone='risk'] {
-		background: var(--color-chip-red-bg);
-		border-color: var(--color-chip-red-border);
-		color: var(--color-chip-red-text);
-	}
-
-	/* House marks: a filled triangle expands, a chevron travels. The app has
-	   no other chevron on purpose — the two must never be mistaken for each
-	   other (D1). */
-	.row-caret {
-		flex: none;
-		color: var(--color-accent);
-		font-size: 0.75rem;
-		transform: rotate(-90deg);
-		transition: transform 0.15s ease;
-	}
-	.checklist-row.open .row-caret { transform: rotate(0); }
-	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the caret still
-	   turns — its direction is the open/closed state — it just snaps. */
-	@media (prefers-reduced-motion: reduce) {
-		.row-caret { transition: none; }
-	}
-	/* Larger than the caret on purpose: a thin stroke and a solid triangle at
-	   the same size read as the same smudge on a phone, and telling the two
-	   apart is the whole point of D1. */
-	.row-arrow {
-		flex: none;
-		color: var(--color-accent);
-		font-size: 1.2rem;
-		line-height: 1;
-	}
+	.row-state { flex: none; }
 
 	.row-body {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
-		border: 1px solid var(--color-border);
-		border-top: none;
-		border-bottom-left-radius: 8px;
-		border-bottom-right-radius: 8px;
-		padding: 0.6rem 0.7rem;
+		gap: var(--space-2);
+		border-bottom: 1px solid var(--color-border);
+		padding: var(--space-2) 0 var(--space-3);
 	}
-	.checklist-row[data-tone='primary'] .row-body { border-color: var(--color-border-warm-antique); }
-	.checklist-row[data-tone='blocker'] .row-body { border-color: var(--color-border-strong); }
-	.checklist-row[data-tone='done'] .row-body { border-color: var(--color-chip-green-border); }
-	.checklist-row[data-tone='warn'] .row-body { border-color: var(--color-warning); }
-	.checklist-row[data-tone='risk'] .row-body { border-color: var(--color-danger-muted); }
 	/* The one piece of the caller's prose this file does reach: the gap above
 	   owns the vertical rhythm, so a stray browser margin on a paragraph the
 	   caller dropped straight in would double it.

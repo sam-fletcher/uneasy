@@ -5,6 +5,7 @@ import { createRawSnippet } from 'svelte';
 import { render } from 'svelte/server';
 import ChecklistRow from './ChecklistRow.svelte';
 import HelpDisclosure from './HelpDisclosure.svelte';
+import { declarations, styleOf } from './cssTestKit';
 
 /*
  * ChecklistRow's contract is its markup: which element the head is, and what
@@ -55,8 +56,8 @@ describe('ChecklistRow — action modes', () => {
 		expect(html).not.toContain('aria-expanded');
 		expect(html).not.toContain('aria-controls');
 		// D1: an arrow travels, a caret expands. Never both.
-		expect(html).toContain('›');
-		expect(html).not.toContain('▾');
+		expect(html).toContain('data-kind="arrow"');
+		expect(html).not.toContain('data-kind="caret"');
 	});
 
 	it("action='none' is not interactive, and shows its body unconditionally", () => {
@@ -87,9 +88,15 @@ describe('ChecklistRow — row furniture', () => {
 	});
 
 	it('renders the house glyphs', () => {
-		expect(render(ChecklistRow, { props: { title: 'x', glyph: 'tick' } }).body).toContain('✓');
-		expect(render(ChecklistRow, { props: { title: 'x', glyph: 'circle' } }).body).toContain('○');
-		expect(render(ChecklistRow, { props: { title: 'x', glyph: 'help' } }).body).toContain('?');
+		// Drawn marks, not typed characters (✓ ○ ? came from a different font on
+		// every platform): each is an svg inside the glyph slot.
+		const slot = (glyph: 'tick' | 'circle' | 'help') =>
+			render(ChecklistRow, { props: { title: 'x', glyph } }).body;
+		expect(slot('tick')).toContain('M5 12.5l4.5 4.5L19 7.5');
+		expect(slot('circle')).toContain('<circle');
+		// The help mark is HelpGlyph's circled question mark.
+		expect(slot('help')).toContain('M9.5 9a2.5 2.5 0 0 1 4.5 1.5');
+		expect(slot('tick')).not.toContain('✓');
 	});
 });
 
@@ -99,8 +106,8 @@ describe('HelpDisclosure — a ChecklistRow specialisation', () => {
 			props: { title: 'How the prologue works', id: 'prologue-help-body', children: body() },
 		});
 		expect(html).toContain('aria-expanded="false"');
-		expect(html).toContain('▾');
-		expect(html).toContain('?');
+		expect(html).toContain('data-kind="caret"');
+		expect(html).toContain('M9.5 9a2.5 2.5 0 0 1 4.5 1.5');
 		expect(html).not.toContain('body text');
 	});
 
@@ -121,13 +128,58 @@ describe('HelpDisclosure — a ChecklistRow specialisation', () => {
 });
 
 describe('ChecklistRow — house rules that are easy to lose', () => {
+	// The row's furniture moved into shared recipes (the line in tapRow.css,
+	// the caret in RowMark.svelte), so the rules are checked where they live.
+	const tapRow = readFileSync(join(__dirname, 'tapRow.css'), 'utf8');
+	const rowMark = readFileSync(join(__dirname, 'RowMark.svelte'), 'utf8');
 	const source = readFileSync(join(__dirname, 'ChecklistRow.svelte'), 'utf8');
 
-	it('keeps the 44px touch floor on the head', () => {
-		expect(source).toMatch(/min-height:\s*44px/);
+	it('keeps the touch floor on the head', () => {
+		expect(source).toContain("'$lib/components/shared/tapRow.css'");
+		expect(source).toMatch(/class="tap-row row-head"/);
+		expect(tapRow).toMatch(/min-height:\s*var\(--size-tap\)/);
 	});
 
 	it('guards the caret transition for reduced motion', () => {
-		expect(source).toMatch(/prefers-reduced-motion:\s*reduce/);
+		expect(rowMark).toMatch(/prefers-reduced-motion:\s*reduce/);
+	});
+
+	it('draws no box: a row is separated by a rule, not a border, a fill or a shadow', () => {
+		// The box was the old look; a tone colours text now. A regression here
+		// would quietly bring the nested boxes back. Read with comments stripped,
+		// so prose that names a property neither fails this nor hides a real one.
+		const decls = declarations(styleOf(source));
+		const boxy = decls.filter(
+			(d) =>
+				/^(background|box-shadow|outline|border-radius)/.test(d.prop) ||
+				// Only the rule beneath a row (or beneath its body) may be drawn.
+				(/^border/.test(d.prop) && !/^border-bottom(-color)?$/.test(d.prop))
+		);
+		expect(boxy).toEqual([]);
+	});
+
+	it('a tone colours text and never a border: the closing rule stays the neutral divider', () => {
+		const decls = declarations(styleOf(source));
+		const toned = decls.filter((d) => d.selector.includes('data-tone'));
+		expect(toned.length).toBeGreaterThan(0);
+		for (const d of toned) expect(d.prop, d.selector).toBe('color');
+	});
+
+	it('a row has one mark size: the leading glyph slot matches the end mark', () => {
+		const slot = declarations(styleOf(source)).filter((d) => d.selector === '.row-glyph');
+		const mark = declarations(styleOf(readFileSync(join(__dirname, 'RowMark.svelte'), 'utf8'))).filter(
+			(d) => d.selector === '.row-mark'
+		);
+		const val = (ds: { prop: string; value: string }[], p: string) => ds.find((d) => d.prop === p)?.value;
+		expect(val(slot, 'width')).toBe(val(mark, 'width'));
+		expect(val(slot, 'height')).toBe(val(mark, 'height'));
+	});
+
+	it('a deadline row is one colour: its title and its state word are both the warning colour', () => {
+		const body = render(ChecklistRow, {
+			props: { title: 'x', tone: 'warn', state: { text: 'last chance', tone: 'warn' } },
+		}).body;
+		expect(body).toMatch(/class="row-state status-word warning/);
+		expect(source).toMatch(/\.checklist-row\[data-tone='warn'\] \.row-title \{ color: var\(--color-warning\); \}/);
 	});
 });

@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- TableRoster.svelte
   Who is at this table, as a list of seats.
 
@@ -7,14 +6,23 @@
   closing stage's ready roster, and its retinue tallies. The row vocabulary is
   borrowed from the profile page's table-card pills so all four surfaces agree:
 
-    • colour dot     — the player's identity colour (playerColor)
-    • name, or You   — the current player reads "You", never their own name.
-                       Same convention as WaitingOnBar and the header chips;
-                       a roster you can't find yourself in is the finding this
-                       component exists to fix.
-    • gold frame     — the game is waiting on them. The same set that rings the
-                       header chips, so the two can never disagree, and now the
-                       same TREATMENT as well (see .seat.waiting below).
+    • shape          — the player's identity: their seat's shape in their
+                       colour (PlayerShape), which replaced the old colour dot
+                       so colour is never the only signal.
+    • name, or You   — the current player reads "You", never their own name,
+                       in the player's colour. Same convention as the header
+                       chips; a roster you can't find yourself in is the
+                       finding this component exists to fix.
+    • clock          — the game is waiting on them (ClockMark): bright gold on
+                       your own row, secondary on anyone else's. The same set
+                       that marks the header chips, so the two can never
+                       disagree, and now the same TREATMENT as well. It
+                       replaced a gold border (and, on your row, a glow).
+
+  There is no box. An inert seat is a plain line; a tappable one is a button
+  row marked by its arrow (it opens a sheet elsewhere), with a thin rule
+  between neighbours. A player's name and shape are what the row IS, so
+  nothing wears a pill.
 
   Presence (`members`) is still accepted and still announced to a screen
   reader, but it is no longer DRAWN (owner, 2026-08-16). It was a green ring,
@@ -32,15 +40,19 @@
   sentence where the fact has a consequence ("alice will start the game once
   everyone has arrived", "If the vote ties, alice's side wins"), which is
   worth more than a title the app never defines anywhere. Whoever the lobby is
-  waiting on already wears the gold fill, which says the useful half.
+  waiting on already wears the clock, which says the useful half.
 
   The caller owns the heading and the count ("3 seated · room for 2 more" vs
   "1 of 3 ready"), the per-row trailing content, and the lobby's invite chair.
 -->
 <script lang="ts">
+	import '$lib/components/shared/tapRow.css';
 	import type { Snippet } from 'svelte';
 	import type { Player, PresenceMember } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
+	import ClockMark from './ClockMark.svelte';
+	import PlayerShape from './PlayerShape.svelte';
+	import RowMark from './RowMark.svelte';
 
 	interface Props {
 		players: Player[];
@@ -80,7 +92,7 @@
 		new Set((members ?? []).filter((m) => m.online).map((m) => m.id))
 	);
 
-	// The gold frame is pure colour, so it needs words somewhere. A tappable
+	// The clock is a picture, so it needs words somewhere. A tappable
 	// row spends them on its aria-label (which replaces the row's text for a
 	// screen reader); a plain row appends them visually-hidden, so the reading
 	// order stays "You, online".
@@ -101,9 +113,12 @@
 	}
 </script>
 
-{#snippet seatBody(p: Player)}
-	<span class="seat-dot" aria-hidden="true"></span>
+{#snippet seatBody(p: Player, waiting: boolean)}
+	<PlayerShape player={p} />
 	<span class="seat-name">{p.id === currentPlayerID ? 'You' : p.display_name}</span>
+	{#if waiting}
+		<ClockMark tone={p.id === currentPlayerID ? 'you' : 'other'} />
+	{/if}
 	{#if trailing}
 		<span class="seat-trailing">{@render trailing(p)}</span>
 	{/if}
@@ -117,23 +132,22 @@
 			{#if onSelect}
 				<button
 					type="button"
-					class="seat tappable"
-					class:waiting
+					class="seat tap-row"
 					class:mine={p.id === currentPlayerID}
 					style:--seat-color={playerColor(p)}
 					aria-label={seatLabel(p, online, waiting)}
 					onclick={() => onSelect(p.id)}
 				>
-					{@render seatBody(p)}
+					{@render seatBody(p, waiting)}
+					<RowMark kind="arrow" />
 				</button>
 			{:else}
 				<div
 					class="seat"
-					class:waiting
 					class:mine={p.id === currentPlayerID}
 					style:--seat-color={playerColor(p)}
 				>
-					{@render seatBody(p)}
+					{@render seatBody(p, waiting)}
 					<span class="sr-state">{stateWords(p, online, waiting)}</span>
 				</div>
 			{/if}
@@ -151,78 +165,38 @@
 		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
 	}
+	/* A seat is a plain line, 44px at least whether or not it is tappable: a
+	   roster of 44px rows and a roster of 28px rows read as different objects.
+	   A tappable one also carries .tap-row (tapRow.css), which gives it the
+	   rule beneath and its hover and focus; an inert one draws the same rule
+	   here so the two kinds sit in one list. */
 	.seat {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: var(--space-2);
 		width: 100%;
-		/* Touch minimum, whether or not the row is tappable: a roster of
-		   44px rows and a roster of 28px rows read as different objects. */
-		min-height: 44px;
-		padding: 0.35rem 0.6rem;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: 999px;
+		min-height: var(--size-tap);
+		padding: var(--space-1) 0;
+		border-bottom: 1px solid var(--color-border);
 		color: inherit;
 		font: inherit;
 		text-align: left;
 	}
-	/* Waiting-on = a gold FRAME, never a fill — the chat-bar ruling (gold
-	   arrives as the label/frame) applied to the one place that still broke
-	   it. The fill this replaces was `--color-chip-gold-bg`, the app's largest
-	   gold slab, and it measured ΔE 4.8 from the prologue closing stage's
-	   orange "last chance" row: under ADR-009's own ΔE 6 near-duplicate bar,
-	   which is exactly why the two read as the same brown (owner, 2026-08-16).
-	   You cannot retune your way out of that — every orange fill in the ramp
-	   lands ΔE 3–5 from gold-850, because two warm hues as dark low-chroma
-	   washes over near-black ARE the same brown. One of them had to stop
-	   being a fill, and the ruling says which.
-
-	   Two tiers, one hue, lifted verbatim from the header chips
-	   (routes/table/[id]/+page.svelte, `.member.waiting`): a plain gold border
-	   for another player (information), border + glow for yourself (act now).
-	   The strip and the roster now say the same thing the same way, which is
-	   the point — they already read from the same waiting set. */
-	.seat.waiting { border-color: var(--color-accent); }
-	.seat.waiting.mine {
-		box-shadow:
-			0 0 0 1px var(--color-accent),
-			0 0 8px color-mix(in srgb, var(--color-accent) 45%, transparent);
-	}
-	.seat.tappable { cursor: pointer; }
-	.seat.tappable:hover { border-color: var(--color-border-strong); }
-	/* Hover is a plain-class selector too, so without this a tappable waiting
-	   seat would lose its gold border under the finger — which, now that the
-	   border is the ONLY signal, would erase it. No caller combines the two
-	   today; this keeps the next one from finding out the hard way. */
-	.seat.waiting.tappable:hover { border-color: var(--color-accent-hover); }
-	.seat.tappable:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
-	}
-	.seat-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--seat-color, var(--color-text-muted));
-		flex-shrink: 0;
-	}
 	.seat-name {
-		color: var(--color-text);
-		font-size: 0.9rem;
+		color: var(--seat-color, var(--color-text));
+		font-size: var(--text-small);
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
 	}
 	/* Same recipe as TrackBoard's .sr-rank: off-screen for the eye, in the
-	   reading order for a screen reader. */
+	   reading order for a screen reader. Absolutely positioned, so it takes no
+	   room in the line and needs no negative margin to hide. */
 	.sr-state {
 		position: absolute;
 		width: 1px;
 		height: 1px;
-		margin: -1px;
 		padding: 0;
 		overflow: hidden;
 		clip-path: inset(50%);
@@ -233,7 +207,7 @@
 		margin-left: auto;
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: var(--space-2);
 		min-width: 0;
 	}
 	.invite { display: flex; }
