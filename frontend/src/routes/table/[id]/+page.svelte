@@ -27,7 +27,8 @@
 	import { createConnection, type WSMessage } from '$lib/ws';
 	import { readTableSnapshot, writeTableSnapshot, type TableSnapshot } from '$lib/pageCache';
 	import { TEXT_LIMITS } from '$lib/textLimits';
-	import { handleWSMessage as runWSMessage, type WSContext } from './ws-handlers';
+	import { logBoundaryError } from '$lib/boundaryError';
+	import { handleWSMessage as runWSMessage, syncActiveRoll, type WSContext } from './ws-handlers';
 	import {
 		reconnectResync, resolveAnchor, enterHistoryMode, type ChatFeedContext,
 	} from '$lib/chatFeed';
@@ -588,9 +589,11 @@
 			// Public record, plans, active roll, and active scene only matter
 			// in main_event.
 			if (data.game.phase === 'main_event' && data.game.current_row > 0) {
-				const [recordData, rollData, plansData, tokensData, sceneData, bankedData] = await Promise.all([
+				const [recordData, , plansData, tokensData, sceneData, bankedData] = await Promise.all([
 					getFullRecord(gameID),
-					getActiveRollForGame(gameID),
+					// Installs the roll itself, guarded against the live roll events
+					// and fetches it races — see syncActiveRoll.
+					syncActiveRoll(wsCtx, getActiveRollForGame(gameID)),
 					listPlans(gameID),
 					listPlanTokens(gameID).catch(() => ({ tokens: [] as PlanToken[] })),
 					getActiveScene(gameID).catch(() => ({ scene: null, peers: [] as ScenePeerView[] })),
@@ -603,20 +606,6 @@
 				activeScenePeers = sceneData.peers;
 				rowState = data.row_state ?? null;
 				bankedDice = bankedData.dice;
-				if (rollData.roll) {
-					activeRoll = rollData.roll;
-					activeRollDice = rollData.dice;
-					activeRollVotes = rollData.votes;
-					activeRollParticipants = rollData.participants;
-				} else {
-					// No active roll server-side (none open, and any plan-linked
-					// roll's plan has finished resolving). Clear any stale roll so a
-					// resync after a resolution doesn't leave the panel up.
-					activeRoll = null;
-					activeRollDice = [];
-					activeRollVotes = [];
-					activeRollParticipants = [];
-				}
 			} else if (data.game.phase === 'shake_up' || data.game.phase === 'ended') {
 				// The endgame has no plans/scene, just the current shake-up roll
 				// (getActiveRollForGame is shake-up-aware) and the now-static Public
@@ -628,21 +617,10 @@
 				// independent, and serialising them cost an extra ~390ms hop in the
 				// endgame. Each stays individually tolerated, so one failing still
 				// leaves the other's result on screen.
-				const [rollData, endRecord] = await Promise.all([
-					getActiveRollForGame(gameID).catch(() => null), /* tolerate; RollCreated/RollResolved WS events keep this in sync */
+				const [, endRecord] = await Promise.all([
+					syncActiveRoll(wsCtx, getActiveRollForGame(gameID).catch(() => null), { votes: false }), /* tolerate; RollCreated/RollResolved WS events keep this in sync */
 					getFullRecord(gameID).catch(() => null), /* tolerate; the sidebar just shows what's already loaded */
 				]);
-				if (rollData) {
-					if (rollData.roll) {
-						activeRoll = rollData.roll;
-						activeRollDice = rollData.dice;
-						activeRollParticipants = rollData.participants;
-					} else {
-						activeRoll = null;
-						activeRollDice = [];
-						activeRollParticipants = [];
-					}
-				}
 				if (endRecord) recordRows = endRecord.rows;
 			}
 
@@ -1000,7 +978,7 @@
 		read the table and reach the reload. `reset` re-renders: worth offering
 		first, since a bad payload is usually repaired by the next resync.
 	-->
-	<svelte:boundary>
+	<svelte:boundary onerror={(error) => logBoundaryError(`table phase view (${game?.phase ?? 'no game'})`, error)}>
 		{#if loading}
 			<div class="center-message">Loading…</div>
 

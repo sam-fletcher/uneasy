@@ -9,7 +9,7 @@ import type {
 	Game, Player, PresenceMember, ToneTopic, Ranking, Asset, Marginalium,
 	Law, Rumor, Secret, ChatPost, SceneEntry, RecordRow, RowState, Scene,
 	ScenePeerView, SceneSetupDraft, PreparePlanDraft, DiceRoll, DiceRollDie,
-	VoteView, RollParticipant, BankedDie, Plan, PlanToken,
+	VoteView, RollParticipant, BankedDie, Plan, PlanToken, ActiveRollPayload,
 } from '$lib/api';
 import { appendLivePost, type ChatFeedContext } from '$lib/chatFeed';
 import { acceptToneEcho, type ToneWrite } from '$lib/toneWrites';
@@ -401,7 +401,9 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			// fetch is still out and nothing is on screen for it yet. The event
 			// carries the resolved roll and its dice, so install them now rather
 			// than dropping the event and waiting for a fetch that predates it.
-			if (onScreen || rollFetchInFlight(ctx, resolvedRoll.id)) {
+			// A page resync still out is the same case: its snapshot may predate
+			// this resolution, and the roll may not be on screen for it to patch.
+			if (onScreen || rollFetchInFlight(ctx, resolvedRoll.id) || rollSyncPending(ctx)) {
 				if (!onScreen) {
 					// Whatever roll was still showing is not this one: its
 					// participants and ballot must not sit under the new roll.
@@ -752,17 +754,39 @@ function refreshPlan(ctx: WSContext, planID: number) {
 // until a reload. A fetch now applies only while it still holds the latest
 // sequence number. Anything that would have patched a roll that is still
 // loading takes a new number (dropping the stale fetch) and fetches again.
+//
+// The page's own resync (loadGameState, on load and on every reconnect) reads
+// the active roll too, and is a third writer of the same four fields. It used
+// to write them unguarded, which went wrong both ways: a snapshot read before
+// a roll resolved could land after roll.resolved and put the unresolved roll
+// back, and a snapshot that read "no roll" (the plan had finished) could be
+// undone by a roll fetch still out for that roll. So the resync draws from this
+// counter as well (syncActiveRoll): its answer applies only if no roll event or
+// fetch took a newer number while it was out, and an answer that does apply
+// takes a number itself, which drops any fetch still out. Resyncs also queue
+// behind each other by generation: a reconnect can start one while another is
+// still out, and only the newest answer may apply, however they land.
+// While the newest resync is out, a roll event treats it like an in-flight
+// fetch of the roll on screen: it supersedes it with a fetch, so the resync's
+// older answer is not the last word and the roll still ends up complete.
 interface RollFetchState {
+	/** Every roll fetch, and every resync answer that applies, takes the next. */
 	seq: number;
 	/** The roll whose fetch is in flight (as announced, or as on screen), or
 	 *  null once that fetch has landed or been superseded. */
 	inFlight: DiceRoll | null;
+	/** Taken by each page resync as it starts, so a later one supersedes an
+	 *  earlier one. Separate from seq: a resync that fails must not cost a
+	 *  fetch still out its number. */
+	resyncGen: number;
+	/** The newest resync is still out: no answer, failure or newer number yet. */
+	resyncPending: boolean;
 }
 const rollFetchStates = new WeakMap<WSContext, RollFetchState>();
 function rollFetchState(ctx: WSContext): RollFetchState {
 	let state = rollFetchStates.get(ctx);
 	if (!state) {
-		state = { seq: 0, inFlight: null };
+		state = { seq: 0, inFlight: null, resyncGen: 0, resyncPending: false };
 		rollFetchStates.set(ctx, state);
 	}
 	return state;
@@ -773,6 +797,75 @@ function rollFetchInFlight(ctx: WSContext, rollID: number): boolean {
 	return rollFetchState(ctx).inFlight?.id === rollID;
 }
 
+/** True while the newest page resync is out and nothing newer has taken a number. */
+function rollSyncPending(ctx: WSContext): boolean {
+	return rollFetchState(ctx).resyncPending;
+}
+
+/**
+ * Takes the next number. Any fetch or resync answer that holds an older one is
+ * dropped when it lands, and the resync still out has been outdated, so it is
+ * no longer pending. Every writer of the counter goes through here.
+ */
+function takeNumber(state: RollFetchState): number {
+	state.inFlight = null;
+	state.resyncPending = false;
+	return ++state.seq;
+}
+
+/**
+ * The page's resync of the active roll: awaits `read` and installs the answer
+ * (or clears the roll, when the answer has none), unless it has been
+ * outdated. The ticket is taken before the await, in the caller's own tick, so
+ * an event that arrives while the read is out counts as newer than it:
+ *
+ * - a roll event or fetch took a number since: that one is newer than this
+ *   snapshot, whenever the server read it;
+ * - a later resync started: it owns the answer now (a reconnect can start one
+ *   while another is out, and landing order says nothing about which read is
+ *   newer).
+ *
+ * An answer that applies takes a number itself, which drops a fetch still out;
+ * otherwise a fetch for a roll this answer just cleared would put it straight
+ * back. A read that fails costs nothing: it rejects (a tolerated read passes a
+ * promise that resolves null, which leaves the screen alone), and a fetch
+ * still out is untouched. Shake-up rolls never reach the voting stage, so the
+ * endgame resync passes `votes: false` to leave the ballot as it is.
+ */
+export async function syncActiveRoll(
+	ctx: WSContext,
+	read: Promise<ActiveRollPayload | null>,
+	{ votes = true }: { votes?: boolean } = {},
+): Promise<void> {
+	const state = rollFetchState(ctx);
+	const seq = state.seq;
+	const gen = ++state.resyncGen;
+	state.resyncPending = true;
+	let data: ActiveRollPayload | null;
+	try {
+		data = await read;
+	} finally {
+		// This resync is over, answered or failed; unless a later one has taken
+		// over the flag.
+		if (state.resyncGen === gen) state.resyncPending = false;
+	}
+	if (!data || state.resyncGen !== gen || state.seq !== seq) return;
+	takeNumber(state);
+	if (data.roll) {
+		ctx.activeRoll = data.roll;
+		ctx.activeRollDice = data.dice;
+		if (votes) ctx.activeRollVotes = data.votes;
+		ctx.activeRollParticipants = data.participants;
+	} else {
+		// No active roll server-side (none open, and any plan-linked roll's plan
+		// has finished resolving): clear any stale one.
+		ctx.activeRoll = null;
+		ctx.activeRollDice = [];
+		if (votes) ctx.activeRollVotes = [];
+		ctx.activeRollParticipants = [];
+	}
+}
+
 /**
  * Fetches `roll` and installs the answer, unless something newer has started
  * since. `roll` is also what to show if the fetch fails and the screen is
@@ -780,7 +873,7 @@ function rollFetchInFlight(ctx: WSContext, rollID: number): boolean {
  */
 function fetchRoll(ctx: WSContext, roll: DiceRoll) {
 	const state = rollFetchState(ctx);
-	const seq = ++state.seq;
+	const seq = takeNumber(state);
 	state.inFlight = roll;
 	// True, and clears the in-flight mark, only if this fetch is still the latest.
 	const claimLatest = () => {
@@ -810,21 +903,27 @@ function fetchRoll(ctx: WSContext, roll: DiceRoll) {
  * An event arrived about a roll. If that roll's fetch is still out, the fetch
  * predates the event and the handler's patch may have found no roll to patch,
  * so supersede the fetch with a new one. A no-op once the fetch has landed.
+ *
+ * A page resync still out is the same: its snapshot may predate the event, and
+ * would overwrite what the handler patches in. When the roll is on screen,
+ * supersede the resync too, with a fetch of that roll. A roll that isn't on
+ * screen is left to the resync, which may be the only thing that brings it.
  */
 function supersedeRollFetch(ctx: WSContext, rollID: number) {
-	const inFlight = rollFetchState(ctx).inFlight;
-	if (inFlight?.id === rollID) fetchRoll(ctx, inFlight);
+	const state = rollFetchState(ctx);
+	if (state.inFlight?.id === rollID) fetchRoll(ctx, state.inFlight);
+	else if (state.resyncPending && ctx.activeRoll?.id === rollID) fetchRoll(ctx, ctx.activeRoll);
 }
 
 /**
  * The plan finished and its roll is cleared with it (plan.resolved). A fetch
- * for that roll still in flight would put it straight back, so drop it.
+ * for that roll still in flight would put it straight back, so drop it. So
+ * would a resync still out, if the roll on screen is this plan's.
  */
 function dropRollFetchOfPlan(ctx: WSContext, planID: number) {
 	const state = rollFetchState(ctx);
-	if (state.inFlight?.plan_id === planID) {
-		state.seq++;
-		state.inFlight = null;
+	if (state.inFlight?.plan_id === planID || (state.resyncPending && ctx.activeRoll?.plan_id === planID)) {
+		takeNumber(state);
 	}
 }
 
