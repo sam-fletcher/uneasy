@@ -1,0 +1,48 @@
+/* The tappable row: a line of text a player can press. What says "pressable" is
+   the caret or arrow at its end, and a hairline separates it from the next row.
+   It has no border, fill or rounded corner of its own: boxing every line of a
+   list would turn a screen into a stack of boxes and bury the few things that
+   really are controls.
+
+   Put .tap-row on a <button> (or an <a>) and lay it out: leading content,
+   the text, then <RowMark> at the far end. <ChecklistRow> is this recipe with
+   a title, subtitle, state word and optional body already assembled. Use it
+   rather than rebuilding the row.
+
+   The row is at least 44px tall. A row of two lines (a title and the players
+   under it) grows; keep its padding, not a fixed height. The line below each
+   row is --color-border, so a stack of rows reads as a list.
+
+   Hover and focus are the control states: a hovered row lifts to the raised
+   surface, and a focused row gets the bright gold ring drawn INSIDE it so
+   the list's edges never clip it. */
+
+.tap-row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	width: 100%;
+	min-height: var(--size-tap);
+	padding: var(--space-2) 0;
+	background: none;
+	border: 0;
+	border-bottom: 1px solid var(--color-border);
+	border-radius: 0;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+}
+button.tap-row,
+a.tap-row {
+	cursor: pointer;
+	text-decoration: none;
+}
+button.tap-row:hover,
+a.tap-row:hover {
+	background: var(--color-surface);
+}
+button.tap-row:focus-visible,
+a.tap-row:focus-visible {
+	outline: 2px solid var(--color-you);
+	outline-offset: -2px;
+}

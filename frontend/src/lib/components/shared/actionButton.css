@@ -1,28 +1,66 @@
-/* tokens: not migrated */
-/* Shared action-button look, used across the plans/ system and everywhere
-   else in the app. Import this file as a side effect wherever a component
-   needs .action-btn (directly, or transitively via planPanel.css). */
+/* The house button, used across the plans/ system and everywhere else in the
+   app. Import this file as a side effect wherever a component needs
+   .action-btn (directly, or transitively via planPanel.css).
+
+   THREE LOOKS, ONE JOB EACH.
+     .primary    the MAIN button: deep gold fill, dark ink. The only filled
+                 thing in a step, so a step has one. It is deep gold, not
+                 bright, because bright gold marks only your picks, your focus
+                 and the waiting clock, and the button would otherwise sit
+                 beside the very choice it commits.
+     .secondary  everything else you can press: raised surface, neutral
+                 control border, main text.
+     disabled    greyed out (the raised-twice surface and faint text, no
+                 border): "there is nothing to do here yet". It reads as
+                 unavailable without spending the main button's gold, which is
+                 why Send is grey until you type and Join is grey until you
+                 enter a code. Both `:disabled` and `aria-disabled="true"` look
+                 like this; prefer aria-disabled where a tap should explain why.
+
+   Always 44px tall at least (the touch minimum). The corner is a button's:
+   --radius-control. The label of the main button is weight 600, the one place
+   a button's text is heavier than regular, so dark ink on gold stays legible. */
 
 .action-btn {
-	padding: 0.5rem 1rem;
-	min-height: 44px;
-	border-radius: var(--radius-sm);
-	font-size: 0.9rem;
-	border: none;
+	padding: var(--space-2) var(--space-4);
+	min-height: var(--size-tap);
+	border-radius: var(--radius-control);
+	font-size: var(--text-body);
+	border: 1px solid transparent;
 	cursor: pointer;
 	align-self: flex-start;
 }
 
-.action-btn.primary { background: var(--color-accent); color: var(--color-bg); }
-.action-btn.primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+.action-btn.primary { background: var(--color-accent); color: var(--color-bg); font-weight: 600; }
+.action-btn.primary:hover:not(:disabled):not([aria-disabled='true']) { background: var(--color-accent-hover); }
 
-.action-btn.secondary { background: var(--color-border); color: var(--color-accent); border: 1px solid var(--color-border-warm-strong); }
-.action-btn.secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--color-border) 92%, white); }
+.action-btn.secondary {
+	background: var(--color-surface);
+	color: var(--color-text);
+	border-color: var(--color-border-control);
+}
+.action-btn.secondary:hover:not(:disabled):not([aria-disabled='true']) {
+	border-color: var(--color-border-control-hover);
+}
 
+/* The focus ring is bright gold: it is yours, the keyboard user's. */
+.action-btn:focus-visible {
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
+}
+
+/* Smaller than the touch minimum on purpose and kept only for the few dense
+   spots that already use it; new work should use the 44px button. */
 .action-btn.small {
-	padding: 0.35rem 0.7rem;
-	font-size: 0.83rem;
+	padding: var(--space-1) var(--space-3);
+	font-size: var(--text-small);
 	min-height: 36px;
 }
 
-.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.action-btn:disabled,
+.action-btn[aria-disabled='true'] {
+	background: var(--color-surface-2);
+	border-color: transparent;
+	color: var(--color-text-faint);
+	cursor: not-allowed;
+}

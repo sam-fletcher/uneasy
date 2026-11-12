@@ -1,4 +1,3 @@
-/* tokens: not migrated */
 /* Shared full-screen-dialog backdrop scrim + close button, used by any modal
    (RetinueSheet, ClaimChoiceModal, ...). Import as a side effect wherever a
    component needs .modal-backdrop, .modal-close, or .sheet-title.
@@ -6,7 +5,12 @@
    Only the backdrop and close button are common enough to share — the dialog
    box itself (bottom sheet vs. centered card, sizing, entry animation) stays
    local to each component since those genuinely differ. Layer local classes
-   on top for anything dialog-specific (z-index, position, animation). */
+   on top for anything dialog-specific (z-index, position, animation).
+
+   A SHEET IS A RAISED SURFACE, rounded on its top corners (--radius-sheet),
+   with a soft shadow: it is the one layer that floats above the panes, so it
+   is the only thing in the app allowed to cast one. It has no border. The
+   scrim behind it is the same black wash everywhere. */
 
 .modal-backdrop {
 	position: fixed;
@@ -16,25 +20,25 @@
 
 /* ≥44px on a side — the project's minimum mobile tap target. */
 .modal-close {
-	width: 44px;
-	height: 44px;
+	width: var(--size-tap);
+	height: var(--size-tap);
 	background: none;
-	color: var(--color-text-muted);
-	font-size: 1.5rem;
+	color: var(--color-text-secondary);
+	font-size: var(--text-title);
 	line-height: 1;
 	padding: 0;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	border-radius: var(--radius-sm);
+	border-radius: var(--radius-control);
 }
 .modal-close:hover {
 	color: var(--color-text);
 	background: var(--color-surface-2);
 }
 .modal-close:focus-visible {
-	outline: 2px solid var(--color-accent);
-	outline-offset: 1px;
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
 }
 
 /* Full-screen-sheet variant: below the chat dock (790px) a modal this tall
@@ -52,7 +56,7 @@
 	position: fixed;
 	inset: 0;
 	z-index: 96;
-	background: var(--color-surface-sunken);
+	background: var(--color-surface);
 	display: flex;
 	flex-direction: column;
 }
@@ -60,18 +64,18 @@
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	padding: 1rem 1.25rem;
+	padding: var(--space-4);
 	display: flex;
 	flex-direction: column;
-	gap: 0.85rem;
+	gap: var(--space-3);
 }
 .modal-sheet-footer {
 	flex-shrink: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 0.4rem;
-	padding: 0.75rem 1.25rem;
-	background: var(--color-surface-sunken);
+	gap: var(--space-2);
+	padding: var(--space-3) var(--space-4);
+	background: var(--color-surface);
 	border-top: 1px solid var(--color-border);
 }
 @media (min-width: 790px) {
@@ -82,8 +86,8 @@
 		transform: translate(-50%, -50%);
 		width: min(440px, 94vw);
 		max-height: 90dvh;
-		border: 1px solid var(--color-border-strong);
-		border-radius: 12px;
+		border-radius: var(--radius-sheet);
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 	}
 }
 
@@ -93,16 +97,26 @@
    when one had been resized alone and the rest sat at the browser's default
    h3 size.
 
+   It is a heading, so deep gold (the game's colour) at the heading size. A
+   sheet about war overrides the colour to war red and puts the barbute before
+   it; nothing else changes it.
+
    Weight is NOT set here: `+layout.svelte` resets every heading to 400, and
-   restating it would just be a second place to keep in sync. Size and the
-   hairline letter-spacing are the whole treatment.
+   restating it would just be a second place to keep in sync.
 
    Titles live inside the sheet BODY, not the header — so they scroll away
    with the content. That is deliberate: RetinueSheet's header is a 44px
-   grabber-and-close strip, and a sheet as long as Tones or How to play would
-   spend real estate on a title nobody needs once they are reading. */
+   close-button strip, and a sheet as long as Tones or How to play would
+   spend real estate on a title nobody needs once they are reading. The
+   padding on the right keeps a long title clear of the close button, which
+   floats above the body's top-right corner. */
 .sheet-title {
-	font-size: 1.45rem;
+	font-size: var(--text-heading);
 	letter-spacing: 0.01em;
-	margin: 0 0 0.5rem;
+	color: var(--color-accent);
+	margin: 0 0 var(--space-2);
+	min-height: var(--size-tap);
+	display: flex;
+	align-items: center;
+	padding-right: calc(var(--space-5) * 2);
 }

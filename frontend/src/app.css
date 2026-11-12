@@ -289,6 +289,7 @@
 	   (surface-warm, -sunken, -active, surface-chip) were one-paint
 	   duplicates of the surface ladder and are gone. */
 	--color-surface-hover: color-mix(in srgb, var(--color-surface) 92%, white); /* standard fill-hover recipe (the old warm hover was DARKER than its base — invisible) */
+	--color-border-control-hover: color-mix(in srgb, var(--color-border-control) 75%, white); /* a control's border on hover (recipe): chips, secondary buttons */
 	--color-surface-active: var(--gold-950);       /* RETIRING: the gold wash. Selected is now a 2px --color-you border with no fill */
 	--color-surface-gold-dim: var(--gold-900);     /* dim gold fill — default die/banked-chip fill, "current" row */
 	--color-border-warm-strong: var(--gold-800);   /* RETIRING: stronger warm border — the sunken panels it framed are going */
@@ -341,6 +342,12 @@
 	--radius-chip: 999px;     /* chips: fully rounded */
 	--radius-sheet: 12px;     /* sheets, on the TOP corners only: var(--radius-sheet) var(--radius-sheet) 0 0 */
 	--radius-dot: 50%;        /* status dots only: a player's mark is a shape, so circles are reserved for status */
+
+	/* ── Touch ─────────────────────────────────────────────────────────────
+	   The smallest a thing you press may be, along either side. One token, so
+	   the floor is written once and a test can hold the shared recipes to it
+	   (tapTarget.test.ts). A row or button may grow taller; none may shrink. */
+	--size-tap: 44px;
 
 	/* The old size-named radii. RETIRING, and left at their old values so no
 	   unmigrated file changes shape. They are not tokens to the guard test:
