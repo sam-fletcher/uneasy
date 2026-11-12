@@ -513,7 +513,7 @@ func hfGuestChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Apply effect.
 		if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
-			ActingPlayerID: player.ID,
+			ActingPlayerID: player.ID, AuthorID: player.ID,
 			Choice:         body.Choice,
 			RumorText:      body.RumorText,
 			PeerName:       body.PeerName,

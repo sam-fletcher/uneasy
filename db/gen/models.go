@@ -163,6 +163,7 @@ type Law struct {
 	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	IsActive     bool               `db:"is_active" json:"is_active"`
 	DisplayOrder int16              `db:"display_order" json:"display_order"`
+	Rev          int64              `db:"rev" json:"rev"`
 }
 
 type LiaiseChoice struct {
@@ -266,6 +267,12 @@ type PlayerCard struct {
 	CardValue string `db:"card_value" json:"card_value"`
 }
 
+type PlayerLawsRumorsSeen struct {
+	PlayerID      int64 `db:"player_id" json:"player_id"`
+	LawsSeenRev   int64 `db:"laws_seen_rev" json:"laws_seen_rev"`
+	RumorsSeenRev int64 `db:"rumors_seen_rev" json:"rumors_seen_rev"`
+}
+
 type PrologueChoice struct {
 	ID         int64              `db:"id" json:"id"`
 	GameID     int64              `db:"game_id" json:"game_id"`
@@ -343,6 +350,7 @@ type Rumor struct {
 	IsActive       bool               `db:"is_active" json:"is_active"`
 	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	DisplayOrder   int16              `db:"display_order" json:"display_order"`
+	Rev            int64              `db:"rev" json:"rev"`
 }
 
 type Scene struct {

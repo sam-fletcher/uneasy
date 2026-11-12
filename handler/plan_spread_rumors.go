@@ -318,6 +318,10 @@ func (srHandler) ApplyChoice(
 		OriginPlanID:   &plan.ID,
 		SourcePlayerID: sourcePlayerID,
 		DisplayOrder:   displayOrder,
+		// Whoever wrote it is not told it is new, hidden source or not: author is
+		// the preparer on a make and the counter-rumor author on a mar. The id
+		// moves only that player's own private marker; it is not stored.
+		WriterID: &author,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create rumor: %w", err)

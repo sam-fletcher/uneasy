@@ -1,7 +1,7 @@
 import { apiFetch } from './client';
 import type {
 	Game, Player, GamePhase, ToneTopic, ToneTopicStatus, Ranking, Law, Rumor,
-	PlayerActivity, PlanType,
+	PlayerActivity, LawsRumorsSeen, PlanType,
 } from './types';
 
 export function createTable(): Promise<{ game: Game; player: Player }> {
@@ -81,6 +81,9 @@ export function getGameState(id: string | number): Promise<{
 	rankings?: Ranking[];
 	laws?: Law[];
 	rumors?: Rumor[];
+	/** The viewer's own markers for the "new" dots on Laws and Rumors. Best-effort
+	 *  server-side, so absent if that one query failed. */
+	laws_rumors_seen?: LawsRumorsSeen;
 	current_prologue_player_id?: number | null;
 	/** Authoritative row-state in main_event phase. Absent in other phases. */
 	row_state?: RowState;

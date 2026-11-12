@@ -262,6 +262,10 @@ type gameStateReads struct {
 	rumorsOK   bool
 	rankings   []dbgen.Ranking
 	rankingsOK bool
+	// The viewer's own "new" markers for laws and rumors (migration 058).
+	// Private: the one thing in this struct that differs per viewer.
+	seen   dbgen.GetLawsRumorsSeenRow
+	seenOK bool
 
 	rowState   model.RowState
 	rowStateOK bool
@@ -276,7 +280,7 @@ type gameStateReads struct {
 // path in the app. Each goroutine writes its own fields and nothing else, so
 // no mutex is involved — returning the struct after Wait() is what publishes
 // them.
-func loadGameStateReads(ctx context.Context, q *dbgen.Queries, game dbgen.Game) *gameStateReads {
+func loadGameStateReads(ctx context.Context, q *dbgen.Queries, game dbgen.Game, viewerID int64) *gameStateReads {
 	out := &gameStateReads{}
 	gameID := game.ID
 
@@ -322,6 +326,13 @@ func loadGameStateReads(ctx context.Context, q *dbgen.Queries, game dbgen.Game) 
 		var e error
 		out.rumors, e = q.ListRumors(ctx, gameID)
 		out.rumorsOK = e == nil
+	})
+	// How far the viewer has read each list, for the "new" dots. Best-effort:
+	// without it the client shows nothing as new rather than everything.
+	run(func() {
+		var e error
+		out.seen, e = q.GetLawsRumorsSeen(ctx, viewerID)
+		out.seenOK = e == nil
 	})
 
 	if game.Phase != model.PhaseLobby {
@@ -376,13 +387,13 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 		// Auth and the game row in one trip (the player+game join): every
 		// read below is gated on the phase, so this one is genuinely serial.
 		// Everything after it is not.
-		game, _, ok := parseGamePlayerGame(w, r, s.Q)
+		game, viewer, ok := parseGamePlayerGame(w, r, s.Q)
 		if !ok {
 			return
 		}
 		ctx := r.Context()
 
-		reads := loadGameStateReads(ctx, s.Q, game)
+		reads := loadGameStateReads(ctx, s.Q, game, viewer.ID)
 		if reads.playersErr != nil {
 			respondInternalErr(w, r, "could not load members", reads.playersErr)
 			return
@@ -400,6 +411,12 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 		}
 		if reads.rumorsOK {
 			result["rumors"] = reads.rumors
+		}
+		if reads.seenOK {
+			result["laws_rumors_seen"] = map[string]int64{
+				"laws":   reads.seen.LawsSeenRev,
+				"rumors": reads.seen.RumorsSeenRev,
+			}
 		}
 		if reads.rankingsOK {
 			result["rankings"] = reads.rankings

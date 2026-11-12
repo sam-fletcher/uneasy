@@ -340,6 +340,12 @@ func pdEnactLaw(
 	displayOrder := int16(len(laws) + 1)
 
 	planID := plan.ID
+	// The preparer drafted and finalized the decree's text, and enacts it, so the
+	// law is theirs and not news to them. The signatory wrote only the rider, and
+	// the council's mar amendments are recorded as turns taken (a skip looks the
+	// same as a rewrite), so neither is treated as the writer: a law they did not
+	// draft shows them the "new" dot.
+	writerID := plan.PreparerID
 	law, err := deps.Q.CreateLaw(ctx, dbgen.CreateLawParams{
 		GameID:       plan.GameID,
 		Text:         pd.LawText,
@@ -347,6 +353,7 @@ func pdEnactLaw(
 		OriginPlanID: &planID,
 		SignatoryID:  pd.SignatoryID,
 		DisplayOrder: displayOrder,
+		WriterID:     &writerID,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create law: %w", err)
