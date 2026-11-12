@@ -316,6 +316,14 @@ type RowState struct {
 	// a stale client guess. The frontend reads it directly; there is no
 	// client-side preparer/focus proxy. Nil only for kinds with no actor to name.
 	ActingPlayerIDs []int64 `json:"acting_player_ids,omitempty"`
+
+	// TitlePlanType is the type of the plan the row is about, which the table's
+	// title names ("Row 6 · Seek Answers"). Set on every main-event state, whatever
+	// its Kind, and nil when the row has no plan. Decided once, server-side, from
+	// the same facts as the gates above (titlePlan in handler/table_title.go), so
+	// the table's title bar and the profile list read one answer and cannot
+	// disagree.
+	TitlePlanType *PlanType `json:"title_plan_type,omitempty"`
 }
 
 // RowStateChangedPayload is the payload for EventRowStateChanged.

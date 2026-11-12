@@ -1,7 +1,7 @@
 import { apiFetch } from './client';
 import type {
 	Game, Player, GamePhase, ToneTopic, ToneTopicStatus, Ranking, Law, Rumor,
-	PlayerActivity,
+	PlayerActivity, PlanType,
 } from './types';
 
 export function createTable(): Promise<{ game: Game; player: Player }> {
@@ -66,6 +66,11 @@ export interface RowState {
 	 *  single- and multi-actor sub-phase gates. Read directly; there is no
 	 *  client-side preparer/focus proxy. Absent only for kinds with no actor. */
 	acting_player_ids?: number[] | null;
+	/** The plan the row is about, for the table's title ("Row 6 · Seek Answers").
+	 *  Set on every main-event state, whatever its kind; absent when the row has
+	 *  no plan. Decided server-side (titlePlan), so the profile list's `plan_type`
+	 *  and the title bar cannot disagree. See $lib/tableTitle. */
+	title_plan_type?: PlanType | null;
 }
 
 // Full game state including phase-specific data.

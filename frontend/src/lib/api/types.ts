@@ -36,6 +36,18 @@ export interface MyTable {
 	phase: GamePhase;
 	/** The viewer's own player id in this game. */
 	player_id: number;
+	/** The fields below, with `phase`, are what the table's title is built from
+	 *  ($lib/tableTitle). The server sends them so a profile row can say the same
+	 *  words the table's own title bar does. Plain reads of the games row, except
+	 *  `plan_type`. */
+	current_row: number;
+	/** Type of the plan the current row is about (the server's titlePlan; the
+	 *  client's twin is titlePlanType in $lib/tableTitle). Null outside the Main
+	 *  Event, and on a row with no plan. */
+	plan_type: PlanType | null;
+	prologue_ranking_step: PrologueRankingStep | null;
+	ending_vote_open: boolean;
+	shake_up_category: string | null;
 	/** Full roster in join order — the facilitator is always first. */
 	players: MyTablePlayer[];
 	/** Players whose action the game is blocked on (empty when ended). */
