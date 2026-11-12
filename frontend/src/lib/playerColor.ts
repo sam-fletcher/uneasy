@@ -16,20 +16,25 @@
 import type { Player } from './api';
 
 /**
- * Default palette, ordered to maximize visual distinction across a 5-player
- * table on a dark background. Index 0 = highest seat order. Keep in sync
- * with any future server-side palette so the two don't disagree if
- * token_color picking ships.
+ * Default palette, in seat order: seat 1 is index 0. Seats are filled in join
+ * order and the table's creator always sits first, so small tables (the
+ * common case) use the earliest, most distinct colours; colour-blind pairs
+ * are furthest apart at two players and closest at four or five. Re-check
+ * that order whenever one of these is tuned. Keep in sync with any future
+ * server-side palette so the two don't disagree if token_color picking ships.
+ *
+ * Each sits between about 5 and 9:1 on the page (Sapphire is 5.0 there, and
+ * drops to 4.49 on a raised surface), and at least ΔE 15 from every meaning
+ * colour (red, orange, green, blue, the golds). Wherever a colour stands for
+ * a player with no name nearby it is paired with a shape; the shapes are a
+ * separate piece of work.
  */
 const DEFAULT_PALETTE = [
-	// Retuned 2026-07-19: the original neon primaries ran 3.1:1–8.1:1 as
-	// byline text on --neutral-950 (sapphire failed AA; jade shouted).
-	// Same five hue identities, luminance balanced into a 5.2–7.0 band.
-	'#C46BE8', // Royal Amethyst
-	'#5E8CFF', // Sapphire Blue
-	'#2FB56E', // Vivid Jade
-	'#F0566B', // Crimson Velvet
-	'#EF8B33', // Blazing Citrine
+	'#C5AEFE', // Lavender
+	'#8AD00B', // Peridot
+	'#FF55A0', // Rose
+	'#4386FE', // Sapphire
+	'#06AEAB', // Turquoise
 ];
 
 /**

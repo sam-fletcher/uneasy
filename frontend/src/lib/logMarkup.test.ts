@@ -39,14 +39,14 @@ describe('renderLogBody — player marks', () => {
 	it('paints a marked name in that player\'s colour', () => {
 		const html = renderLogBody('@@7|alice@@ ends the scene', PLAYERS);
 		expect(html).toBe(
-			'<span class="player-mark" style="--mark-player-color: #C46BE8">alice</span> ends the scene'
+			'<span class="player-mark" style="--mark-player-color: #C5AEFE">alice</span> ends the scene'
 		);
 	});
 
 	it('gives two different players two different colours', () => {
 		const html = renderLogBody('@@7|alice@@ took a peer from @@8|bob@@', PLAYERS);
-		expect(html).toContain('#C46BE8">alice</span>');
-		expect(html).toContain('#5E8CFF">bob</span>');
+		expect(html).toContain('#C5AEFE">alice</span>');
+		expect(html).toContain('#8AD00B">bob</span>');
 	});
 
 	it('still renders the name when the id is not in the roster', () => {

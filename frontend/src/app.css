@@ -1,9 +1,12 @@
 /* ──────────────────────────────────────────────────────────────────────────
    Global design tokens + web fonts.
 
-   This is the single source of truth for the app's palette, typography, and
-   shape. Components should reference var(--color-*), var(--font-*), etc.
-   rather than hard-coding hex values, so the whole look is tunable from here.
+   This is the single source of truth for the app's palette, typography,
+   spacing and shape. Components reference var(--color-*), var(--text-*),
+   var(--space-*), var(--radius-*) and var(--font-*) rather than hard-coding
+   values, so the whole look is tunable from here. designTokens.test.ts fails
+   a colour literal anywhere but this file, and a font size, gap or radius that
+   isn't one of the tokens below (see docs/STYLE_GUIDE.md).
    ────────────────────────────────────────────────────────────────────────── */
 
 /* Two self-hosted serifs (latin subset, no third-party CDN):
@@ -55,32 +58,39 @@
 	   requires updating ADR-009. Steps: 50 = lightest → 950 = darkest. */
 
 	/* neutral — cool greys: chrome, the elevation ladder, plain text */
-	--neutral-950: #1a1a1a;
+	--neutral-950: #1a1a1a;   /* the page */
 	--neutral-900: #1e1e1e;
-	--neutral-850: #252525;
-	--neutral-800: #2a2a2a;
-	--neutral-700: #333333;
+	--neutral-875: #242424;   /* raised: a piece, a chip, a sheet */
+	--neutral-850: #252525;   /* old raised; retiring with the cleanup piece */
+	--neutral-800: #2a2a2a;   /* the quietest rule; was raised-twice */
+	--neutral-750: #2e2e2e;   /* raised twice: a control on a raised thing */
+	--neutral-700: #333333;   /* the faint divider */
 	--neutral-600: #444444;
 	--neutral-500: #555555;
+	--neutral-450: #666666;   /* a control's resting border, about 3:1 on the page */
 	--neutral-400: #8a8a8a;
 	--neutral-300: #999999;   /* AA-contrast floor on --neutral-950 */
 	--white: #ffffff;
 
 	/* parchment — warm paper & body text */
 	--parchment-50: #fdf6e3;  /* the brightest paper — plan-sheet grounds */
-	--parchment-100: #e8e4d9;
+	--parchment-100: #e8e4d9;  /* main text */
 	--parchment-200: #cfcabd;
+	--parchment-250: #bebbb0;  /* secondary text */
 	--parchment-300: #b0a890;
+	--parchment-400: #8d8a7f;  /* faint text: the dimmest allowed, 5:1 on the page */
 	--parchment-500: #6a6a64;
 
 	/* gold — the brand gilt: fills, borders, active states */
 	--gold-100: #ffe8b8;
+	--gold-150: #ffe066;      /* BRIGHT gold: "you" (your selection, focus ring, waiting glyph) */
 	--gold-200: #e8d8a0;
 	--gold-300: #d9bb80;
-	--gold-400: #c8a96e;      /* the brand colour */
+	--gold-400: #c8a96e;      /* DEEP gold, the brand colour: "the game" */
 	--gold-450: #b89446;
 	--gold-500: #a89464;
 	--gold-600: #8a7a52;
+	--gold-650: #71644c;      /* a game piece's border, about 3:1 on the page */
 	--gold-700: #6a5a3a;
 	--gold-800: #4a3a20;
 	--gold-850: #3a3020;
@@ -145,25 +155,24 @@
 	                           violet-900 chip fill it absorbed */
 
 	/* ── Player identity colours (reference only, NOT part of the two tiers)
-	   Categorical, not ramped — five hexes picked to be maximally distinct
-	   from each other on a dark ground, plus one grey for an unresolvable
-	   player. They don't fit the --<family>-<step> shape above and are
-	   never consumed via var(); lib/playerColor.ts owns them at runtime
+	   Categorical, not ramped — five hexes in seat order, plus one grey for an
+	   unresolvable player. They don't fit the --<family>-<step> shape above and
+	   are never consumed via var(); lib/playerColor.ts owns them at runtime
 	   (DEFAULT_PALETTE indexed by seat_order + UNKNOWN_PLAYER_COLOR).
 	   Listed here only so a colour audit sees them in one place and
 	   designTokens.test.ts can assert the two files agree — component code
 	   must go through playerColor()/playerColorByID(), never
 	   var(--player-*) directly (there is no static mapping from "player 1"
-	   to a DOM slot; it's per-game data). */
-	--player-1: #c46be8; /* Royal Amethyst */
-	--player-2: #5e8cff; /* Sapphire Blue */
-	--player-3: #2fb56e; /* Vivid Jade */
-	--player-4: #f0566b; /* Crimson Velvet */
-	--player-5: #ef8b33; /* Blazing Citrine */
-	/* Retuned 2026-07-19 (chat-hierarchy S1 polish): the original neon
-	   primaries ran 3.1:1 (sapphire, AA fail) to 8.1:1 (jade) as byline
-	   text on --neutral-950; these sit in a 5.2–7.0 band — same five hue
-	   identities, jewel saturation kept, luminance balanced. */
+	   to a DOM slot; it's per-game data).
+	   Seats are filled in join order with the table's creator first, so the
+	   earlier (most distinct) colours are the ones small tables use. Each is
+	   at least ΔE 15 from every meaning colour, and they sit between about 5
+	   and 9:1 on the page. */
+	--player-1: #c5aefe; /* Lavender */
+	--player-2: #8ad00b; /* Peridot */
+	--player-3: #ff55a0; /* Rose */
+	--player-4: #4386fe; /* Sapphire */
+	--player-5: #06aeab; /* Turquoise */
 	--player-unknown: #8a8a8a; /* = --neutral-400 (deliberately reused — an
 	                               independent #888888 before the
 	                               COLOR_ROLES_PLAN.md player-colour audit
@@ -176,25 +185,50 @@
 	   (hover) are color-mix() recipes off their base token, so every
 	   hover has the same perceptual delta app-wide. */
 
-	/* ── Surfaces (dark → light) ─────────────────────────────────────────── */
-	--color-bg: var(--neutral-950);             /* page background, ink on gold buttons */
-	--color-surface-sunken: var(--neutral-900); /* recessed tracks (segmented toggle) */
-	--color-surface: var(--neutral-850);        /* cards, panels */
-	--color-surface-2: var(--neutral-800);      /* inputs, raised rows */
+	/* ── Surfaces (dark → light) ───────────────────────────────────────────
+	   Three levels, one for each depth a box can reach (they nest at most two
+	   deep): the PAGE; RAISED, for game pieces, chips and sheets; and RAISED
+	   TWICE, for a control standing on a raised thing (an input inside a
+	   sheet, say). The names below predate this ladder and were kept so no
+	   component had to change when the values did. */
+	--color-bg: var(--neutral-950);             /* the PAGE: the panes, and ink on gold buttons */
+	--color-surface: var(--neutral-875);        /* RAISED: a game piece, a chip, a sheet */
+	--color-surface-2: var(--neutral-750);      /* RAISED TWICE: a control on a raised thing */
+	--color-surface-sunken: var(--neutral-900); /* RETIRING: recessed tracks. Its panels are going; the cleanup piece deletes it */
 
-	/* ── Borders ─────────────────────────────────────────────────────────── */
-	--color-border: var(--neutral-700);         /* default card/control border, faint row dividers */
-	--color-border-strong: var(--neutral-600);  /* lighter border / hairline emphasis */
-	--color-border-warm: var(--gold-850);       /* THE warm ledger border — marginalia/secret tiles, game-surface dividers (warmth ruling 7, COLOR_ROLES_PLAN) */
+	/* ── Borders ───────────────────────────────────────────────────────────
+	   The redesign's two box borders come first: warm for a game piece,
+	   neutral for a control, each drawn to reach about 3:1 on the page so the
+	   outline of anything touchable can be seen. --color-border is the faint
+	   divider between neighbouring rows. It is also still the box border on
+	   every unmigrated screen, which is why the new borders are separate
+	   names: each screen's own migration piece swaps its boxes over when it
+	   removes the nesting that made stronger lines look heavy. The two older
+	   box borders after them are superseded; the cleanup piece decides
+	   whether they go. */
+	--color-border-piece: var(--gold-650);      /* a GAME PIECE: asset and peer cards, marginalia tiles. Warm. (A die is a piece too, but its edge keeps its owner's colour instead) */
+	--color-border-control: var(--neutral-450); /* a CONTROL: button, chip, input. Neutral */
+	--color-border: var(--neutral-700);         /* the faint divider between rows (also still the old box border) */
+	--color-border-quiet: var(--neutral-800);   /* quieter still: the rules between the record's rows */
+	--color-border-strong: var(--neutral-600);  /* SUPERSEDED by --color-border-control: lighter border / hairline emphasis */
+	--color-border-warm: var(--gold-850);       /* SUPERSEDED by --color-border-piece: the old warm ledger border — marginalia/secret tiles, game-surface dividers (warmth ruling 7, COLOR_ROLES_PLAN) */
 
-	/* ── Text ────────────────────────────────────────────────────────────── */
-	--color-text: var(--parchment-100);           /* primary parchment text */
-	--color-text-secondary: var(--parchment-200); /* muted body text on ledger-style cards (asset/marginalia tiles) */
-	--color-text-muted: var(--neutral-300);       /* secondary labels (AA on --color-bg) */
-	--color-text-faint: var(--neutral-400);       /* faint captions — contrast-safe floor */
+	/* ── Text ──────────────────────────────────────────────────────────────
+	   Three parchment shades: MAIN, SECONDARY and FAINT. Faint is the
+	   dimmest any text gets. The six older names fold into them: -muted,
+	   -tertiary-warm and -secondary all mean SECONDARY now, and -faint-warm
+	   means FAINT. Lines that used to be told apart by shade alone are told
+	   apart by size and wording instead. The extra names stay until the
+	   screens using them migrate; new work uses --color-text,
+	   --color-text-secondary and --color-text-faint only. */
+	--color-text: var(--parchment-100);           /* MAIN: primary parchment text */
+	--color-text-secondary: var(--parchment-250); /* SECONDARY: secondary lines, log lines, tab labels */
+	--color-text-faint: var(--parchment-400);     /* FAINT: timestamps, captions. The dimmest allowed */
+	--color-text-muted: var(--parchment-250);     /* RETIRING alias of secondary (was a cool grey, 154 uses) */
 
 	/* ── Accent + semantic ───────────────────────────────────────────────── */
-	--color-accent: var(--gold-400);         /* gilt gold — the brand colour */
+	--color-accent: var(--gold-400);         /* DEEP gold: the game itself: headings, the brand, the main button, crowns, top rank */
+	--color-you: var(--gold-150);            /* BRIGHT gold: "you": the border of what you've picked, your focus ring, the waiting glyph on your chip. Kept off headings and off fills */
 	--color-accent-hover: var(--gold-300);   /* lighter gold for hovers */
 	--color-danger: var(--red-300);          /* danger, errors + the at-risk game state (one concept, ruling 3) */
 	--color-success: var(--green-300);       /* confirmations */
@@ -205,7 +239,7 @@
 	--color-highlight: var(--blue-300);      /* prepare/row-activity cue: hover-prepare border + plan-count badge; also the prologue take chip's ink on dark grounds */
 	--color-highlight-ink: var(--blue-600);  /* the same cue as a FILL under light text — the table page's highlight badge (blue's answer to --color-warning-border) */
 	--color-accent-dim: var(--gold-600);     /* outline/idle gold — MC-toggle idle state, successor crown */
-	--color-accent-bright: var(--gold-100);  /* pale bright gold — picked marginalia line, active face-chip */
+	--color-accent-bright: var(--gold-100);  /* SUPERSEDED by --color-you: the old pale "picked" gold (picked marginalia line, active face-chip) */
 	--color-accent-muted: var(--gold-500);   /* dimmed gilt text — tones/laws/rumors button counts */
 	--color-danger-muted: var(--red-500);    /* muted red border/fill — at-risk borders (marginalia slot + header risk disc), torn marks, tone "never" swatch, MC-swap hover/focus */
 	--color-tone-include: var(--green-500);  /* tone-setting "include" swatch/tile fill */
@@ -222,7 +256,10 @@
 	   var(--orange-600) for want of this name. */
 	--color-warning-ink: var(--orange-600);
 
-	/* ── Chip trios (adr/COLOR_ROLES_PLAN.md) ──────────────────────────────
+	/* ── Chip trios (adr/COLOR_ROLES_PLAN.md) ── RETIRING ──────────────────
+	   Status words turn into plain coloured text, notices lose their tinted
+	   box, and violet is retired, so the trios go in the cleanup piece once
+	   no screen references them.
 	   The one formula for tinted chips/badges/banners: bg = the family's
 	   darkest step · border = hue-700 · text = hue-200. Quiet badges use
 	   the trio as-is; interactive/CTA states (vote buttons, selected
@@ -252,13 +289,13 @@
 	   (surface-warm, -sunken, -active, surface-chip) were one-paint
 	   duplicates of the surface ladder and are gone. */
 	--color-surface-hover: color-mix(in srgb, var(--color-surface) 92%, white); /* standard fill-hover recipe (the old warm hover was DARKER than its base — invisible) */
-	--color-surface-active: var(--gold-950);       /* warm emphasis fill — selected cards/chips, roll panel, resolving plan, scene prompts */
+	--color-surface-active: var(--gold-950);       /* RETIRING: the gold wash. Selected is now a 2px --color-you border with no fill */
 	--color-surface-gold-dim: var(--gold-900);     /* dim gold fill — default die/banked-chip fill, "current" row */
-	--color-border-warm-strong: var(--gold-800);   /* stronger warm border — warm sunken panels (roll panel, plan form), secondary action button */
+	--color-border-warm-strong: var(--gold-800);   /* RETIRING: stronger warm border — the sunken panels it framed are going */
 	--color-border-warm-hover: color-mix(in srgb, var(--color-border-warm) 75%, white); /* engaged/hover border on warm ledger tiles (recipe) */
 	--color-border-warm-antique: var(--gold-700);  /* muted antique-gold border/rule — duel die tray, engrailed divider */
-	--color-text-tertiary-warm: var(--parchment-300); /* warm tertiary text — chat log lines, scene timestamp */
-	--color-text-faint-warm: var(--parchment-500); /* dim "+" add-affordance text on warm tiles */
+	--color-text-tertiary-warm: var(--parchment-250); /* RETIRING alias of secondary (was a warm tertiary drifting toward gold) */
+	--color-text-faint-warm: var(--parchment-400); /* RETIRING alias of faint (was a 3.2:1 "+") */
 
 	/* ── Typography ──────────────────────────────────────────────────────── */
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;     /* unused — escape hatch */
@@ -266,8 +303,65 @@
 	--font-serif: 'Spectral', Georgia, 'Times New Roman', serif;          /* headings + prose */
 	--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-	/* ── Shape ───────────────────────────────────────────────────────────── */
+	/* ── Text sizes ────────────────────────────────────────────────────────
+	   Five steps, one job each. Named for the job so a value can be tuned
+	   here without a rename, and in rem so the browser's text-size setting
+	   still applies. LABEL is the smallest anything gets: thin serif strokes
+	   start to fragment on a phone below 12px. Inputs always use BODY, since
+	   iOS Safari zooms the whole page when a focused input is under 16px.
+	   Adding a step is the owner's decision. */
+	--text-label: 0.75rem;    /* 12: timestamps, uppercase labels */
+	--text-small: 0.875rem;   /* 14: secondary lines, log lines, chip names, tab labels, finished steps */
+	--text-body: 1rem;        /* 16: chat, step text, every input */
+	--text-heading: 1.125rem; /* 18: the open step's heading, sheet titles, the title bar */
+	--text-title: 1.375rem;   /* 22: page titles */
+	/* The single documented exception, with exactly one user: the landing
+	   page's cover-style title (set in --font-display). */
+	--text-display: clamp(2.8rem, 14vw, 4.25rem);
+
+	/* ── Gaps ──────────────────────────────────────────────────────────────
+	   Six steps shared by padding, margin and gap, in rem like the text
+	   sizes. They are spread far enough apart that you can see which is
+	   which, so spacing alone can show what belongs together, and that is what
+	   makes most boxes unnecessary. A negative margin is
+	   calc(-1 * var(--space-N)). */
+	--space-1: 0.25rem;       /* 4 */
+	--space-2: 0.5rem;        /* 8 */
+	--space-3: 0.75rem;       /* 12 */
+	--space-4: 1rem;          /* 16 */
+	--space-5: 1.5rem;        /* 24 */
+	--space-6: 2rem;          /* 32 */
+
+	/* ── Shape ─────────────────────────────────────────────────────────────
+	   A corner radius tells you what sort of object you're looking at, ahead
+	   of its colour or its label. Fixed pixels rather than rem: a paper
+	   corner doesn't grow with the text. */
+	--radius-piece: 4px;      /* game pieces: asset and peer cards, marginalia tiles, dice. Close to square, like paper or a card */
+	--radius-control: 8px;    /* buttons and inputs */
+	--radius-chip: 999px;     /* chips: fully rounded */
+	--radius-sheet: 12px;     /* sheets, on the TOP corners only: var(--radius-sheet) var(--radius-sheet) 0 0 */
+	--radius-dot: 50%;        /* status dots only: a player's mark is a shape, so circles are reserved for status */
+
+	/* The old size-named radii. RETIRING, and left at their old values so no
+	   unmigrated file changes shape. They are not tokens to the guard test:
+	   each migration piece picks a radius by what the thing IS. */
 	--radius-sm: 6px;
 	--radius-md: 8px;
 	--radius-lg: 12px;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Base rules, set once.
+
+   A last line holding one lonely word is cured here for the whole app. It
+   is never cured by tweaking a size or a gap for the one case, which is how
+   sizes drifted apart before: that only fits the width it was tested at. A
+   browser without text-wrap just wraps as it always did, and a single
+   stubborn case is fixed by editing the copy.
+   ────────────────────────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6, label, legend, button {
+	text-wrap: balance;
+}
+p {
+	text-wrap: pretty;
 }
