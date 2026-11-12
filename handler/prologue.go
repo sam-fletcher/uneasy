@@ -440,6 +440,7 @@ func addLawOrRumor(
 			GameID:      gameID,
 			Text:        text,
 			SignatoryID: &pid,
+			WriterID:    &pid,
 		})
 		if err != nil {
 			return httpErr(http.StatusInternalServerError, "could not record law")
@@ -451,6 +452,7 @@ func addLawOrRumor(
 			GameID:         gameID,
 			Text:           text,
 			SourcePlayerID: &pid,
+			WriterID:       &pid,
 		})
 		if err != nil {
 			return httpErr(http.StatusInternalServerError, "could not record rumor")

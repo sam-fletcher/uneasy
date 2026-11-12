@@ -35,7 +35,9 @@ comment at the top explaining the *why*; this is just the map.
 - **Top-level `*.ts` files** — cross-cutting browser-side state and pure
   logic that doesn't belong to one component: `ws.ts` (WebSocket client +
   reconnect/resync), `chatFeed.ts` (unified chat/log feed assembly),
-  `waitingOn.ts` (the "Waiting On" bar), `secretCounts.ts` /
+  `waitingOn.ts` (the "Waiting On" bar), `tableTitle.ts` (a table's one
+  title, shared by its title bar and the profile row), `lawsRumorsSeen.ts`
+  (is this law or rumor new to me?), `secretCounts.ts` /
   `succession.ts` (secret-existence and monarch-succession display rules),
   `severity.ts` / `textLimits.ts` (mirrors of Go-side constants — see each
   file's header comment for which one), `push.ts` (web push

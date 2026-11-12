@@ -36,6 +36,18 @@ export interface MyTable {
 	phase: GamePhase;
 	/** The viewer's own player id in this game. */
 	player_id: number;
+	/** The fields below, with `phase`, are what the table's title is built from
+	 *  ($lib/tableTitle). The server sends them so a profile row can say the same
+	 *  words the table's own title bar does. Plain reads of the games row, except
+	 *  `plan_type`. */
+	current_row: number;
+	/** Type of the plan the current row is about (the server's titlePlan; the
+	 *  client's twin is titlePlanType in $lib/tableTitle). Null outside the Main
+	 *  Event, and on a row with no plan. */
+	plan_type: PlanType | null;
+	prologue_ranking_step: PrologueRankingStep | null;
+	ending_vote_open: boolean;
+	shake_up_category: string | null;
 	/** Full roster in join order — the facilitator is always first. */
 	players: MyTablePlayer[];
 	/** Players whose action the game is blocked on (empty when ended). */
@@ -206,6 +218,10 @@ export interface Law {
 	created_at: string;
 	is_active: boolean;
 	display_order: number;
+	/** Revision: drawn when the law is created and again on every edit, so "newer
+	 *  than your marker" means created or edited since you looked. Compared with
+	 *  the viewer's marker by $lib/lawsRumorsSeen; never shown. */
+	rev: number;
 }
 
 export interface Rumor {
@@ -218,6 +234,16 @@ export interface Rumor {
 	is_active: boolean;
 	created_at: string;
 	display_order: number;
+	/** See Law.rev. It carries nothing about who wrote or last edited the rumor:
+	 *  a hidden source stays null in `source_player_id`, and no editor is stored. */
+	rev: number;
+}
+
+/** The viewer's own "new" markers: the highest `rev` of each list they have
+ *  seen. Private to them — mirrors `last_read_post_id` for chat. */
+export interface LawsRumorsSeen {
+	laws: number;
+	rumors: number;
 }
 
 export interface Secret {

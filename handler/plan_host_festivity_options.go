@@ -19,6 +19,11 @@ type festivityOptionInput struct {
 	// ActingPlayerID is who the effect lands on. For host makes and insisted
 	// host mars that is plan.PreparerID, not necessarily the caller.
 	ActingPlayerID int64
+	// AuthorID is who typed the option's text: the caller of the route. It is
+	// not ActingPlayerID when a Make Demands winner settles the host's mar for
+	// them, or when the rumor is about the acting guest (a mar) and written by
+	// the player at the keyboard.
+	AuthorID       int64
 	Choice         string
 	RumorText      string   // spread_rumor, rumor_about_you
 	PeerName       string   // introduce_peer
@@ -109,6 +114,7 @@ func applyFestivityRumor(ctx context.Context, fc *festivityOptionContext) error 
 		OriginPlanID:   &fc.plan.ID,
 		SourcePlayerID: src,
 		DisplayOrder:   int16(len(existing)),
+		WriterID:       &fc.AuthorID,
 	})
 	if err != nil {
 		return fmt.Errorf("create rumor: %w", err)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -239,6 +240,14 @@ func hashPasswordField(w http.ResponseWriter, r *http.Request, password string) 
 	return &h, true
 }
 
+// tableWait is what the per-table wait-state computation yields for the profile
+// list: who the game is waiting on, and (main event only) the plan the table's
+// title names, which rides on the same row-state computation for free.
+type tableWait struct {
+	acting    []int64
+	titlePlan *model.PlanType
+}
+
 // loadWaitStates computes the "waiting on" set for every table a player sits
 // at, concurrently. Each one is a phase-dependent chain of ~3-5 queries, so
 // doing them in series made ListMyTables scale with a player's table count.
@@ -250,8 +259,8 @@ func loadWaitStates(
 	q *dbgen.Queries,
 	rows []dbgen.ListPlayersByAccountRow,
 	gameByID map[int64]dbgen.Game,
-) (map[int64][]int64, error) {
-	out := make(map[int64][]int64, len(rows))
+) (map[int64]tableWait, error) {
+	out := make(map[int64]tableWait, len(rows))
 	var firstErr error
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -278,9 +287,7 @@ func loadWaitStates(
 				}
 				return
 			}
-			if ws.ActingPlayerIDs != nil {
-				out[g.ID] = ws.ActingPlayerIDs
-			}
+			out[g.ID] = tableWait{acting: ws.ActingPlayerIDs, titlePlan: ws.TitlePlanType}
 		}(game)
 	}
 	wg.Wait()
@@ -299,6 +306,14 @@ func loadWaitStates(
 // the first says "you owe the table a move", the second says "the table has
 // been talking". A player can be caught up and still owe a move, or be idle
 // with 40 posts of scene to read.
+//
+// The title fields (current_row, plan_type, prologue_ranking_step,
+// ending_vote_open, shake_up_category) are what the table's title is built from,
+// so the profile row can say the same words the table's title bar does
+// (frontend/src/lib/tableTitle.ts). They are plain reads of the games row, except
+// plan_type, which is the row state's title plan (RowState.TitlePlanType) from the
+// per-table computation that also yields waiting_on_player_ids; null outside the
+// main event.
 //
 // reminder_muted and reminder_exhausted are the two reasons a table this player
 // owes a move to might still be sending them nothing — they silenced this wait
@@ -400,7 +415,8 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 			// Computed in the fan-out above. Absent means either an ended game,
 			// a game deleted mid-request, or a nil ActingPlayerIDs — all three
 			// mean "nobody", and the empty slice is what the client expects.
-			waitingOn := waitByGame[row.GameID]
+			wait := waitByGame[row.GameID]
+			waitingOn := wait.acting
 			if waitingOn == nil {
 				waitingOn = []int64{}
 			}
@@ -413,7 +429,7 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 			// neither flag can be true: nothing to silence and nothing that
 			// could have been given up on.
 			reminder := reminderByPlayer[row.ID]
-			out = append(out, map[string]any{
+			entry := map[string]any{
 				"game_id":               row.GameID,
 				"join_code":             row.JoinCode,
 				"is_facilitator":        row.IsFacilitator,
@@ -425,9 +441,29 @@ func ListMyTables(s *db.Store, m *hub.Manager) http.HandlerFunc {
 				"unread_count":          unread,
 				"reminder_muted":        reminder.Muted,
 				"reminder_exhausted":    reminder.Exhausted,
-			})
+			}
+			// gameByID has the row for every table found; one deleted mid-request
+			// has none, and its zero values are the harmless defaults the page
+			// drops on the next load.
+			game := gameByID[row.GameID]
+			maps.Copy(entry, tableTitleFields(&game, wait.titlePlan))
+			out = append(out, entry)
 		}
 		respond(w, http.StatusOK, map[string]any{"tables": out})
+	}
+}
+
+// tableTitleFields are the inputs to a table's title
+// (frontend/src/lib/tableTitle.ts): the games row's own fields, plus the plan
+// the current row is about, which the row state decided (RowState.TitlePlanType)
+// and is nil outside the main event.
+func tableTitleFields(game *dbgen.Game, titlePlan *model.PlanType) map[string]any {
+	return map[string]any{
+		"current_row":           game.CurrentRow,
+		"plan_type":             titlePlan,
+		"prologue_ranking_step": game.PrologueRankingStep,
+		"ending_vote_open":      game.EndingVoteOpen,
+		"shake_up_category":     game.ShakeUpCategory,
 	}
 }
 

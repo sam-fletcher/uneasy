@@ -78,6 +78,7 @@ func computeWaitStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.G
 			Phase:           game.Phase,
 			Kind:            model.WaitStateKind(rs.Kind),
 			ActingPlayerIDs: rs.ActingPlayerIDs,
+			TitlePlanType:   rs.TitlePlanType,
 		}, nil
 
 	case model.PhaseShakeUp:

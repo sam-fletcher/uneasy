@@ -66,7 +66,6 @@ func ComputeRowState(ctx context.Context, q *dbgen.Queries, gameID int64) (model
 // Prefer ComputeRowState everywhere else: passing a game read earlier in a
 // request is only safe because nothing between the two reads mutates it.
 func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Game) (model.RowState, error) {
-	gameID := game.ID
 	if game.Phase != model.PhaseMainEvent {
 		return model.RowState{Kind: model.RowStatePhaseNotMainEvent}, nil
 	}
@@ -80,6 +79,26 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 	if err != nil {
 		return model.RowState{}, err
 	}
+	rs, err := rowStateFromReads(ctx, q, &game, reads)
+	if err != nil {
+		return model.RowState{}, err
+	}
+	// The same snapshot that decided the gates decides the title, so a row
+	// state and its title plan can never describe two different moments.
+	rs.TitlePlanType = titlePlan(&game, reads.plans, reads.recentResolved, reads.rowScenes)
+	return rs, nil
+}
+
+// rowStateFromReads runs the precedence chain over a snapshot of the facts it
+// reads. Split from computeRowStateForGame so the title plan is attached once,
+// after any of the chain's many early returns.
+func rowStateFromReads(
+	ctx context.Context,
+	q *dbgen.Queries,
+	game *dbgen.Game,
+	reads *rowStateReads,
+) (model.RowState, error) {
+	gameID := game.ID
 
 	// 2. Open interactive dice roll — top-of-chain gate, above everything else.
 	if rs, ok, gErr := diceRollGate(ctx, q, reads.openRoll); gErr != nil {
@@ -90,7 +109,7 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 
 	// 2.5. Endgame vote open — the row 7 → 8 advance is paused while the table
 	// votes on how the game ends.
-	if rs, ok, gErr := endgameVoteGate(ctx, q, &game); gErr != nil {
+	if rs, ok, gErr := endgameVoteGate(ctx, q, game); gErr != nil {
 		return model.RowState{}, gErr
 	} else if ok {
 		return rs, nil
@@ -132,7 +151,7 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 	// while the resolved plan's follow-scene turn is still in progress (its
 	// setter still holds focus); once they pass, it falls through to the
 	// pending-plan step so the next plan resolves for the new focus player.
-	if rs, ok := followSceneGate(&game, reads.recentResolved, reads.rowScenes); ok {
+	if rs, ok := followSceneGate(game, reads.recentResolved, reads.rowScenes); ok {
 		return rs, nil
 	}
 
@@ -164,7 +183,7 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 	// three turn-scene states below are deliberately unreachable here;
 	// broadcastRowState turns this kind into the advance that lands in the
 	// Shake-Up.
-	if finaleRowNoScenes(&game) {
+	if finaleRowNoScenes(game) {
 		return model.RowState{Kind: model.RowStateFinaleRowComplete}, nil
 	}
 
@@ -177,7 +196,7 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 	turnScene := reads.turnScene
 	if turnScene == nil {
 		// 9. No turn-scene yet for this row & focus player.
-		return model.RowState{Kind: model.RowStateSceneSetting, ActingPlayerIDs: focusActingIDs(&game)}, nil
+		return model.RowState{Kind: model.RowStateSceneSetting, ActingPlayerIDs: focusActingIDs(game)}, nil
 	}
 	if !turnScene.EndedAt.Valid {
 		// 7. Turn-scene started and still running.
@@ -185,11 +204,11 @@ func computeRowStateForGame(ctx context.Context, q *dbgen.Queries, game dbgen.Ga
 		return model.RowState{
 			Kind:            model.RowStateSceneActive,
 			SceneID:         &id,
-			ActingPlayerIDs: focusActingIDs(&game),
+			ActingPlayerIDs: focusActingIDs(game),
 		}, nil
 	}
 	// 8. Turn-scene ended → focus player is in post-scene action step.
-	return model.RowState{Kind: model.RowStatePostSceneAction, ActingPlayerIDs: focusActingIDs(&game)}, nil
+	return model.RowState{Kind: model.RowStatePostSceneAction, ActingPlayerIDs: focusActingIDs(game)}, nil
 }
 
 // rowStateReads is the snapshot computeRowStateForGame's gates read from:

@@ -209,6 +209,7 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		if !passed {
 			if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
 				ActingPlayerID: plan.PreparerID,
+				AuthorID:       player.ID,
 				Choice:         body.MarOption,
 				RumorText:      body.RumorText,
 				AssetID:        body.AssetID,
@@ -314,6 +315,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		// is only consumed by the introduce_peer option.
 		if err := hfApplyOption(ctx, deps, plan, &resData, festivityOptionInput{
 			ActingPlayerID: plan.PreparerID,
+			AuthorID:       player.ID,
 			Choice:         body.Choice,
 			RumorText:      body.RumorText,
 			PeerName:       body.PeerName,

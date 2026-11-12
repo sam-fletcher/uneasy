@@ -51,4 +51,7 @@ type WaitState struct {
 	Phase           GamePhase     `json:"phase"`
 	Kind            WaitStateKind `json:"kind"`
 	ActingPlayerIDs []int64       `json:"acting_player_ids,omitempty"`
+	// TitlePlanType is the RowState's, carried so the profile list can title a
+	// table from the one computation it already runs per table. Main event only.
+	TitlePlanType *PlanType `json:"title_plan_type,omitempty"`
 }
