@@ -27,6 +27,7 @@
 	import { createConnection, type WSMessage } from '$lib/ws';
 	import { readTableSnapshot, writeTableSnapshot, type TableSnapshot } from '$lib/pageCache';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import { logBoundaryError } from '$lib/boundaryError';
 	import { handleWSMessage as runWSMessage, type WSContext } from './ws-handlers';
 	import {
 		reconnectResync, resolveAnchor, enterHistoryMode, type ChatFeedContext,
@@ -1000,7 +1001,7 @@
 		read the table and reach the reload. `reset` re-renders: worth offering
 		first, since a bad payload is usually repaired by the next resync.
 	-->
-	<svelte:boundary>
+	<svelte:boundary onerror={(error) => logBoundaryError(`table phase view (${game?.phase ?? 'no game'})`, error)}>
 		{#if loading}
 			<div class="center-message">Loading…</div>
 
