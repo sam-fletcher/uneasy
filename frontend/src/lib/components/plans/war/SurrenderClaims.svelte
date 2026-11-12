@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- MakeWar/SurrenderClaims.svelte
   Per-claim asset pickers for surrendered opponents' remaining assets.
   Only renders when the current player holds at least one open claim.

@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- PhaseBadge.svelte — the game-phase badge, shared by the in-table header
   and the profile page's table cards so the two can't drift.
 

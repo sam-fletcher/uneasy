@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ReAimPanel.svelte
   Shown INSTEAD of a plan's own resolve panel while the plan is paused because its
   prepare-time target is gone (resolution_data.reaim.owed — handler/plan_reaim.go).

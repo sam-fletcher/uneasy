@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- EndedView.svelte
   Ended phase: the closing message and, once rankings exist, the final
   Power/Knowledge/Esteem standings.

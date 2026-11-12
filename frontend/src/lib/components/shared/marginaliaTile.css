@@ -1,3 +1,4 @@
+/* tokens: not migrated */
 /* Shared marginalia-tile look (the m-tile in RetinueView's 2×2 grid, and
    HelpContent's static replica). Import as a side effect wherever .m-tile
    is used; component-local <style> blocks layer on top for anything that

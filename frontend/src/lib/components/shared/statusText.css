@@ -1,3 +1,4 @@
+/* tokens: not migrated */
 /* Shared muted-caption and inline-error text treatment, used across phase
    views, plan-adjacent modals, and top-level routes. Import as a side effect
    wherever a component needs .muted-text or .error-text.

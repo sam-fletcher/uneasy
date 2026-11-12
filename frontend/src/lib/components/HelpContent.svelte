@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- HelpContent.svelte
   Shared "how to play" reference, rendered both in the header ? panel and
   front-and-centre in the lobby. One source of truth so the two never drift.

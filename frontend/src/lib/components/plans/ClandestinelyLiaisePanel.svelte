@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ClandestinelyLiaisePanel.svelte
   Prep + resolve UI for Clandestinely Liaise (Tier 2, Knowledge, variable delay).
 

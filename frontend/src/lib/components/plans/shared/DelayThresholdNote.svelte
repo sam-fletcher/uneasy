@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- plans/shared/DelayThresholdNote.svelte
   The line every Make War / Clandestinely Liaise delay reveal is played
   against: how high the average may go before the plan lands past row 13, and

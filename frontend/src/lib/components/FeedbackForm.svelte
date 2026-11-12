@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- FeedbackForm.svelte
   Login-gated feedback intake (adr/FEEDBACK_AND_RESET_PLAN.md). Rendered
   inside a RetinueSheet by its callers (HelpButton, the table page's inline

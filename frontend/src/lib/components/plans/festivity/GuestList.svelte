@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Festivity/GuestList.svelte — "The Talk of the Event"
   A per-guest scorecard / record of the social occasion: who made a good
   impression (Make), who slipped up (Mar), who got the better of the host

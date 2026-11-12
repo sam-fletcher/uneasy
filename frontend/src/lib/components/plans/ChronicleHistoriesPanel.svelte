@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ChronicleHistoriesPanel.svelte
   Prep + resolve UI for Chronicle Histories (Tier 1, Knowledge).
 

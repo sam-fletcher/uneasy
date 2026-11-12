@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ProposeDecreePanel.svelte
   Prep + resolve UI for Propose Decree (Tier 2, Power).
 

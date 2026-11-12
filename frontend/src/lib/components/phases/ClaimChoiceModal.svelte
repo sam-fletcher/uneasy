@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!--
   Step-ledger claim modal for a Prologue choice (Session 3 of
   adr/PROLOGUE_CHOOSING_REDESIGN_PLAN.md). The player drafts:

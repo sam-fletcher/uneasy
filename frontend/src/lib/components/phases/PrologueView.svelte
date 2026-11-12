@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- PrologueView.svelte
   Structured prologue (Phase 4b). Modes driven by game.prologue_ranking_step:
 

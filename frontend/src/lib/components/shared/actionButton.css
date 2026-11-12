@@ -1,3 +1,4 @@
+/* tokens: not migrated */
 /* Shared action-button look, used across the plans/ system and everywhere
    else in the app. Import this file as a side effect wherever a component
    needs .action-btn (directly, or transitively via planPanel.css). */

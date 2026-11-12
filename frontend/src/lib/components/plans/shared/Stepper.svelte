@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- shared/Stepper.svelte
   A labelled −/+ pick-count row, shared by every plan whose picker lets a
   player take an option several times (Seek Answers, Spread Rumors, Spread

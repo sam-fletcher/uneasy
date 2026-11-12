@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- ChecklistRow.svelte
   The house checklist row: one 44px line that names something a player could
   (or must) do, plus an optional body underneath it.

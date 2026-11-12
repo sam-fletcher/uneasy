@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!--
   CrownGlyph.svelte — the line-of-succession marker (ADR-007, Phase D).
 

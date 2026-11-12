@@ -1,3 +1,4 @@
+/* tokens: not migrated */
 /* Shared full-screen-dialog backdrop scrim + close button, used by any modal
    (RetinueSheet, ClaimChoiceModal, ...). Import as a side effect wherever a
    component needs .modal-backdrop, .modal-close, or .sheet-title.

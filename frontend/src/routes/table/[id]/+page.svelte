@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Game shell: loads full game state, routes to phase-specific views. -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';

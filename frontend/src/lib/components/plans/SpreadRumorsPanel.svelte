@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- SpreadRumorsPanel.svelte
   Prep + resolve UI for Spread Rumors (Tier 1, Esteem).
 

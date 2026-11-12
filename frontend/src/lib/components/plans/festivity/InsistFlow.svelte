@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Festivity/InsistFlow.svelte
   Renders when the current player holds an IOU from rolling make. The book
   (p.61) lets them "insist that the host choose one option from the mar list at

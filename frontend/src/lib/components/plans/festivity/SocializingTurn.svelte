@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- Festivity/SocializingTurn.svelte
   The current player's own turn during socializing: roll-or-opt-out, then
   pick a make/mar option once the outcome is known. The make-option

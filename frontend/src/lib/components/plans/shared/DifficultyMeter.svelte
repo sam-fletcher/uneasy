@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- shared/DifficultyMeter.svelte
   A presentational "thermometer" for plans whose difficulty is built up during
   the pre-roll (Chronicle Histories: max(knowledge rank, #invoked); Make

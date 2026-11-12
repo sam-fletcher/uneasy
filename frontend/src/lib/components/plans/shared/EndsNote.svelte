@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- plans/shared/EndsNote.svelte
   The line under a submit button that ends a plan or a sub-flow, so the player
   who presses it knows it is the last step before the view changes under them

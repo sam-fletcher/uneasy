@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- TurnCard.svelte
   The first object in the choosing view: whose turn it is, how many of your
   three choices you still hold, and the one thing to do next.

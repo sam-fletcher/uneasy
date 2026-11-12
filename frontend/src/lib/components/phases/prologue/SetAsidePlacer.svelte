@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- SetAsidePlacer.svelte
   Shown during the place_set_asides_X step. Renders the open ranks on
   the active track with the set-aside players slotted in tentatively;

@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!--
 	SceneSetupForm.svelte
 

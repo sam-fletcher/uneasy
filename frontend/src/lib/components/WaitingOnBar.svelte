@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- WaitingOnBar.svelte
   Page-level strip that answers "whose action is the game waiting on?"
   Rendered once in +page.svelte across every phase. Each phase view computes

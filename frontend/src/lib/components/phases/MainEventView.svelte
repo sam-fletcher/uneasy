@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- MainEventView.svelte
   Main event phase: public record sidebar + focus-player action bar.
   Owns its local UI state (summary form, refresh-asset selection).

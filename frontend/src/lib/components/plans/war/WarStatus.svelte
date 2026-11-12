@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- MakeWar/WarStatus.svelte
   Two-column side layout. Every player sees the same panel; non-participants
   see three choices below the columns: Join Side 1, Join Side 2, or Stay

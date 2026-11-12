@@ -1,3 +1,4 @@
+<!-- tokens: not migrated -->
 <!-- AssetCreationForm.svelte
   Shared "name + one marginalia" authoring form for every player-created
   asset. A blank asset (no marginalia) is unbreakable and indestructible, so
