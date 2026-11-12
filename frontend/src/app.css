@@ -78,7 +78,7 @@
 	--parchment-200: #cfcabd;
 	--parchment-250: #bebbb0;  /* secondary text */
 	--parchment-300: #b0a890;
-	--parchment-400: #8d8a7f;  /* faint text: the dimmest allowed, 5:1 on the page */
+	--parchment-400: #999689;  /* faint text: the dimmest allowed. Clears 4.5:1 on the page, raised and raised twice */
 	--parchment-500: #6a6a64;
 
 	/* gold — the brand gilt: fills, borders, active states */

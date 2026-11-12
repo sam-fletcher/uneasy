@@ -66,12 +66,11 @@ uses a cool grey.
 |---|---|---|---|---|
 | main | `--color-text` | 13.7:1 | 12.2:1 | 10.7:1 |
 | secondary: secondary lines, log lines, tab labels | `--color-text-secondary` | 9.1:1 | 8.1:1 | 7.1:1 |
-| faint: timestamps, captions | `--color-text-faint` | 5.0:1 | **4.49:1** | **3.9:1** |
+| faint: timestamps, captions | `--color-text-faint` | 5.9:1 | 5.2:1 | 4.6:1 |
 
-WCAG asks for 4.5:1 on small text, and faint falls under it on both raised
-surfaces. That is an open question for the owner (see `docs/work/questions/`).
-Until it is settled, put faint text on the page, and use secondary for
-anything on a raised surface that has to be read.
+WCAG asks for 4.5:1 on small text, and faint clears it on all three grounds,
+so faint text may sit anywhere. It was picked to stay at least ΔE 6 from every
+other shade in the palette, so it never reads as a near-duplicate of one.
 
 Lines that used to be told apart by shade alone are now told apart by size
 and wording. `--color-text-muted`, `--color-text-tertiary-warm` and
