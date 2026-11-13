@@ -281,7 +281,7 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
   await bobCtx.close();
 });
 
-test('jumping to a row outside the loaded window enters history mode; Return to now exits it', async ({ browser }) => {
+test('jumping to a plan outside the loaded window enters history mode; Return to now exits it', async ({ browser }) => {
   const reset = await pwRequest.newContext({ baseURL: E2E });
   const seedRes = await reset.post('/api/dev/seed', {
     data: { phase: 'main_event', players: ['alice', 'bob'] },
@@ -295,16 +295,15 @@ test('jumping to a row outside the loaded window enters history mode; Return to 
   await devLogin(aliceCtx.request, 'alice'); // alice is the seed's facilitator + focus player
   await devLogin(bobCtx.request, 'bob');
 
-  // advance_to runs the REAL advance, which emits the row.advanced post the
-  // Public Record's row jump anchors on. The plain {game_id, row} form of this
-  // route writes current_row directly and would skip it. Seeds start on row 1,
-  // so this is the one-row advance the Public Record needs.
-  const advanceRes = await aliceCtx.request.post('/api/dev/advance-row', {
-    data: { game_id: gameID, advance_to: 2 },
+  // The jump the Public Record offers is a plan line (row numbers are not
+  // tappable). A prepared plan has a plan.prepared post to land on, written now,
+  // so the filler below pushes it out of the window.
+  const prepRes = await aliceCtx.request.post(`/api/tables/${gameID}/prepare-plan`, {
+    data: { plan_type: 'host_festivity', preparation_notes: 'a grand ball' },
   });
-  expect(advanceRes.ok(), `advance-row failed: ${await advanceRes.text()}`).toBeTruthy();
+  expect(prepRes.ok(), `prepare-plan failed: ${await prepRes.text()}`).toBeTruthy();
 
-  // Same read-marker trick as the pagination test: push the row.advanced
+  // Same read-marker trick as the pagination test: push the plan.prepared
   // anchor far enough behind alice's marker that a fresh load's window
   // starts after it.
   await sendMessages(bobCtx.request, gameID, 'filler', 40);
@@ -320,12 +319,13 @@ test('jumping to a row outside the loaded window enters history mode; Return to 
   await alicePage.goto(`/table/${gameID}`);
   const aliceChat = alicePage.getByRole('complementary', { name: 'Chat' });
   await expect(aliceChat).toBeVisible();
-  await expect(aliceChat.getByText('Row 2 begins')).toHaveCount(0);
+  await expect(aliceChat.getByText('alice prepared Host Festivity')).toHaveCount(0);
 
-  await alicePage.getByRole('button', { name: 'Jump to row 2' }).click();
+  await alicePage.getByRole('complementary', { name: 'Public Record' })
+    .getByRole('button', { name: /^Host Festivity by alice/ }).click();
 
   await expect(aliceChat.locator('.return-to-now')).toBeVisible();
-  await expect(aliceChat.getByText('Row 2 begins')).toBeVisible();
+  await expect(aliceChat.getByText('alice prepared Host Festivity')).toBeVisible();
 
   await aliceChat.locator('.return-to-now').click();
   await expect(aliceChat.locator('.return-to-now')).toHaveCount(0);

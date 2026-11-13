@@ -446,7 +446,7 @@
 	);
 
 	// ── Public Record → Chat jump bridge ──────────────────────────────────────
-	// Tapping a row/plan/scene in the Public Record resolves the anchoring
+	// Tapping a plan or scene line in the Public Record resolves the anchoring
 	// system post (Chat Overhaul Phase 2e: the loaded window first, cheap;
 	// then the Phase 1d anchor endpoint) and pushes a request to ChatPanel,
 	// which scrolls there (on a phone, jumpTo switches to the Chat tab first). If the
@@ -466,16 +466,6 @@
 		if (!resolved) return;
 		if (!resolved.inWindow) await enterHistoryMode(chatFeed, resolved.postID);
 		jumpTo(resolved.postID);
-	}
-	async function jumpToRow(rowNumber: number) {
-		if (rowNumber === 1) {
-			// Row 1 has no row.advanced post — best-effort fall back to
-			// whatever's currently the oldest loaded post (there's no anchor
-			// endpoint for "the very first post of the game").
-			if (chatFeedPosts.length > 0) jumpTo(chatFeedPosts[0].id);
-			return;
-		}
-		await jumpToAnchor({ code: 'row.advanced', row: rowNumber });
 	}
 	function jumpToPlan(planID: number, status: Plan['status']) {
 		// A plan chip lives at the plan's *resolution* row (plan.RowNumber), not
@@ -994,7 +984,6 @@
 						shakeUpCategory={game.shake_up_category}
 						playerNames={playerNameMap}
 						{players}
-						onRowJump={jumpToRow}
 						onPlanJump={jumpToPlan}
 						onSceneJump={jumpToScene}
 					/>
