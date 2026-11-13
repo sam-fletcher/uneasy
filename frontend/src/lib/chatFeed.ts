@@ -99,8 +99,16 @@ const HOSTILE_MARKS: Record<string, string> = {
 // `prologue.track_ranked` announces a track's opening standing — the same
 // statement `ranking.updated` makes later — so it takes the podium. The sun
 // stays for `prologue.closing_entered`, which is a genuine phase boundary.
+//
+// `plan.make_war` is every line a war posts once it has begun: the cost of
+// battle each row, a seizure, a peace term. The family would give them the flag,
+// which is every plan's mark; war has its own, the barbute, so a reader scanning
+// the feed can pick its lines out. (`plan.prepared` and `plan.resolving` are
+// shared by every plan, so a war's own header takes the barbute from its plan
+// type instead: see `planMarkFamily` in chatView.ts.)
 const CODE_MARK_OVERRIDES: Record<string, string> = {
 	'prologue.track_ranked': 'ranking',
+	'plan.make_war': 'war',
 };
 
 export function markForCode(code: string | null): string | null {
@@ -672,11 +680,18 @@ export async function resolveAnchor(
  * so reporting its newest id there could mark posts the player never saw as
  * read (the plan's "conservative by design" principle). Callers debounce
  * and gate this on panel-visible + document-visible + scrolled-near-bottom.
+ *
+ * `upTo` caps the report at the newest post that was actually on screen when
+ * the caller decided to report. Without it the marker moves to the newest post
+ * in the window, which is wrong whenever the report is made later than the
+ * decision: a reader parked on the "6 new" divider who taps another tab has not
+ * seen those six, and must not have them marked read on the way out.
  */
-export async function reportReadMarker(ctx: ChatFeedContext): Promise<void> {
+export async function reportReadMarker(ctx: ChatFeedContext, upTo?: number): Promise<void> {
 	if (ctx.mode !== 'live' || ctx.posts.length === 0) return;
 	const newest = ctx.posts[ctx.posts.length - 1].id;
-	if (newest <= ctx.lastReadPostID) return;
-	const { last_read_post_id } = await updateReadMarker(ctx.gameID, newest);
+	const target = upTo == null ? newest : Math.min(newest, upTo);
+	if (target <= ctx.lastReadPostID) return;
+	const { last_read_post_id } = await updateReadMarker(ctx.gameID, target);
 	ctx.lastReadPostID = last_read_post_id;
 }

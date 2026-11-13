@@ -19,9 +19,10 @@
 	without reading it. An unknown family renders nothing rather than a bullet:
 	every family is supposed to have a mark, so a blank is the louder bug.
 
-	One member — `chat` — is not a system-post family and is never reached via
-	familyOf(); it is requested by name for the mobile chat bar. It sits here
-	anyway so that "where the house marks are drawn" stays one answer.
+	Three members — `chat`, `clock` and `war` — are not system-post families and
+	are never reached via familyOf() (war's lines are routed to `war` by code, in
+	markForCode); they are requested by name. They sit here anyway so that "where
+	the house marks are drawn" stays one answer.
 -->
 <script lang="ts">
 	let { family }: { family: string | null } = $props();
@@ -117,8 +118,8 @@
 			<circle cx="12" cy="12" r="2.6" />
 		{:else if family === 'chat'}
 			<!-- one large ROUNDED bubble. The only mark here with no
-			     system_code behind it: it labels the mobile chat bar
-			     (ChatPanel's .strip) and the profile card's unread chip. It
+			     system_code behind it: it stood for the mobile chat bar (gone,
+			     now that Chat is a tab) and the profile card's unread chip. It
 			     lives in this set so the app has exactly one place marks are
 			     drawn.
 			     It gets the SIMPLEST shape on purpose (swapped with `rumor`
@@ -146,7 +147,9 @@
 			     A rounded crown over an open bottom looks like no other mark in
 			     the set (the flag is every plan's and the crossed swords are
 			     seize's). Rendered in war red wherever it appears; <BarbuteMark>
-			     carries that colour. -->
+			     carries that colour. In the feed it marks every line a war posts
+			     (`plan.make_war`, see markForCode) and a Make War plan's header
+			     row, in the flag's place. -->
 			<path d="M5 20.5V11a7 7 0 0 1 14 0V20.5" />
 			<path d="M5 20.5H9" />
 			<path d="M15 20.5H19" />

@@ -865,6 +865,59 @@ already written for players. Branch on `err.status`, never on the message
 text. The `'Could not …'` fallback in each `catch` is only for the case where
 the throw wasn't ours.
 
+### The chat feed
+
+One chronology, no threads. What each thing in it looks like is decided by what it
+*is* (the shared recipes above supply the pieces); the files are
+`components/ChatPanel.svelte` and, beside it, `components/chat/`.
+
+- **Dividers are centred, in three weights** (`chat/FeedDivider.svelte`). The day
+  ("Yesterday") is faint and 12px. Where the new messages start is main parchment,
+  and its words carry the count ("4 new"), because the Chat tab shows no number.
+  A row boundary is deep gold at 14px, the game's own colour. Centring is only for
+  boundaries; nothing a player said is ever centred.
+- **A message** is a byline over a full-width body. The byline is the one place it
+  spends player colour, with that player's shape (12px, the floor) beside the name.
+  A character wears its owning retinue's colour and shape. In a scene, in-character
+  speech is told by small capitals in the mask colour (`color-mix`, 55%), and
+  table-talk reads as any other message. Neither has a ground behind it: a ground
+  would be a box around something nobody touches.
+- **A log line** is 14px secondary text behind a 16px family mark (`LogMark`),
+  centred on the row. Important lines are deep gold, with no rule beside them (a
+  rule would collide with a span's own); minor ones are faint. **War's lines wear
+  the barbute in war red** in place of the flag (`markForCode` sends `plan.make_war`
+  to the `war` family), and a Make War plan's header does too.
+- **A plan's resolution, and a scene, fold** (`chat/SpanHeader.svelte`): one header
+  row, the only part drawn as a control (a `tapRow.css` row with a caret), and its
+  lines indented behind a thin `--color-border` rule, never a card. The header
+  carries the family mark, the name, the preparer's shape (plans only), a status
+  word and the caret. The status word is "Resolving" while it runs; once it ends,
+  Make (green) or Mar (red), or "Fell through" / "No effect" in plain text; Make War
+  and Clandestinely Liaise show none, since the book gives them neither
+  (`$lib/chatView.ts`). The plan's closing sentence stays under the rule even when
+  the span is folded, so a shut span still says what comes next. A folded span with
+  something unread carries the pale dot. A scene in progress is locked open: its
+  header is disabled, says "Live" and has no caret.
+- **Header and composer.** The header is the Tones chip and the Hide bookkeeping
+  switch, one line, with no heading on a phone (the tab names the pane) and the
+  column's name first in columns. The composer is the box, the house main button
+  (greyed out until there is text, so it never spends the deep gold on nothing) and,
+  above them, "Speaking as" **only when there is a voice to choose**. The keyboard
+  opens only when the box is tapped: nothing here ever calls `focus()` on arrival.
+- **The pale dot on Chat clears once the new messages have been on screen.** Opening
+  the chat with unread lands on the "N new" divider (a quarter of the way down), not
+  at the bottom, so the reader starts where the new messages start. The
+  read marker moves two seconds after the pane is on screen, the window is visible
+  and the reader is within 150px of the newest line, and it moves only as far as the
+  newest post that was on screen when that was decided. Leaving the pane (a tab
+  switch, navigating away) sends a report already pending and nothing else: it never
+  marks an unread run as read. The tab and the column name both read the marker, so
+  they clear together.
+- **The Tones sheet has two shapes.** Before the Main Event it is the grid of tiles
+  you set tones on. Once tones lock it lists only the topics someone set, grouped
+  Never, Avoid detail, Include (a swatch and a word each), with one line counting
+  the rest (`$lib/toneGroups.ts`).
+
 ### Log marks
 
 `LogMark.svelte` (`frontend/src/lib/components/`) holds 17 house SVG marks —
@@ -885,13 +938,13 @@ the other direction: no mark character may be baked back into a Go body string.
 
 **Sizing.** The mark box is owned by the caller's `.log-mark` span, not the
 component: `width/height: 16px`, `align-self: center`, `flex-shrink: 0`,
-`color: var(--color-text-muted)` — overridden to `--color-accent` on
-`.log.important` and `--color-text-faint` on `.log.minor`. Centre, **not
-baseline**: a geometric mark centres, a letterform sits on the baseline. This
-holds the `.log` row at its measured **21.00px** — `line-height` is never set
-anywhere in the chain, so it resolves to `normal` and Spectral's own `hhea`
-metrics (ascender 1059 + descender 463 over 1000 upm) decide the row. A 16px
-centred mark grows it by 0px; a 16px baseline-aligned one would add 1.50px.
+`color: var(--color-text-faint)` — overridden to `--color-accent` on
+`.log.important`; war's barbute brings its own red (`BarbuteMark`). Centre, **not
+baseline**: a geometric mark centres, a letterform sits on the baseline.
+`line-height` is never set anywhere in the chain, so it resolves to `normal` and
+Spectral's own `hhea` metrics (ascender 1059 + descender 463 over 1000 upm) decide
+the row. A 16px centred mark grows it by 0px; a 16px baseline-aligned one would
+add 1.50px.
 Don't add a `line-height` to "fix" this, and don't switch centring to
 baseline or start (owner ruling: centring is right, including on rows that
 wrap to two lines).
