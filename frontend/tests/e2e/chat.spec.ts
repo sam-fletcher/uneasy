@@ -702,6 +702,122 @@ test('the dot on the Chat column name clears once new messages have been seen', 
   await bobCtx.close();
 });
 
+// Leaving the Chat pane must never mark what the reader has not seen as read. A tab
+// switch is one tap, so it is easy to hit: parked on the "N new" divider with a long
+// unread run below the fold, tapping Play used to flush a report of the NEWEST post
+// and clear the dot for messages nobody had looked at.
+test('switching tabs does not mark unread chat as read; reaching the bottom does', async ({ browser }) => {
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
+  await devLogin(aliceCtx.request, 'alice');
+  await devLogin(bobCtx.request, 'bob');
+  const createRes = await aliceCtx.request.post('/api/tables');
+  const { game } = await createRes.json();
+  const tableId: number = game.id;
+  track(tableId);
+  await bobCtx.request.post('/api/tables/join', { data: { join_code: game.join_code } });
+  // Enough long messages that the unread run is several screens tall at 375px.
+  const filler = 'a long enough line to wrap across a phone screen and take up real room ';
+  for (let i = 0; i < 30; i++) {
+    const res = await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: `unread-${i}: ${filler}${filler}` } });
+    expect(res.ok()).toBeTruthy();
+  }
+  const markerOf = async () => {
+    const res = await aliceCtx.request.get(`/api/tables/${tableId}/posts`);
+    return ((await res.json()) as { last_read_post_id: number }).last_read_post_id;
+  };
+  expect(await markerOf()).toBe(0);
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 375, height: 812 });
+  await alicePage.goto(`/table/${tableId}`);
+  const tabs = alicePage.getByRole('navigation', { name: 'Panes' });
+  const chatTab = tabs.getByRole('button', { name: 'Chat' });
+  await expect(chatTab.getByRole('img', { name: 'new messages' })).toBeVisible();
+  await chatTab.click();
+  const chat = alicePage.locator('[aria-label="Chat"]');
+  const feed = chat.locator('.feed');
+  const divider = chat.getByRole('separator', { name: /new messages$/ });
+  await expect(divider).toBeVisible();
+
+  // Arriving lands on the divider, not at the bottom: the reader starts where the
+  // new messages start and the newest ones are off screen.
+  await expect(divider).toBeInViewport();
+
+  // Parked at the divider, a long way from the bottom. Wait out the debounce: nothing
+  // may be reported, because nothing past the fold was on screen.
+  const away = await feed.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+  expect(away, 'the unread run must be longer than the screen for this test to mean anything').toBeGreaterThan(400);
+  await alicePage.waitForTimeout(3000);
+  expect(await markerOf()).toBe(0);
+
+  // Tap Play. This is the regression: the pane going away flushed the newest post.
+  await tabs.getByRole('button', { name: 'Play' }).click();
+  await alicePage.waitForTimeout(3000);
+  expect(await markerOf(), 'a tab switch marked unread messages as read').toBe(0);
+  await expect(chatTab.getByRole('img', { name: 'new messages' })).toBeVisible();
+
+  // Back in Chat, reaching the bottom is what clears it.
+  await chatTab.click();
+  await feed.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect.poll(markerOf, { timeout: 10_000 }).toBeGreaterThan(0);
+  await expect(chatTab.getByRole('img', { name: 'new messages' })).toHaveCount(0, { timeout: 10_000 });
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});
+
+// "Speaking as" is a popup, so it closes like one: choosing, Escape, or a tap outside.
+test('the "Speaking as" list closes on Escape and on a tap outside', async ({ browser }) => {
+  const reset = await pwRequest.newContext({ baseURL: E2E });
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: tableId } = await seedRes.json();
+  track(tableId);
+  await reset.dispose();
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  await devLogin(aliceCtx.request, 'alice');
+  // A scene is what gives alice a character to speak as.
+  const sceneRes = await aliceCtx.request.post(`/api/tables/${tableId}/scenes`, {
+    data: { location_custom: 'The Mill', time_elapsed: 'days', present_peer_ids: [] },
+  });
+  expect(sceneRes.ok(), `create scene failed: ${await sceneRes.text()}`).toBeTruthy();
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 375, height: 812 });
+  await alicePage.goto(`/table/${tableId}`);
+  await openPane(alicePage, 'Chat');
+  const chat = alicePage.locator('[aria-label="Chat"]');
+  const picker = chat.getByRole('button', { name: /Speaking as/ });
+  const list = chat.getByRole('listbox');
+  await expect(picker).toBeVisible();
+
+  await picker.click();
+  await expect(list).toBeVisible();
+  await alicePage.keyboard.press('Escape');
+  await expect(list).toHaveCount(0);
+  // Focus went back to the control, not the message box, so no soft keyboard.
+  await expect(picker).toBeFocused();
+  await expect(chat.getByPlaceholder('Write a message…')).not.toBeFocused();
+
+  await picker.click();
+  await expect(list).toBeVisible();
+  await chat.locator('.feed').click({ position: { x: 20, y: 20 } });
+  await expect(list).toHaveCount(0);
+
+  // Tapping the control itself still toggles it, and a choice still closes it.
+  await picker.click();
+  await expect(list).toBeVisible();
+  await picker.click();
+  await expect(list).toHaveCount(0);
+  await picker.click();
+  await list.getByRole('option').first().click();
+  await expect(list).toHaveCount(0);
+
+  await aliceCtx.close();
+});
+
 // The composer. Send is greyed out until there is something to send, and the
 // keyboard opens only when the box is tapped, never because the chat arrived.
 test('Send is greyed out until there is text, and the keyboard never opens on its own', async ({ browser }) => {
