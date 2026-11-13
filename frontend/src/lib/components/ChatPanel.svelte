@@ -245,9 +245,11 @@
 	let pickerOpen = $state(false);
 
 	// ── Visibility ─────────────────────────────────────────────────────────────
-	// Hiding the pane (choosing another tab) flushes any pending read-marker
-	// report, as closing the old mobile sheet did — see "Read-marker reporting"
-	// below. Starting hidden reports nothing: messages stay unread until seen.
+	// Hiding the pane (choosing another tab) sends a read-marker report that was
+	// already scheduled, so what the reader had just seen isn't lost to the 2s
+	// debounce. It sends ONLY that: leaving the pane never marks anything read by
+	// itself — see "Read-marker reporting" below. Starting hidden reports nothing:
+	// messages stay unread until seen.
 	let wasVisible = untrack(() => visible);
 	$effect(() => {
 		const now = visible;
@@ -485,20 +487,33 @@
 	// position (see $lib/chatFeed's reportReadMarker for the history-mode
 	// guard — this never advances the marker while browsing a jumped-to
 	// window that may be discontiguous with the true unread span).
+	//
+	// A report covers only what was on screen when it was SCHEDULED: scheduling
+	// is the one place the guards above are checked, so `readReportUpTo` is the
+	// newest post the reader could see at that moment. Later arrivals reschedule
+	// (and raise it) only while the guards still hold. Leaving early (a tab
+	// switch, navigating away) flushes a report that is already pending and does
+	// nothing otherwise: it never reports the newest post just because the pane
+	// went away, which would mark an unread run as read for a reader who was
+	// parked at the divider and never reached the bottom.
 	let readReportTimer: ReturnType<typeof setTimeout> | null = null;
+	let readReportUpTo = 0;
 	function scheduleReadReport() {
 		if (feed.mode !== 'live' || !visible) return;
 		if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 		if (!feedEl || !isNearBottom(feedEl.scrollTop, feedEl.scrollHeight, feedEl.clientHeight, NEAR_BOTTOM_PX)) return;
 		if (readReportTimer) clearTimeout(readReportTimer);
-		readReportTimer = setTimeout(() => { void reportReadMarker(feed); }, 2000);
+		readReportUpTo = posts[posts.length - 1]?.id ?? 0;
+		readReportTimer = setTimeout(() => {
+			readReportTimer = null;
+			void reportReadMarker(feed, readReportUpTo);
+		}, 2000);
 	}
 	function flushReadReport() {
-		if (readReportTimer) {
-			clearTimeout(readReportTimer);
-			readReportTimer = null;
-		}
-		void reportReadMarker(feed);
+		if (!readReportTimer) return;
+		clearTimeout(readReportTimer);
+		readReportTimer = null;
+		void reportReadMarker(feed, readReportUpTo);
 	}
 
 	$effect(() => {

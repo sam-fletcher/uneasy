@@ -1060,4 +1060,29 @@ describe('reportReadMarker', () => {
 		await reportReadMarker(ctx);
 		expect(updateReadMarker).not.toHaveBeenCalled();
 	});
+
+	// The cap: a report is decided at one moment and sent at a later one. Between
+	// the two more posts can land (a reader parked on the "6 new" divider, a tab
+	// switch that flushes), and those were never on screen.
+	it('reports only up to the newest post that was on screen, not the newest loaded', async () => {
+		vi.mocked(updateReadMarker).mockResolvedValue({ last_read_post_id: 30 });
+		const posts = [10, 20, 30, 40, 50, 60].map((id) => makePost({ id }));
+		const ctx = makeCtx({ posts, lastReadPostID: 10 });
+		await reportReadMarker(ctx, 30);
+		expect(updateReadMarker).toHaveBeenCalledWith(1, 30);
+		expect(ctx.lastReadPostID).toBe(30);
+	});
+
+	it('does nothing when what was on screen is already read', async () => {
+		const ctx = makeCtx({ posts: [makePost({ id: 20 }), makePost({ id: 60 })], lastReadPostID: 20 });
+		await reportReadMarker(ctx, 20);
+		expect(updateReadMarker).not.toHaveBeenCalled();
+	});
+
+	it('never reports past what is loaded, even if asked to', async () => {
+		vi.mocked(updateReadMarker).mockResolvedValue({ last_read_post_id: 42 });
+		const ctx = makeCtx({ posts: [makePost({ id: 42 })], lastReadPostID: 10 });
+		await reportReadMarker(ctx, 999);
+		expect(updateReadMarker).toHaveBeenCalledWith(1, 42);
+	});
 });
