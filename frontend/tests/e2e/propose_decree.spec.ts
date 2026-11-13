@@ -98,11 +98,19 @@ test('preparation: the decree is written in the plan form and must not be blank'
 		})
 		.toBe('Salt may be traded freely.');
 
-	// And the server won't take a blank decree from anyone calling it directly.
-	const blank = await g.ctx.bob.request.post(`/api/tables/${g.gameID}/prepare-plan`, {
-		data: { plan_type: 'propose_decree', preparation_notes: '' },
-	});
-	expect(blank.status()).toBe(400);
+	// And the server won't take a blank decree from anyone calling it directly. The
+	// plan commits before the focus passes (to bob, who is the one asked), so the plan
+	// can be on the table a moment before bob may call the route at all: he is refused
+	// with 403 until the pass lands, then refused with 400 for the blank. A blank
+	// decree never creates a plan, so asking again is harmless.
+	await expect
+		.poll(async () => {
+			const blank = await g.ctx.bob.request.post(`/api/tables/${g.gameID}/prepare-plan`, {
+				data: { plan_type: 'propose_decree', preparation_notes: '' },
+			});
+			return blank.status();
+		})
+		.toBe(400);
 });
 
 test('council: text is finalized first, lower-ranked players join or decline, then the signatory may close', async ({ browser }) => {
