@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- ShakeUpView.svelte
   Phase 4c — Shake-Up endgame UI.
 
@@ -14,12 +13,21 @@
       adjust; passing is free), and the spender commits — once every other
       token-holding player has reacted — to lock in the final cost and
       trigger the mechanical effect.
+
+  Looks (the redesign): nothing is framed. The acts, the token pools and each
+  step are set apart by headings and gaps, and only what a player can press has
+  an outline. The options and the titles are choices, so they are chips (the
+  house chip, the one picked in bright gold) and the notes to tear are small
+  game pieces; the pay, commit, abandon and react buttons are the house
+  buttons. A raised cost is a notice (a mark and coloured text), not a tinted
+  strip.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
+	import '$lib/components/shared/marginaliaTile.css';
 	import '../plans/planPanel.css';
-	import { onMount, onDestroy, untrack } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		getShakeUp, shakeUpSpend, shakeUpAdjust, shakeUpCommit, shakeUpPass,
 	} from '$lib/api';
@@ -29,14 +37,21 @@
 		ClaimableTitle,
 	} from '$lib/api';
 	import AssetCardSelectable from '../AssetCardSelectable.svelte';
+	import CrownGlyph from '../CrownGlyph.svelte';
 	import DiceRollPanel from '../DiceRollPanel.svelte';
 	import CardPicker from '../plans/CardPicker.svelte';
+	import FormField from '../plans/FormField.svelte';
 	import Buffet, { type BuffetTab } from '../plans/shared/Buffet.svelte';
 	import { isBlankAsset } from '$lib/assetRisk';
 	import { playerColor, playerColorByID } from '$lib/playerColor';
 	import { shakeUpWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import Chip from '$lib/components/shared/Chip.svelte';
+	import ChecklistRow from '$lib/components/shared/ChecklistRow.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
+	import TableRoster from '$lib/components/shared/TableRoster.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 
 	interface Props {
 		gameID: string;
@@ -141,11 +156,10 @@
 		game.shake_up_step === 1 ? 'Rolling' : game.shake_up_step === 2 ? 'Spending' : '—'
 	);
 
-	// Phase intro: open by default only in the first act. A one-shot seed
-	// (like Buffet's `open` prop / AssetCardSelectable's `defaultExpanded`) —
-	// once the player toggles it, their choice sticks even as the category
-	// advances.
-	let introOpen = $state(untrack(() => game.shake_up_category === 'esteem'));
+	// Phase intro: open by default only in the first act. ChecklistRow's
+	// `defaultOpen` is a one-shot seed (like Buffet's `open` prop /
+	// AssetCardSelectable's `defaultExpanded`) — once the player toggles it,
+	// their choice sticks even as the category advances.
 
 	// Read-only reference of every option across all three acts (Buffet).
 	// Wording follows SHAKEUP_RULES.md's "List of Options" verbatim.
@@ -192,12 +206,13 @@
 			.sort((a, b) => b.rank - a.rank)
 			.map(r => r.player_id as number);
 	});
-	// Whoever the story is currently on: the roller in step 1, or the
-	// announcer/spender in step 2 (whether they're still being reacted to or
-	// already clear to commit).
-	const activeTurnPlayerID = $derived(
-		game.shake_up_step === 1 ? currentRollerID : (openSpend?.spend.player_id ?? currentActor)
+	// The token pools list, in turn order, as the Players the shared roster draws.
+	const turnPlayers = $derived(
+		turnOrder.flatMap((id) => players.find((p) => p.id === id) ?? [])
 	);
+	function tokensOf(id: number): number {
+		return tokens.find((t) => t.id === id)?.shake_up_tokens ?? 0;
+	}
 
 	// ── Step 2: announce spend ──────────────────────────────────────────────
 	let pickedOption = $state<string>('');
@@ -400,54 +415,52 @@
 		currentActor,
 	}));
 	$effect(() => { waitingOn = computedWaitingOn; });
+	// The clock in the token pools marks whoever the game is waiting on, from the
+	// same derivation as the player row's clocks, so the two can't disagree.
+	const waitingPlayerIDs = $derived(
+		new Set(computedWaitingOn.waitees.flatMap((w) => (w.kind === 'player' ? [w.playerID] : [])))
+	);
 </script>
 
 <div class="shake-up">
 	<header>
 		<h2>Shake-Up</h2>
-		<div class="act-tracker" role="list" aria-label="Shake-Up acts">
-			{#each CATEGORIES as cat, i (cat)}
-				<div
+		<!-- The three acts as a track, not three boxes: the one in play is deep gold
+		     with a gold line under it and names its step; the finished ones go
+		     faint. Nothing here is pressable, so nothing is outlined. -->
+		<ol class="act-tracker" role="list" aria-label="Shake-Up acts">
+			{#each CATEGORIES as cat (cat)}
+				<li
 					class="act"
 					class:current={cat === game.shake_up_category}
 					class:done={CATEGORIES.indexOf(cat) < currentCategoryIndex}
-					role="listitem"
+					aria-current={cat === game.shake_up_category ? 'step' : undefined}
 				>
 					<span class="act-name">{CATEGORY_LABELS[cat]}</span>
 					{#if cat === game.shake_up_category}
-						<span class="act-step">{stepLabel}</span>
+						<span class="status-word">{stepLabel}</span>
 					{/if}
-				</div>
-				{#if i < CATEGORIES.length - 1}<span class="act-arrow" aria-hidden="true">→</span>{/if}
+				</li>
 			{/each}
-		</div>
-		<div class="state">
-			<span>Your tokens: <strong>{myTokens}</strong></span>
-		</div>
+		</ol>
+		<p class="state">Your tokens: <span class="num">{myTokens}</span></p>
 	</header>
 
-	<section class="intro-block" class:open={introOpen}>
-		<button
-			type="button"
-			class="intro-toggle"
-			aria-expanded={introOpen}
-			onclick={() => (introOpen = !introOpen)}
-		>
-			<span>About the Shake-Up</span>
-			<span class="intro-caret" aria-hidden="true">▾</span>
-		</button>
-		{#if introOpen}
-			<div class="intro-body">
-				<p>
-					This is the finale. Over three acts — Esteem, then Knowledge, then
-					Power — each player rolls to earn tokens, then spends them in turn
-					to take, break, rise, and claim. Take stock of everything that's
-					happened over the last thirteen rows of the public record, and
-					embrace this last moment: once Power is settled, the game ends.
-				</p>
-			</div>
-		{/if}
-	</section>
+	<ChecklistRow
+		title="About the Shake-Up"
+		glyph="help"
+		action="expand"
+		id="shake-up-intro"
+		defaultOpen={game.shake_up_category === 'esteem'}
+	>
+		<p class="intro-text">
+			This is the finale. Over three acts — Esteem, then Knowledge, then
+			Power — each player rolls to earn tokens, then spends them in turn
+			to take, break, rise, and claim. Take stock of everything that's
+			happened over the last thirteen rows of the public record, and
+			embrace this last moment: once Power is settled, the game ends.
+		</p>
+	</ChecklistRow>
 
 	<!-- Load errors sit up here with the header: they explain the state below
 	     being stale. The action slot is further down, under the spend
@@ -458,24 +471,19 @@
 
 	<section class="tokens-panel">
 		<h3>Token pools</h3>
-		<!-- <p class="muted-text small">Turn order is reverse rank — lowest status first.</p> -->
-		<div class="roller-chips">
-			{#each turnOrder as pid (pid)}
-				<span
-					class="roller-chip"
-					class:active={pid === activeTurnPlayerID}
-					style:border-color={playerColorByID(pid, players)}
-				>
-					{playerName(pid)}:&nbsp;<strong>{tokens.find(t => t.id === pid)?.shake_up_tokens ?? 0}</strong>
-				</span>
-			{/each}
-		</div>
+		<!-- Turn order is reverse rank — lowest status first. The clock is on whoever
+		     the game is waiting on (bright gold on you). -->
+		<TableRoster players={turnPlayers} {currentPlayerID} {waitingPlayerIDs}>
+			{#snippet trailing(p)}
+				<span class="pool-count">{tokensOf(p.id)}<span class="sr-only"> tokens</span></span>
+			{/snippet}
+		</TableRoster>
 	</section>
 
 	{#if game.shake_up_step === 1}
-		<section class="rolling-section">
+		<section class="step rolling-section">
 			<h3>Rolling for {game.shake_up_category ?? 'this category'}</h3>
-			<p class="muted-text small">Each distinct die face earns one token.</p>
+			<p class="muted-text">Each distinct die face earns one token.</p>
 			{#if activeRoll}
 				<DiceRollPanel
 					bind:roll={activeRoll}
@@ -489,13 +497,13 @@
 					{playerNameMap}
 				/>
 			{:else}
-				<p class="muted-text small">Waiting for the next roll to start…</p>
+				<p class="muted-text">Waiting for the next roll to start…</p>
 			{/if}
 		</section>
 
 	{:else if game.shake_up_step === 2}
 		{#if openSpend}
-			<section class="spend-panel">
+			<section class="step spend-panel">
 				<h3>Open spend</h3>
 				<p class="spend-phrase">
 					<span class="spend-player" style:color={playerColorByID(openSpend.spend.player_id, players)}>
@@ -512,8 +520,8 @@
 							: `Owned by ${playerName(spendTargetAsset.owner_id)}`}
 					/>
 				{/if}
-				<p class="muted-text small">
-					Base cost {openSpend.spend.base_cost} · running cost: <strong>{runningCost}</strong>
+				<p class="muted-text">
+					Base cost {openSpend.spend.base_cost} · running cost: <span class="num">{runningCost}</span>
 					{#if adjustmentTotal !== 0}
 						({adjustmentTotal > 0 ? '+' : ''}{adjustmentTotal} so far)
 					{/if}
@@ -531,7 +539,7 @@
 
 				{#if isMySpend}
 					{#if !commitReady}
-						<p class="muted-text small reactor-note">
+						<p class="muted-text">
 							Others can still react — waiting on {pendingReactorNames.join(', ')} to react.
 						</p>
 					{:else if extra === 0}
@@ -542,11 +550,12 @@
 						</div>
 					{:else if affordable}
 						<!-- ADR-008: the cost was raised and the spender can afford it —
-						     Pay or Abandon is their real choice, not a forced completion. -->
-						<p class="muted-text small reactor-note">
+						     Pay or Abandon is their real choice, not a forced completion.
+						     A cost to weigh, so the careful (warning) tone. -->
+						<Notice tone="warning">
 							The cost was raised to {runningCost} ({extra} more than you committed to).
 							Pay the extra, or abandon — either way the tokens already spent are gone.
-						</p>
+						</Notice>
 						<div class="adjust-buttons">
 							<button class="action-btn primary" disabled={busy} onclick={() => commit('pay')}>
 								{busy ? '…' : `Pay ${extra} more token${extra === 1 ? '' : 's'}`}
@@ -557,12 +566,13 @@
 						</div>
 					{:else}
 						<!-- Forced abandon: the raise exceeds what's left in the spender's
-						     pool, so Pay isn't offered — only Abandon. -->
-						<p class="muted-text small reactor-note">
+						     pool, so Pay isn't offered — only Abandon. The purchase is lost
+						     with no say in it, so the loss (danger) tone. -->
+						<Notice tone="danger">
 							The cost was raised to {runningCost}, {extra} more than you committed to — you only
 							have {myTokens} token{myTokens === 1 ? '' : 's'} left, so you can't afford it. The
 							spend must be abandoned; the tokens already spent are gone either way.
-						</p>
+						</Notice>
 						<div class="adjust-buttons">
 							<button class="action-btn primary" disabled={busy} onclick={() => commit('abandon')}>
 								{busy ? '…' : 'Abandon'}
@@ -570,11 +580,14 @@
 						</div>
 					{/if}
 				{:else if myTokens > 0}
+					<!-- Three ways to react. Each one acts the moment it is pressed, so
+					     they are buttons, not a choice that waits for a second tap, and
+					     none is the main one. The cost-floor button greys out through
+					     aria-disabled (and stays pressable, to say why). -->
 					<div class="adjust-buttons">
 						<button class="action-btn secondary" disabled={busy} onclick={() => adjust(1)}>+1 (costs you 1 token)</button>
 						<button
 							class="action-btn secondary"
-							class:reduce-blocked={atCostFloor}
 							disabled={busy}
 							aria-disabled={atCostFloor}
 							title={atCostFloor ? "The cost can't go below 1 token" : undefined}
@@ -585,25 +598,21 @@
 						</button>
 					</div>
 					{#if reduceBlockedReason}
-						<p class="muted-text small reactor-note" role="status">{reduceBlockedReason}</p>
+						<Notice tone="warning" live>{reduceBlockedReason}</Notice>
 					{/if}
 				{:else}
-					<p class="muted-text small">You have no tokens left to react with.</p>
+					<p class="muted-text">You have no tokens left to react with.</p>
 				{/if}
 			</section>
 		{:else if isMyTurn}
-			<section>
+			<section class="step">
 				<h3>Announce a spend</h3>
 				<div class="announce-form">
-					<div class="su-form-row">
-						<span class="su-form-label">Option:</span>
+					<FormField label="Option">
 						<div class="su-chip-row">
 							{#each options as opt}
-								<button
-									type="button"
-									class="su-chip"
-									class:active={pickedOption === opt.Key}
-									title={opt.Description}
+								<Chip
+									selected={pickedOption === opt.Key}
 									onclick={() => {
 										pickedOption = pickedOption === opt.Key ? '' : opt.Key;
 										pickedAssetID = '';
@@ -611,10 +620,10 @@
 										pickedTitleID = '';
 										titleFlavor = '';
 									}}
-								>{opt.Description}</button>
+								>{opt.Description}</Chip>
 							{/each}
 						</div>
-					</div>
+					</FormField>
 					{#if pickedOptionInfo?.NeedsAsset}
 						<CardPicker
 							label="Target asset"
@@ -628,53 +637,54 @@
 						/>
 					{/if}
 					{#if pickedOptionInfo?.NeedsMarginalia && pickedAssetID !== ''}
-						<div class="su-form-row">
-							<span class="su-form-label">Marginalia to tear (breaking tears one):</span>
+						<FormField label="Marginalia to tear (breaking tears one)">
 							{#if pickedIsBlank}
-								<p class="res-warning" style="margin:0;">
+								<Notice tone="warning">
 									This asset has no marginalia — breaking it destroys it outright.
-								</p>
+								</Notice>
 							{:else if breakableMarginalia.length === 0}
-								<p class="muted-text" style="margin:0;">This asset has no intact marginalia to tear.</p>
+								<p class="muted-text">This asset has no intact marginalia to tear.</p>
 							{:else}
-								<div class="su-chip-row">
+								<!-- A note is a small game piece, so picking one is the piece's
+								     selected state: the bright gold border and a tick. -->
+								<div class="su-notes">
 									{#each breakableMarginalia as m (m.id)}
+										{@const picked = pickedMarginaliaID === m.id}
 										<button
 											type="button"
-											class="su-chip"
-											class:active={pickedMarginaliaID === m.id}
-											onclick={() =>
-												(pickedMarginaliaID = pickedMarginaliaID === m.id ? '' : m.id)}
-										>{m.text}</button>
+											class="m-tile su-note"
+											class:picked
+											aria-pressed={picked}
+											onclick={() => (pickedMarginaliaID = picked ? '' : m.id)}
+										>
+											<span class="su-note-text">{m.text}</span>
+											{#if picked}<span class="su-tick"><ToneMark tone="success" size={14} /></span>{/if}
+										</button>
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 					{/if}
 					{#if isClaimTitle}
-						<div class="su-form-row">
-							<span class="su-form-label">Title to claim (unclaimed this game):</span>
+						<FormField label="Title to claim (unclaimed this game)">
 							{#if claimableTitles.length === 0}
-								<p class="muted-text" style="margin:0;">Every title has already been claimed.</p>
+								<p class="muted-text">Every title has already been claimed.</p>
 							{:else}
 								<div class="su-chip-row">
 									{#each claimableTitles as t (t.id)}
-										<button
-											type="button"
-											class="su-chip"
-											class:active={pickedTitleID === t.id}
+										<Chip
+											selected={pickedTitleID === t.id}
 											title={t.description}
 											onclick={() => (pickedTitleID = pickedTitleID === t.id ? '' : t.id)}
-										>{t.name}{#if t.in_succession}&nbsp;♛{/if}</button>
+										>{t.name}{#if t.in_succession}<CrownGlyph mark={{ role: 'successor' }} size={14} />{/if}</Chip>
 									{/each}
 								</div>
 							{/if}
-						</div>
+						</FormField>
 						{#if pickedTitleID !== ''}
-							<div class="su-form-row">
-								<span class="su-form-label">Peer to bear the title (must have a free marginalia slot):</span>
+							<FormField label="Peer to bear the title (must have a free marginalia slot)">
 								{#if titleablePeers.length === 0}
-									<p class="muted-text" style="margin:0;">You have no peer with a free marginalia slot.</p>
+									<p class="muted-text">You have no peer with a free marginalia slot.</p>
 								{:else}
 									<div class="su-peer-cards">
 										{#each titleablePeers as a (a.id)}
@@ -688,16 +698,16 @@
 										{/each}
 									</div>
 								{/if}
-							</div>
-							<div class="su-form-row">
-								<span class="su-form-label">Marginalia text (optional — defaults to the title name):</span>
+							</FormField>
+							<label class="form-label">
+								<span class="form-label-text">Marginalia text (optional — defaults to the title name):</span>
 								<input
 									type="text"
 									maxlength={TEXT_LIMITS.NAME}
 									placeholder="e.g. crowned at the Midwinter Accord"
 									bind:value={titleFlavor}
 								/>
-							</div>
+							</label>
 						{/if}
 					{/if}
 					<button class="action-btn primary" disabled={!announceReady || busy} onclick={announce}>
@@ -723,139 +733,176 @@
 </div>
 
 <style>
+	/* A column of sections with no frames: a heading, then what it holds, with
+	   24px between sections and 8–12px inside one. The side padding is the
+	   view's own, since the play column gives its content none. */
 	.shake-up {
-		display: flex; flex-direction: column; gap: 1rem;
-		padding: 1rem 0;
-		flex: 1; min-height: 0; overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-5);
+		padding: var(--space-4) var(--space-3);
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
 	}
-	.shake-up h2 { color: var(--color-accent); font-size: 1.3rem; margin: 0; }
-	.shake-up h3 { color: var(--color-accent); font-size: 1rem; margin: 0.25rem 0; }
-	.state { display: flex; gap: 1.25rem; font-size: 0.9rem; color: var(--color-text-muted); flex-wrap: wrap; margin-top: 0.4rem; }
+	.shake-up h2,
+	.shake-up h3 {
+		margin: 0;
+		color: var(--color-accent);
+		font-size: var(--text-heading);
+	}
+	header {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+	.state {
+		margin: 0;
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+	/* A value read off the page, in the main colour so it stands out from the
+	   secondary words around it, at regular weight like every other value. */
+	.num {
+		color: var(--color-text);
+		font-variant-numeric: tabular-nums;
+	}
 
-	/* Act tracker: Esteem → Knowledge → Power, current act lit, its step
-	   named beneath it. */
-	/* The tracker is sized for the phase column's narrow end (300px;
-	   docs/STYLE_GUIDE.md "Layout widths"): SPENDING is longer than ROLLING
-	   and tips a roomier layout onto a wrapped second line, so the compact
-	   metrics are the only metrics. */
-	.act-tracker { display: flex; align-items: center; flex-wrap: nowrap; gap: 0.25rem; margin-top: 0.5rem; }
+	/* Act tracker: Esteem, Knowledge, Power as three cells on a track. The one in
+	   play is deep gold with a gold line under it and its step named beneath
+	   (the words are the signal that doesn't depend on colour). */
+	.act-tracker {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: var(--space-2);
+	}
 	.act {
-		display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
-		min-height: 44px; justify-content: center;
-		padding: 0.3rem 0.4rem;
-		border-radius: 6px;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-2);
-		color: var(--color-text-muted);
-		font-size: 0.85rem;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		padding-bottom: var(--space-2);
+		border-bottom: 2px solid var(--color-border);
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
 	}
 	.act.done { color: var(--color-text-faint); }
 	.act.current {
-		border-color: var(--color-accent);
-		background: var(--color-chip-gold-bg);
+		border-bottom-color: var(--color-accent);
 		color: var(--color-accent);
-		font-weight: 600;
 	}
-	.act-name { font-size: 0.78rem; }
-	.act-step { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; }
-	.act-arrow { color: var(--color-text-faint); font-size: 0.75rem; }
+	.act.current .status-word { color: inherit; }
 
-	/* Phase intro — collapsible accordion, mirrors Buffet's own toggle. */
-	.intro-block { display: flex; flex-direction: column; gap: 0; }
-	.intro-toggle {
-		display: flex; align-items: center; justify-content: space-between;
-		width: 100%; min-height: 44px; padding: 0.55rem 0.75rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		color: var(--color-accent);
-		font: inherit; text-align: left; cursor: pointer;
-	}
-	.intro-block.open .intro-toggle {
-		border-color: var(--color-accent);
-		border-bottom-color: transparent;
-		border-bottom-left-radius: 0;
-		border-bottom-right-radius: 0;
-	}
-	.intro-caret {
-		color: var(--color-accent); font-size: 0.75rem;
-		transform: rotate(-90deg); transition: transform 0.15s ease;
-	}
-	.intro-block.open .intro-caret { transform: rotate(0); }
-	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the caret still
-	   turns — its direction is the open/closed state — it just snaps. */
-	@media (prefers-reduced-motion: reduce) {
-		.intro-caret { transition: none; }
-	}
-	.intro-body {
-		border: 1px solid var(--color-accent); border-top: none;
-		border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
-		padding: 0.6rem 0.75rem;
-	}
-	.intro-body p { margin: 0; font-size: 0.85rem; line-height: 1.5; color: var(--color-text-muted); }
-
-	.rolling-section { display: flex; flex-direction: column; gap: 0.6rem; }
-	.roller-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-	.roller-chip {
-		display: inline-flex; align-items: center;
-		min-height: 44px; padding: 0.35rem 0.75rem;
-		border-radius: 999px;
-		border: 1px solid var(--color-neutral);
-		background: var(--color-surface-2);
-		color: var(--color-text-muted);
-		font-size: 0.85rem;
-	}
-	.roller-chip.active {
-		border-color: var(--color-accent); background: var(--color-chip-gold-bg);
-		color: var(--color-accent); font-weight: 600;
+	.intro-text {
+		margin: 0;
+		font-size: var(--text-small);
+		line-height: 1.5;
+		color: var(--color-text-secondary);
 	}
 
+	/* A step: its heading, then what it holds, a little closer together than the
+	   steps are to each other. */
+	.step {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+	.tokens-panel {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.pool-count {
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+	}
+	/* Words for a screen reader that the number says to the eye. Same recipe as
+	   TableRoster's .sr-state. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	/* ── Announce a spend ─────────────────────────────────────────────────── */
 	.announce-form {
-		display: flex; flex-direction: column; gap: 0.5rem;
-		max-width: 24rem;
-		background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: 8px;
-		padding: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-4);
 	}
+	.su-chip-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+	.su-peer-cards { display: flex; flex-direction: column; gap: var(--space-2); }
 
-	.su-form-row { display: flex; flex-direction: column; gap: 0.3rem; }
-	.su-form-label { font-size: 0.85rem; color: var(--color-text-muted); }
-	.su-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-	.su-chip {
-		display: inline-flex; align-items: center;
-		min-height: 44px; padding: 0.35rem 0.85rem;
-		border-radius: 999px;
-		border: 1px solid var(--color-neutral);
-		background: var(--color-surface-2);
+	/* A marginalia to tear is a small game piece you pick, so it takes a piece's
+	   selected state: a 2px bright gold border (the second pixel an inset shadow,
+	   so picking never moves it) and a tick. The tile recipe supplies the warm
+	   border, the corner and the surface. */
+	.su-notes { display: flex; flex-direction: column; gap: var(--space-2); }
+	.su-note {
+		width: 100%;
+		min-height: var(--size-tap);
+		padding: var(--space-2) var(--space-3);
+		justify-content: space-between;
+		gap: var(--space-2);
+		font: inherit;
+		font-size: var(--text-small);
 		color: var(--color-text);
-		font-size: 0.9rem;
-		cursor: pointer;
 		text-align: left;
+		cursor: pointer;
 	}
-	.su-chip.active { border-color: var(--color-accent); background: var(--color-chip-gold-bg); }
-	.su-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+	.su-note:hover:not(.picked) {
+		border-color: color-mix(in srgb, var(--color-border-piece) 75%, white);
+	}
+	.su-note.picked {
+		border-color: var(--color-you);
+		box-shadow: inset 0 0 0 1px var(--color-you);
+	}
+	.su-note:focus-visible {
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
+	}
+	.su-note-text { min-width: 0; }
+	.su-tick {
+		display: inline-flex;
+		flex: none;
+		color: var(--color-you);
+	}
 
-	.su-peer-cards { display: flex; flex-direction: column; gap: 0.4rem; }
+	/* A text field is a control: raised surface, neutral border, the control
+	   corner, 16px type so iOS doesn't zoom the page when it takes focus. */
 	input {
-		background: var(--color-border); color: var(--color-text); border: 1px solid var(--color-neutral);
-		border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.9rem;
+		min-height: var(--size-tap);
+		padding: 0 var(--space-3);
+		font: inherit;
+		font-size: var(--text-body);
+		color: var(--color-text);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border-control);
+		border-radius: var(--radius-control);
 	}
+	input:focus-visible {
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
+	}
+	input::placeholder { color: var(--color-text-faint); }
 
-	.spend-panel {
-		background: var(--color-surface-sunken); border: 1px solid var(--color-border-strong); border-radius: 8px; padding: 0.75rem;
-		display: flex; flex-direction: column; gap: 0.5rem;
-	}
-	.spend-phrase { margin: 0; font-size: 0.92rem; }
-	.spend-player { font-weight: 600; }
+	/* ── Open spend ───────────────────────────────────────────────────────── */
+	.spend-phrase { margin: 0; font-size: var(--text-body); }
 	.adjustment-history {
-		list-style: none; margin: 0; padding: 0;
-		display: flex; flex-direction: column; gap: 0.15rem;
-		font-size: 0.8rem; color: var(--color-text-muted);
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
-	.reactor-note { color: var(--color-accent-hover); }
-	.adjust-buttons { display: flex; gap: 0.5rem; margin-top: 0.25rem; flex-wrap: wrap; }
-
-	/* Cost-floor guard (ADR-008 §1): the reduce button stays tappable
-	   (aria-disabled, not native disabled) so a tap surfaces the reason —
-	   mirrors PlanPanel's .ineligible treatment. */
-	.action-btn.reduce-blocked { cursor: not-allowed; opacity: 0.4; }
+	.adjust-buttons { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 </style>
