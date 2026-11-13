@@ -29,7 +29,9 @@ describe('tableBell', () => {
 		const bell = tableBell(table());
 		expect(bell?.struck).toBe(false);
 		expect(bell?.setMutedTo).toBe(true);
-		expect(bell?.label).toContain('AMGVBY');
+		// Named by the table's title, never its join code: the row doesn't show a code.
+		expect(bell?.label).toContain('Row 6');
+		expect(bell?.label).not.toContain('AMGVBY');
 	});
 
 	it('shows the struck bell and offers to undo once silenced', () => {

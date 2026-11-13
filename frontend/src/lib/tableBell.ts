@@ -5,6 +5,7 @@
 // a chain of conditions inside the markup.
 
 import type { MyTable } from '$lib/api';
+import { tableTitle } from '$lib/tableTitle';
 
 export type TableBell = {
 	/** Draw the struck variant — this table is currently sending nothing. */
@@ -33,12 +34,17 @@ export function tableBell(t: MyTable): TableBell | null {
 	if (t.phase === 'ended') return null;
 	if (!t.waiting_on_player_ids.includes(t.player_id)) return null;
 
+	// Named by the table's title, the words its row shows. The join code used to
+	// do this job, but the row no longer shows one, and a name a screen-reader
+	// user can't match to anything on screen tells them nothing.
+	const name = tableTitle(t);
+
 	// Their own choice outranks the give-up: both mean silence, but only one of
 	// them is undoable from here, and that is the one worth offering.
 	if (t.reminder_muted) {
 		return {
 			struck: true,
-			label: `Turn reminders back on for table ${t.join_code}`,
+			label: `Turn reminders back on for ${name}`,
 			title: 'Reminders silenced for this turn',
 			setMutedTo: false,
 		};
@@ -46,14 +52,14 @@ export function tableBell(t: MyTable): TableBell | null {
 	if (t.reminder_exhausted) {
 		return {
 			struck: true,
-			label: `Reminders have stopped for table ${t.join_code}`,
+			label: `Reminders have stopped for ${name}`,
 			title: "This table has been waiting so long that reminders stopped on their own",
 			setMutedTo: null,
 		};
 	}
 	return {
 		struck: false,
-		label: `Stop reminding me about table ${t.join_code}`,
+		label: `Stop reminding me about ${name}`,
 		title: 'Stop reminding me about this turn',
 		setMutedTo: true,
 	};

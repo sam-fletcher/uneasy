@@ -41,9 +41,9 @@ test('returning to a page you just left paints from the snapshot, not the networ
   // Clicking, not goto: a hard navigation re-executes the module and drops the
   // cache with it, which is expected and is why this must click through.
   await page.goto('/profile');
-  await page.waitForSelector('a.table-card');
+  await page.waitForSelector('a.table-link');
 
-  const card = `a.table-card[href="/table/${game_id}"]`;
+  const card = `a.table-link[href="/table/${game_id}"]`;
 
   // First visit pays full freight — asserted so the test fails loudly if the
   // latency injection ever stops working and makes the rest meaningless.
@@ -57,7 +57,7 @@ test('returning to a page you just left paints from the snapshot, not the networ
   // Back to the profile, which was itself snapshotted on the way through.
   const profileStart = Date.now();
   await page.click('a.home');
-  await expect(page.locator('a.table-card').first()).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('a.table-link').first()).toBeVisible({ timeout: 20000 });
   expect(Date.now() - profileStart).toBeLessThan(RETURN_BUDGET_MS);
   await page.waitForLoadState('networkidle');
 
