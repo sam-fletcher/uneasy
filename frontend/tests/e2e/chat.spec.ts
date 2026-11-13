@@ -92,7 +92,7 @@ test('alice sends a chat message; bob sees it live', async ({ browser, playwrigh
   await bobCtx.close();
 });
 
-test('catch-up: messages sent while away light the Chat tab and show the New messages divider', async ({ browser }) => {
+test('catch-up: messages sent while away light the Chat tab and show the "N new" divider', async ({ browser }) => {
   const aliceCtx = await browser.newContext({ baseURL: E2E });
   const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
@@ -121,11 +121,13 @@ test('catch-up: messages sent while away light the Chat tab and show the New mes
   // A dot, never a count.
   await expect(chatTab).not.toContainText(/\d/);
 
-  // Opening the pane reveals the "New messages" divider right above the
-  // message that arrived while she was away.
+  // Opening the pane reveals the unread divider right above the message that
+  // arrived while she was away. The count lives in the divider ("1 new"), not
+  // on the tab.
   await chatTab.click();
   const chat = alicePage.locator('[aria-label="Chat"]');
-  await expect(chat.getByText('New messages')).toBeVisible();
+  await expect(chat.getByRole('separator', { name: '1 new message' })).toBeVisible();
+  await expect(chat.getByText('1 new', { exact: true })).toBeVisible();
   await expect(chat.getByText(awayMessage)).toBeVisible();
 
   // Having had the new messages on screen, the dot clears.
@@ -274,7 +276,7 @@ test('hide bookkeeping toggle: hides a Trace rename post, keeps a Default take p
   await expect(feed.getByText('renamed Original Name', { exact: false })).toHaveCount(0);
 
   // Unchecking "Hide bookkeeping" reveals the rename post too.
-  await aliceChat.getByRole('checkbox', { name: 'Hide bookkeeping' }).uncheck();
+  await aliceChat.getByRole('switch', { name: 'Hide bookkeeping' }).uncheck();
   await expect(feed.getByText('renamed Original Name', { exact: false })).toBeVisible();
 
   await aliceCtx.close();
@@ -384,11 +386,13 @@ test('scene container: single chronology, collapses once ended and read, expands
   const chat = alicePage.locator('[aria-label="Chat"]');
   await expect(chat).toBeVisible();
 
-  // Live scene: expanded, header shows the banner + count, and can't collapse.
+  // Live scene: expanded, header shows the banner and says it is live, and
+  // can't collapse. (No message count: totals belong in lists, not in chrome.)
   const header = chat.locator('.scene-header');
   await expect(header).toBeVisible();
   await expect(header).toContainText('The Mill');
-  await expect(header).toContainText('2 messages');
+  await expect(header).toContainText('Live');
+  await expect(header).not.toContainText('messages');
   await expect(header).toBeDisabled();
   const box = await header.boundingBox();
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(44); // mobile-first tap target
@@ -420,7 +424,7 @@ test('scene container: single chronology, collapses once ended and read, expands
   const chat2 = alicePage.locator('[aria-label="Chat"]');
   const header2 = chat2.locator('.scene-header');
   await expect(header2).toBeVisible();
-  await expect(header2).toContainText('2 messages');
+  await expect(header2).toContainText('The Mill');
   await expect(header2).not.toBeDisabled();
 
   // Collapsed by default (ended + fully read): inner posts aren't rendered.
@@ -560,6 +564,193 @@ test('plan-scene: a festivity renders both players\' in-character posts inside o
 
   await aliceCtx.close();
   await bobCtx.close();
+});
+
+/**
+ * Takes a seeded Seek Answers plan from pending to resolved over the API, the
+ * way seek_answers.spec.ts does (the plan flow isn't the subject here; how the
+ * feed draws it is). Every pick is "declare a truth", so nothing is left for a
+ * panel to do. A make is forced; the dice are genuinely random otherwise.
+ */
+async function resolveSeekAnswers(api: APIRequestContext, planID: number): Promise<void> {
+  const resolve = await api.post(`/api/plans/${planID}/resolve`);
+  expect(resolve.ok(), `resolve failed: ${await resolve.text()}`).toBeTruthy();
+  const cast = await api.post(`/api/plans/${planID}/seek-cast-roll`, {
+    data: { narration: 'I read the harbour ledgers by candlelight.' },
+  });
+  expect(cast.ok(), `cast failed: ${await cast.text()}`).toBeTruthy();
+  const { roll } = (await cast.json()) as { roll: { id: number } };
+  const forced = await api.post('/api/dev/force-roll', { data: { roll_id: roll.id, outcome: 'make' } });
+  expect(forced.ok(), `force-roll failed: ${await forced.text()}`).toBeTruthy();
+  const { roll: forcedRoll } = (await forced.json()) as { roll: { result: number } };
+  const result = forcedRoll.result;
+  const choices = Array(result).fill('declare_truth');
+  const choice = await api.post(`/api/plans/${planID}/make-choice`, { data: { result: 'make', choices } });
+  expect(choice.ok(), `make-choice failed: ${await choice.text()}`).toBeTruthy();
+  for (let i = 0; i < result; i++) {
+    const truth = await api.post(`/api/plans/${planID}/declare-truth`, {
+      data: { text: `A truth the ledgers kept (${i + 1}).` },
+    });
+    expect(truth.ok(), `declare-truth failed: ${await truth.text()}`).toBeTruthy();
+  }
+}
+
+// A plan's resolution in the feed is one header row (the plan's mark, its name, the
+// preparer's shape, a status word, a caret) with its lines behind a rule. The
+// header is the only thing that is pressed, and it folds.
+test("a plan's resolution is a header row that folds: name, preparer's shape, status", async ({ browser }) => {
+  const reset = await pwRequest.newContext({ baseURL: E2E });
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: {
+      phase: 'main_event',
+      players: ['alice', 'bob'],
+      current_row: 5,
+      plans: [{ preparer_idx: 0, plan_type: 'seek_answers', category: 'knowledge', row: 5, row_order: 0 }],
+    },
+  });
+  expect(seedRes.ok(), `seed failed: ${await seedRes.text()}`).toBeTruthy();
+  const { game_id: tableId } = await seedRes.json();
+  track(tableId);
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  await devLogin(aliceCtx.request, 'alice');
+  const plansRes = await aliceCtx.request.get(`/api/tables/${tableId}/plans`);
+  const { plans } = (await plansRes.json()) as { plans: { id: number; plan_type: string }[] };
+  const planID = plans.find((p) => p.plan_type === 'seek_answers')!.id;
+  await resolveSeekAnswers(aliceCtx.request, planID);
+
+  // Everything has been seen, so the resolved span starts folded.
+  const markerID = await newestPostID(aliceCtx.request, tableId);
+  const mark = await aliceCtx.request.put(`/api/tables/${tableId}/read-marker`, {
+    data: { last_read_post_id: markerID },
+  });
+  expect(mark.ok()).toBeTruthy();
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 375, height: 812 }); // mobile-first
+  await alicePage.goto(`/table/${tableId}`);
+  await openPane(alicePage, 'Chat');
+  const chat = alicePage.locator('[aria-label="Chat"]');
+
+  const header = chat.locator(`.plan-header[data-plan-id="${planID}"]`);
+  await expect(header).toBeVisible();
+  // Name, then the preparer's shape (named for a screen reader), then the status.
+  await expect(header).toContainText('Seek Answers');
+  await expect(header.getByRole('img', { name: 'alice' })).toBeVisible();
+  await expect(header.locator('.status-word')).toHaveText('Make');
+  // The header is a tappable row, never a card: 44px tall at least, no box.
+  const box = await header.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  expect(await header.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe('0px');
+  expect(await header.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+
+  // Folded: the lines inside are not rendered, but the sentence behind the status
+  // word stays, so a shut span still says how the plan landed.
+  await expect(header).toHaveAttribute('aria-expanded', 'false');
+  const group = chat
+    .locator('.plan-group')
+    .filter({ has: alicePage.locator(`.plan-header[data-plan-id="${planID}"]`) });
+  await expect(group.getByText('succeeded', { exact: false })).toBeVisible();
+  await expect(group.getByText('rolled', { exact: false })).toHaveCount(0);
+
+  // Tapping the header unfolds it: the lines come back, behind a thin rule.
+  await header.click();
+  await expect(header).toHaveAttribute('aria-expanded', 'true');
+  await expect(group.getByText('rolled', { exact: false }).first()).toBeVisible();
+  const body = group.locator('.span-body');
+  expect(await body.evaluate((el) => getComputedStyle(el).borderLeftWidth)).toBe('1px');
+  expect(await body.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+
+  await aliceCtx.close();
+});
+
+// The dot on Chat clears once the new messages have been on screen: on the tab
+// on a phone (covered above), and on the column's name from three columns up,
+// where there is no tab and the chat is always visible.
+test('the dot on the Chat column name clears once new messages have been seen', async ({ browser }) => {
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  const bobCtx = await browser.newContext({ baseURL: E2E });
+  await devLogin(aliceCtx.request, 'alice');
+  await devLogin(bobCtx.request, 'bob');
+  const createRes = await aliceCtx.request.post('/api/tables');
+  const { game } = await createRes.json();
+  const tableId: number = game.id;
+  track(tableId);
+  await bobCtx.request.post('/api/tables/join', { data: { join_code: game.join_code } });
+  await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: 'waiting for you' } });
+
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 1280, height: 800 }); // three columns
+  await alicePage.goto(`/table/${tableId}`);
+  const chat = alicePage.getByRole('complementary', { name: 'Chat' });
+  // The column name carries the same pale dot as the tab would, and no number.
+  const name = chat.locator('.pane-name');
+  await expect(name).toContainText('Chat');
+  await expect(chat.getByText('waiting for you')).toBeVisible();
+  await expect(name).not.toContainText(/\d/);
+  // It was on screen at the bottom of the feed, so the dot goes by itself.
+  await expect(name.getByRole('img', { name: 'new messages' })).toHaveCount(0, { timeout: 10_000 });
+
+  // A message that arrives while the column is on screen and at the bottom is
+  // seen at once, so the dot does not linger.
+  await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: 'and another' } });
+  await expect(chat.getByText('and another')).toBeVisible();
+  await expect(name.getByRole('img', { name: 'new messages' })).toHaveCount(0, { timeout: 10_000 });
+
+  await aliceCtx.close();
+  await bobCtx.close();
+});
+
+// The composer. Send is greyed out until there is something to send, and the
+// keyboard opens only when the box is tapped, never because the chat arrived.
+test('Send is greyed out until there is text, and the keyboard never opens on its own', async ({ browser }) => {
+  const reset = await pwRequest.newContext({ baseURL: E2E });
+  const seedRes = await reset.post('/api/dev/seed', {
+    data: { phase: 'main_event', players: ['alice', 'bob'] },
+  });
+  const { game_id: tableId } = await seedRes.json();
+  track(tableId);
+  await reset.dispose();
+
+  const aliceCtx = await browser.newContext({ baseURL: E2E });
+  await devLogin(aliceCtx.request, 'alice');
+  const alicePage = await aliceCtx.newPage();
+  await alicePage.setViewportSize({ width: 375, height: 812 }); // mobile-first
+  await alicePage.goto(`/table/${tableId}`);
+  await openPane(alicePage, 'Chat');
+  const chat = alicePage.locator('[aria-label="Chat"]');
+  const box = chat.getByPlaceholder('Write a message…');
+  const send = chat.getByRole('button', { name: 'Send' });
+  await expect(box).toBeVisible();
+
+  // Arriving on the chat opens no keyboard: nothing in it has focus.
+  await expect(box).not.toBeFocused();
+
+  // Greyed out: the house button's disabled look (raised-twice fill, faint text,
+  // no border), not the main button's deep gold, and not faded by opacity.
+  await expect(send).toBeDisabled();
+  const greyed = await send.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { opacity: cs.opacity, border: cs.borderTopColor, bg: cs.backgroundColor };
+  });
+  expect(greyed.opacity).toBe('1');
+  await box.fill('   ');
+  await expect(send).toBeDisabled(); // whitespace is not a message
+  await box.fill('hello');
+  await expect(send).toBeEnabled();
+  const live = await send.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(live).not.toBe(greyed.bg); // the main button is a different fill than the greyed one
+
+  // The box is a 16px input at least 44px tall: iOS zooms the page for anything smaller.
+  const size = await box.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { font: cs.fontSize, height: el.getBoundingClientRect().height };
+  });
+  expect(size.font).toBe('16px');
+  expect(size.height).toBeGreaterThanOrEqual(44);
+
+  await aliceCtx.close();
 });
 
 // Composer focus retention. Sending must not blur the compose box — people
