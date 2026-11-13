@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- shared/Stepper.svelte
   A labelled −/+ pick-count row, shared by every plan whose picker lets a
   player take an option several times (Seek Answers, Spread Rumors, Spread
@@ -37,9 +36,9 @@
 </script>
 
 <div class="stepper-row" class:dimmed>
-	<button type="button" class="action-btn" aria-label={label ? `Fewer ${label}` : 'Fewer'} onclick={() => onstep(-1)} disabled={decDisabled}>−</button>
+	<button type="button" class="action-btn secondary" aria-label={label ? `Fewer ${label}` : 'Fewer'} onclick={() => onstep(-1)} disabled={decDisabled}>−</button>
 	<strong class="stepper-count">{count}</strong>
-	<button type="button" class="action-btn" aria-label={label ? `More ${label}` : 'More'} onclick={() => onstep(1)} disabled={incDisabled}>+</button>
+	<button type="button" class="action-btn secondary" aria-label={label ? `More ${label}` : 'More'} onclick={() => onstep(1)} disabled={incDisabled}>+</button>
 	<span>{@render children()}</span>
 </div>
 
@@ -47,14 +46,17 @@
 	.stepper-row {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.82rem;
+		gap: var(--space-2);
+		font-size: var(--text-small);
 		color: var(--color-text-secondary);
 		line-height: 1.4;
 	}
 	/* The −/+ buttons are .action-btn (44px tall); a bare glyph is only ~39px
 	   wide, so give them a square 44px target too. */
-	.stepper-row :global(.action-btn) { min-width: 44px; }
-	.stepper-row.dimmed { opacity: 0.55; }
-	.stepper-count { min-width: 1.5rem; text-align: center; }
+	.stepper-row :global(.action-btn) { min-width: var(--size-tap); }
+	/* An option that can't be taken at all: its words go faint, but the row is not
+	   faded (a fade would take them under the contrast floor), and its buttons
+	   already look unavailable. */
+	.stepper-row.dimmed { color: var(--color-text-faint); }
+	.stepper-count { min-width: var(--space-5); text-align: center; }
 </style>

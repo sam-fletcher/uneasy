@@ -9,7 +9,7 @@
 // must act — `acting_player_ids` is read directly, with no client-side
 // preparer/focus proxy (the proxy is what produced the original bug).
 
-import type { DiceRoll, RowState, PlanType } from '$lib/api';
+import type { DiceRoll, RowState } from '$lib/api';
 
 /** A single party the game is waiting on. */
 export type Waitee =
@@ -17,11 +17,13 @@ export type Waitee =
 	| { kind: 'everyone' }
 	| { kind: 'label'; text: string };
 
-/** The rendered state of the WaitingOnBar. */
+/** Who the game is waiting on, and for what. `stepLabel` finishes the sentence
+ *  the open step's heading starts ("Your move — …", "Waiting on otto — …"), so
+ *  it is a lower-case phrase that reads after the dash and never repeats the
+ *  plan's name (the title bar and the finished steps above already say that). */
 export interface WaitingOnState {
 	waitees: Waitee[];
 	stepLabel?: string;
-	stepSubtitle?: string;
 }
 
 /** Everything the main-event derivation reads. All server-authoritative or
@@ -33,29 +35,44 @@ export interface MainEventWaitingOnInput {
 	 *  purely for the AwaitDiceRoll step label; the waitees themselves come
 	 *  from `rowState.acting_player_ids` like every other kind. */
 	activeRoll: DiceRoll | null;
-	/** plan_type of the open delay-reveal plan, or null when not in that kind. */
-	delayRevealPlanType: PlanType | null;
-	/** Max assets the focus player may refresh (for the post-scene subtitle). */
+	/** Max assets the focus player may refresh (for the post-scene label). */
 	maxRefresh: number;
+	/** The viewer. Only a dice roll's wording needs it: the actor's move is the
+	 *  roll itself, everyone else's is to aid or interfere with it. */
+	currentPlayerID?: number | null;
 }
 
 const player = (playerID: number): Waitee => ({ kind: 'player', playerID });
 
-const rollStepLabel = (stage: DiceRoll['stage'] | undefined): string => {
-	switch (stage) {
+/** The roll step's ask. The actor's move is the roll, and everyone else's is
+ *  to aid or interfere. It is "the roll" only while the ACTOR still owes it: to
+ *  the actor looking (and still in the acting set), or to anyone, once the actor
+ *  is the only one left. An actor who has readied is no longer owed anything, so
+ *  what the table waits on is whatever the others owe (aid or interfere), however
+ *  the actor reads it. */
+const rollStepLabel = (
+	roll: DiceRoll | null,
+	acting: number[],
+	viewerID: number | null,
+): string => {
+	switch (roll?.stage) {
 		case 'decide_vote':
-			return 'Dice roll — call a vote?';
+			return 'call a difficulty vote?';
 		case 'voting':
-			return 'Dice roll — difficulty vote';
-		case 'leverage':
-			return 'Dice roll — leverage & ready';
+			return 'difficulty vote';
+		case 'leverage': {
+			const actor = roll.actor_id;
+			if (viewerID != null && viewerID === actor && acting.includes(actor)) return 'the roll';
+			if (acting.length > 0 && acting.every(id => id === actor)) return 'the roll';
+			return 'aid or interfere';
+		}
 		default:
-			return 'Dice roll';
+			return 'the roll';
 	}
 };
 
 /**
- * Compute the WaitingOnBar state for the main-event phase.
+ * Compute who the main-event phase is waiting on, and the phrase that finishes the open step's heading.
  *
  * The server's RowState kind selects the waitees for every kind, including
  * AwaitDiceRoll (an open dice roll — the backend checks this ahead of every
@@ -66,7 +83,8 @@ const rollStepLabel = (stage: DiceRoll['stage'] | undefined): string => {
  * preparer/focus/roll-participant proxy left to mis-attribute the wait.
  */
 export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnState {
-	const { rowState, activeRoll, delayRevealPlanType, maxRefresh } = input;
+	const { rowState, activeRoll, maxRefresh } = input;
+	const viewerID = input.currentPlayerID ?? null;
 
 	// The server-authoritative acting set. The backend names the exact
 	// decision-maker(s) from persisted state for every actor-naming kind —
@@ -76,23 +94,26 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 
 	switch (rowState?.kind) {
 		case 'await_dice_roll':
-			return { waitees: actingWaitees(), stepLabel: rollStepLabel(activeRoll?.stage) };
+			return {
+					waitees: actingWaitees(),
+					stepLabel: rollStepLabel(activeRoll, rowState?.acting_player_ids ?? [], viewerID),
+				};
 		case 'plan_resolving':
 		case 'plan_pending':
 			// Resolved by its preparer (named server-side), never the focus
 			// player — a delayed plan routinely resolves on a row whose focus is
 			// someone else. plan_pending is the brief pre-kickoff/recovery state.
-			return { waitees: actingWaitees(), stepLabel: 'Resolving plan' };
+			return { waitees: actingWaitees(), stepLabel: 'the next step' };
 		case 'await_demand_counter':
-			return { waitees: actingWaitees(), stepLabel: 'Make Demands — awaiting counter' };
+			return { waitees: actingWaitees(), stepLabel: 'the counter-demand' };
 		case 'await_demand_draft_pick':
-			return { waitees: actingWaitees(), stepLabel: 'Make Demands — draft pick' };
+			return { waitees: actingWaitees(), stepLabel: 'draft pick' };
 		case 'await_demand_leverage':
 			// Control_leverage winner owes the leverage decision on the target
 			// plan's open roll. Usually surfaced via the await_dice_roll case
 			// above (they're seeded unready on that roll); this is the row-state
 			// fallback for the gap before/after the roll itself is open.
-			return { waitees: actingWaitees(), stepLabel: 'Make Demands — control leverage' };
+			return { waitees: actingWaitees(), stepLabel: 'leverage on the roll' };
 		case 'await_demand_retarget':
 			// Keep_or_change_target Make Demands winner owes their call on where the
 			// target plan is aimed — keeping it is as much a decision as re-aiming it,
@@ -101,69 +122,61 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// above (they're seeded unready on that roll) and this is the fallback. On a
 			// Propose Duel or Clandestinely Liaise, which have no such roll, this IS the
 			// wait: the plan holds before its first step.
-			return { waitees: actingWaitees(), stepLabel: 'Make Demands — keep or change target' };
+			return { waitees: actingWaitees(), stepLabel: 'keep or change the target' };
 		case 'await_plan_reaim':
 			// A plan found its prepare-time target gone (destroyed, moved, no longer
 			// pending) and holds until the preparer re-aims it — the book's "change
 			// the target if the original intent no longer makes sense", forced. The
 			// server names the preparer alone: every other route on the plan is
 			// refused while it is paused, so nobody else has a move to be waited on.
-			return { waitees: actingWaitees(), stepLabel: 'Choose a new target' };
+			return { waitees: actingWaitees(), stepLabel: 'choose a new target' };
 		case 'await_festivity_guest_turn':
-			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — in progress' };
+			return { waitees: actingWaitees(), stepLabel: 'the festivity' };
 		case 'await_festivity_challenge_response':
-			return { waitees: actingWaitees(), stepLabel: 'Host Festivity — challenge response' };
+			return { waitees: actingWaitees(), stepLabel: 'answer the challenge' };
 		case 'await_duel_staking':
 			// Both duellists stake simultaneously; the backend filters to whoever
 			// still owes a stake (acting_player_ids).
-			return { waitees: actingWaitees(), stepLabel: 'Propose Duel — staking' };
+			return { waitees: actingWaitees(), stepLabel: 'stake for the duel' };
 		case 'await_duel_bout':
-			return { waitees: actingWaitees(), stepLabel: 'Propose Duel — bout' };
+			return { waitees: actingWaitees(), stepLabel: 'the bout' };
 		case 'await_take_consent':
-			return { waitees: actingWaitees(), stepLabel: 'Spread Rumors — consent to take asset' };
+			return { waitees: actingWaitees(), stepLabel: 'consent to the take' };
 		case 'await_question_answer':
-			return { waitees: actingWaitees(), stepLabel: 'Seek Answers — answer a question' };
+			return { waitees: actingWaitees(), stepLabel: 'answer the question' };
 		case 'liaise_resolving':
 			// Collaborative submit phase (secrets / things-we-share /
 			// when-will-I-see-you-again). The backend names who still owes a
 			// submission, or the preparer once both are in (must advance).
-			return { waitees: actingWaitees(), stepLabel: 'Clandestinely Liaise' };
+			return { waitees: actingWaitees(), stepLabel: 'the liaison' };
 		case 'await_courtier_response':
 			// Exchange Courtiers target-driven sub-step (offer / messy break / mar
 			// choices / peer claims). Blocks on the target, not the preparer.
-			return { waitees: actingWaitees(), stepLabel: 'Exchange Courtiers — target responds' };
+			return { waitees: actingWaitees(), stepLabel: 'respond to the exchange' };
 		case 'await_introductions_marginalia':
 			// Marred Make Introductions — a newcomer's marginalia is somebody
 			// else's to write, and until they do the peer is still a draft with no
 			// asset behind them.
-			return { waitees: actingWaitees(), stepLabel: 'Make Introductions — describe a newcomer' };
+			return { waitees: actingWaitees(), stepLabel: 'describe a newcomer' };
 		case 'await_counter_propaganda':
 			// The top interferer was handed a counter-propaganda plan by the
 			// preparer's mar: state their message and roll, or decline. Names the
 			// interferer, plus whoever still owes a step of the parent plan (the
 			// preparer, or a Make Demands perform_steps winner) — the server
 			// builds that set (spCounterWaitees); this just renders it.
-			return { waitees: actingWaitees(), stepLabel: 'Spread Propaganda — counter-propaganda' };
+			return { waitees: actingWaitees(), stepLabel: 'counter-propaganda' };
 		case 'await_chronicle_choices':
 			// Marred Chronicle Histories — every present player owes one choice.
-			return { waitees: actingWaitees(), stepLabel: 'Chronicle Histories — all choose' };
+			return { waitees: actingWaitees(), stepLabel: 'everyone chooses' };
 		case 'await_delay_reveal': {
-			const label =
-				delayRevealPlanType === 'make_war'
-					? 'Make War — delay reveal'
-					: delayRevealPlanType === 'clandestinely_liaise'
-						? 'Clandestinely Liaise — delay reveal'
-						: 'Delay reveal';
-			return { waitees: actingWaitees(), stepLabel: label };
+			// Both plans (Make War, Clandestinely Liaise) reveal the same way, and the
+			// title bar names the plan, so one phrase does.
+			return { waitees: actingWaitees(), stepLabel: 'the delay reveal' };
 		}
 		case 'await_battle_cost':
-			return { waitees: actingWaitees(), stepLabel: 'Row advance blocked', stepSubtitle: 'cost of battle' };
+			return { waitees: actingWaitees(), stepLabel: 'pay the cost of battle' };
 		case 'await_surrender_claim':
-			return {
-				waitees: actingWaitees(),
-				stepLabel: 'Row advance blocked',
-				stepSubtitle: 'surrender-asset claims',
-			};
+			return { waitees: actingWaitees(), stepLabel: 'surrender-asset claims' };
 		case 'await_endgame_vote':
 			// Row 7's advance is paused while the whole table votes on how the
 			// game ends; the backend names every seated player who still owes a
@@ -171,11 +184,11 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// timeout, no skip (adr/FACILITATOR_POWERS_AUDIT.md) — so naming the
 			// stragglers here is the entire pressure mechanism, alongside the
 			// notification system.
-			return { waitees: actingWaitees(), stepLabel: 'How will the game end?' };
+			return { waitees: actingWaitees(), stepLabel: 'how will the game end?' };
 		case 'await_main_character_choice':
 			// One or more players lost their main character; each must choose a
 			// replacement before play resumes. The backend names them all.
-			return { waitees: actingWaitees(), stepLabel: 'Choose a new main character' };
+			return { waitees: actingWaitees(), stepLabel: 'choose a new main character' };
 		case 'finale_row_complete':
 			// Row 13's plans are all resolved and an Explosive Finale gives that
 			// row no turns, so the row is over and nobody is being waited on. The
@@ -183,12 +196,14 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// bar should stay silent through rather than name anyone.
 			return { waitees: [] };
 		case 'scene_active':
-			return { waitees: actingWaitees(), stepLabel: 'Scene' };
+			return { waitees: actingWaitees(), stepLabel: 'the scene' };
 		case 'scene_setting':
-			return { waitees: actingWaitees(), stepLabel: 'Set the scene' };
+			return { waitees: actingWaitees(), stepLabel: 'set the scene' };
 		case 'post_scene_action': {
-			const subtitle = `or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`;
-			return { waitees: actingWaitees(), stepLabel: 'Prepare a plan', stepSubtitle: subtitle };
+			return {
+				waitees: actingWaitees(),
+				stepLabel: `prepare a plan, or refresh ${maxRefresh} asset${maxRefresh === 1 ? '' : 's'}`,
+			};
 		}
 	}
 	return { waitees: [] };
@@ -223,22 +238,22 @@ export interface ShakeUpWaitingOnInput {
 	currentActor: number | null;
 }
 
-/** Compute the WaitingOnBar state for the shake-up phase. */
+/** Compute who the shake-up phase is waiting on, and the phrase that finishes the open step's heading. */
 export function shakeUpWaitingOn(input: ShakeUpWaitingOnInput): WaitingOnState {
 	const { step, currentRollerID, openSpend, currentActor } = input;
 	if (step === 1) {
 		if (currentRollerID == null) return { waitees: [] };
-		return { waitees: [player(currentRollerID)], stepLabel: 'Roll for tokens' };
+		return { waitees: [player(currentRollerID)], stepLabel: 'roll for tokens' };
 	}
 	if (step === 2) {
 		if (openSpend) {
 			if (!openSpend.commitReady) {
-				return { waitees: openSpend.pendingReactorIDs.map(player), stepLabel: 'React to the spend' };
+				return { waitees: openSpend.pendingReactorIDs.map(player), stepLabel: 'react to the spend' };
 			}
-			return { waitees: [player(openSpend.spend.player_id)], stepLabel: 'Commit the spend' };
+			return { waitees: [player(openSpend.spend.player_id)], stepLabel: 'commit the spend' };
 		}
 		if (currentActor != null) {
-			return { waitees: [player(currentActor)], stepLabel: 'Spend tokens' };
+			return { waitees: [player(currentActor)], stepLabel: 'spend tokens' };
 		}
 		return { waitees: [] };
 	}

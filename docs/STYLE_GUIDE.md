@@ -606,7 +606,7 @@ Reuse before writing new CSS — these live in
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `HelpDisclosure.svelte` | the collapsible "? How X works" panel: a `tapRow.css` row with the help mark and a caret, and its body below. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
-| `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), `TonesSheet`, and the Waiting On stopgap `WarEntry`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
+| `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), `TonesSheet`, and the war stopgap `WarEntry`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`, `clock`, `war`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below. The newer marks have a component of their own that adds the size, colour rule and label |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
@@ -677,6 +677,50 @@ more; `/dev/styleguide` shows every state.
   colour is kept for saying whose something is (bright gold means you).
 - **Focus** is always `outline: 2px solid var(--color-you)`, offset from the
   edge (inside it for a row).
+
+### Play steps
+
+The Play pane reads as the steps of whatever is happening, in order. Finished
+steps are one line each; only the open step is expanded, and it starts with a
+heading that states the current ask. Nobody presses a plan as a whole, so it has
+no box and no tint: it is a run of lines, a heading and some space. The pieces,
+all on `/dev/styleguide` under "Play steps":
+
+| piece | what it is |
+|---|---|
+| `shared/StepHeading.svelte` | the open step's heading: **"Your move — …"** when the game waits on you, **"Waiting on otto — …"** when it waits on someone else. Deep gold at heading size. The one place the ask is stated in words |
+| `lib/stepHeading.ts` | the wording, pure and tested. It reads the same derivation as the clocks on the player row (`lib/waitingOn.ts`), so the two can't disagree |
+| `plans/shared/FinishedStep.svelte` | a step that is over, as one line with its mark. With a `detail` it is a tappable row with a caret that opens in place |
+| `plans/shared/DieTile.svelte` | one die: a 44px game piece whose edge is its owner's colour. The die mark before it is rolled, its face after; cancelled and repeated dice are dashed, never faded |
+| `plans/shared/stepFrame.ts` | the context `PlanPanel` gives the plan's card, so the roll slots in between the finished steps and the open one |
+| `plans/shared/headingSlot.ts` | who draws the heading. The page draws it at the top by default, so no state is left without one; a card, the preparation step or an open roll **claims** it while it draws it in its own open step |
+| `lib/rollDraft.svelte.ts` | the side and the dice a player has picked on the open roll but not sent, keyed by roll, so they survive the roll moving between the page and a plan's card |
+| `plans/ResolvingCard.svelte` | the plan's frame. All twelve panels wrap their body in it |
+
+**The order is decided once**, in `ResolvingCard`: who prepared the plan, what
+they wrote, the roll (open it is the open step and carries the heading; resolved
+it is one finished line that opens to show the dice), then the heading, then the
+panel's own body. A panel never draws its own heading, box or "Resolving" badge.
+
+**Wording.** A step's label (`stepLabel` in `waitingOn.ts`) is a lower-case phrase
+that finishes the heading, never one that names the plan: the title bar and the
+first finished line already do. When it is your move the heading names no one else;
+the clocks on the other chips say who else is owed.
+
+**A pending roll** splits its dice into **For** and **Against** (labelled only when
+there is an Against), and a choice in it (aid or interfere, easier or harder) is a
+chip with no meaning colour. The one main button names what it commits ("Commit aid",
+"Commit and roll"), and the way through with nothing committed is "Pass" (the roller's
+is "Roll").
+
+**Read-only mirrors are not faded.** `.resolve-mirror` blocks pointer events and leaves
+each control's own disabled look to say "not yours"; a fade would take text under the
+contrast floor.
+
+`plans/planPanel.css` still carries the older class names the panels draw their chips,
+option cards and warnings with (`.chip-btn`, `.player-chip`, `.choice-card`,
+`.res-warning`). Each is built from the shared recipes' tokens, and a test holds the chips
+to agreeing with `chip.css`; a panel that moves to `<Chip>` or `<Notice>` drops its name.
 
 ### The styleguide
 

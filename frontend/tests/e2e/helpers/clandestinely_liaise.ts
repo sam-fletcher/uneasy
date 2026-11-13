@@ -267,5 +267,3 @@ export async function currentRow(g: LGame): Promise<number> {
 	return (await res.json()).game.current_row as number;
 }
 
-/** The Waiting On strip. */
-export const waitingBar = (page: Page) => page.locator('p', { hasText: 'Waiting On:' }).first();

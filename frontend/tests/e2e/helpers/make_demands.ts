@@ -190,8 +190,6 @@ export async function openPages(browser: Browser, f: MDFixture, viewport = { wid
 	return pages;
 }
 
-export const waitingBar = (page: Page) => page.locator('p', { hasText: 'Waiting On:' }).first();
-
 /** The focus player opens and ends a scene — the table won't offer a plan until one has run. */
 export async function runScene(f: MDFixture, who: Name) {
 	await call(f.api[who], 'post', `/api/tables/${f.gameID}/scenes`, {

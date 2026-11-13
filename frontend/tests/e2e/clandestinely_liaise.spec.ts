@@ -1,9 +1,9 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, expectWaitingOn } from './helpers';
 import { E2E } from './baseUrl';
 import * as H from './helpers/make_demands';
 import {
-	NOTES, SECRET_PREFIX, waitingBar, closeContextsAfterEach, seedLiaise, prepareLiaison, fetchPlan, fetchPlans, liaiseData,
+	NOTES, SECRET_PREFIX, closeContextsAfterEach, seedLiaise, prepareLiaison, fetchPlan, fetchPlans, liaiseData,
 	fetchAssets, asset, settleDelay, readableSecrets, openAll, pickCard, section, post, expectLogged, logBodies, currentRow, cap,
 	type LGame, type Who,
 } from './helpers/clandestinely_liaise';
@@ -271,9 +271,9 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 		.poll(() => carolFrames.slice(framesBefore).some(f => f.includes('liaise.keep_secret_submitted')),
 			{ message: 'carol received the keep-secret event live' })
 		.toBe(true);
-	// The Waiting On bar moved to the one pick still owed, on the actor's page and the bystander's.
-	await expect(waitingBar(carol)).toHaveText(/Waiting On:\s*bob\s*$/);
-	await expect(waitingBar(alice)).toHaveText(/Waiting On:\s*bob\s*$/);
+	// The wait moved to the one pick still owed, on the actor's page and the bystander's.
+	await expectWaitingOn(carol, ['bob'], 'carol');
+	await expectWaitingOn(alice, ['bob'], 'alice');
 
 	// What is not: the text. Only its author can read it; neither the partner nor the bystander can.
 	const aliceReads = await readableSecrets(g, 'alice', aliceConfidant);
@@ -370,8 +370,8 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	await expect(aliceShare.locator('.res-warning')).toBeVisible();
 	await submitShare(aliceShare);
 	await expect(alice.getByText("You've submitted. Waiting for your partner")).toBeVisible();
-	await expect(waitingBar(bob)).toHaveText(/Waiting On:\s*You\s*$/);
-	await expect(waitingBar(carol)).toHaveText(/Waiting On:\s*bob\s*$/);
+	await expectWaitingOn(bob, ['bob'], 'bob');
+	await expectWaitingOn(carol, ['bob'], 'carol');
 	// Nothing is applied until both picks are in.
 	expect((await asset(g, g.peers.bob, 'carol')).is_destroyed, 'nothing applied before both picks').toBe(false);
 
@@ -606,8 +606,8 @@ test('perform_steps: the demand winner acts for the preparer, who is locked out 
 
 	// The partner nominates; the table now waits on whoever holds the preparer's seat, not alice.
 	await post(g, 'carol', url('keep-secret'), { asset_id: carolPeer }, 200);
-	await expect(waitingBar(alice)).toHaveText(/Waiting On:\s*bob\s*$/);
-	await expect(waitingBar(carol)).toHaveText(/Waiting On:\s*bob\s*$/);
+	await expectWaitingOn(alice, ['bob'], 'alice');
+	await expectWaitingOn(carol, ['bob'], 'carol');
 
 	// Bob nominates one of alice's assets, recorded under alice's seat.
 	await keepSecretInPanel(bob, 'Alice Confidant');

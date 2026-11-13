@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, waitingOnNames } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedCHGame, runScene, prepareCH, resolveCH, castCH, forceCH, rolledCH, openAll, artifactOf,
@@ -484,7 +484,7 @@ test('the auto-applied outcome reaches open panels live, without a reload', asyn
 	await expect(bob.getByText('alice is choosing options…')).toBeVisible();
 });
 
-test('another player\'s mar choice reaches open panels and the Waiting On bar without a reload', async ({ browser }) => {
+test('another player\'s mar choice reaches open panels and the clocks without a reload', async ({ browser }) => {
 	const g = await seedCHGame(browser);
 	track(g.gameID);
 	const { planID } = await rolledCH(g, ['bob', 'carol'], 'mar');
@@ -495,10 +495,9 @@ test('another player\'s mar choice reaches open panels and the Waiting On bar wi
 	for (const p of [alice, carol]) {
 		await expect(p.getByText('Submitted so far (1):')).toBeVisible();
 	}
-	// bob has chosen, so the bar must stop naming him and still name carol.
-	const bar = alice.getByText('Waiting On:').locator('..');
-	await expect(bar).toContainText('carol');
-	await expect(bar).not.toContainText('bob');
+	// bob has chosen, so the clocks must stop naming him and still name carol.
+	await expect.poll(() => waitingOnNames(alice)).toContain('carol');
+	await expect.poll(() => waitingOnNames(alice)).not.toContain('bob');
 });
 
 test('the Buffet\'s Mar tab says every player chooses, the preparer included', async ({ browser }) => {

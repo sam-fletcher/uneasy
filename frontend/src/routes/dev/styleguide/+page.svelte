@@ -38,6 +38,9 @@
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import RowMark from '$lib/components/shared/RowMark.svelte';
 	import StarMark from '$lib/components/shared/StarMark.svelte';
+	import StepHeading from '$lib/components/shared/StepHeading.svelte';
+	import DieTile from '$lib/components/plans/shared/DieTile.svelte';
+	import FinishedStep from '$lib/components/plans/shared/FinishedStep.svelte';
 	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 	import TableRoster from '$lib/components/shared/TableRoster.svelte';
 	import { playerColor, PLAYER_SLOTS, UNKNOWN_PLAYER_COLOR } from '$lib/playerColor';
@@ -76,6 +79,7 @@
 		['notices', 'Notices'],
 		['sheets', 'Sheets'],
 		['pieces', 'Game pieces'],
+		['steps', 'Play steps'],
 	];
 
 	// ── Measured values ────────────────────────────────────────────────────
@@ -812,6 +816,63 @@
 			</Cell>
 		</div>
 	</Section>
+
+	<Section
+		id="steps"
+		title="Play steps"
+		blurb="The Play pane reads as a plan's steps in order. Finished steps are one line each, and only the open step is expanded, under a heading that states the current ask. The roll is one of the steps. There are no boxes: a step is a heading and space, and the only things drawn as objects are what you press."
+	>
+		<Cell label="Step heading · your move, then someone else's (the ask is stated in words here and only here)">
+			<div class="step-col">
+				<StepHeading heading={{ text: 'Your move — aid or interfere', yours: true }} />
+				<StepHeading heading={{ text: 'Waiting on otto — the roll', yours: false }} />
+			</div>
+		</Cell>
+		<Cell label="Finished steps · plain lines with the step's mark; one with more to say opens in place (caret)">
+			<div class="step-col">
+				<FinishedStep>
+					{#snippet mark()}<LogMark family="plan" />{/snippet}
+					otto prepared Seek Answers
+				</FinishedStep>
+				<FinishedStep>
+					{#snippet mark()}<LogMark family="marginalia" />{/snippet}
+					otto: “Who really holds the western holdfast, and for how long?”
+					{#snippet detail()}“Who really holds the western holdfast, and for how long?”{/snippet}
+				</FinishedStep>
+				<FinishedStep>
+					{#snippet mark()}<DieMark size={16} />{/snippet}
+					Rolled <span class="status-word success">Make</span> · 2 distinct faces, difficulty 2
+					{#snippet detail()}
+						<div class="tile-run">
+							<DieTile face={3} color={playerColor({ token_color: null, seat_order: 3 })} label="otto's die" />
+							<DieTile face={5} color={playerColor({ token_color: null, seat_order: 3 })} label="otto's die" />
+						</div>
+					{/snippet}
+				</FinishedStep>
+			</div>
+		</Cell>
+		<Cell label="Dice · unrolled (the house die), rolled, cancelled and a repeat; the edge is the owner's colour, and dice carry no shape yet">
+			<div class="tile-run">
+				<DieTile face={null} color={playerColor({ token_color: null, seat_order: 1 })} label="Lavender's die" />
+				<DieTile face={4} color={playerColor({ token_color: null, seat_order: 2 })} label="Peridot's die" />
+				<DieTile face={2} color={playerColor({ token_color: null, seat_order: 3 })} label="Rose's die" cancelled />
+				<DieTile face={4} color={playerColor({ token_color: null, seat_order: 4 })} label="Sapphire's die, repeats a face" duplicate />
+			</div>
+		</Cell>
+		<Cell label="A choice in a step · a roll's choices (aid or interfere, easier or harder) wear no meaning colour; the one picked is bright gold, and the one main button names what it commits">
+			<div class="step-col">
+				<div class="chip-row">
+					<Chip selected>Easier (−1)</Chip>
+					<Chip>Harder (+1)</Chip>
+				</div>
+				<Notice tone="warning">Lady Merrow will be leveraged.</Notice>
+				<div class="chip-row">
+					<button class="action-btn primary">Commit aid</button>
+					<button class="action-btn secondary">Pass</button>
+				</div>
+			</div>
+		</Cell>
+	</Section>
 </div>
 
 <RetinueSheet open={sheetOpen} onClose={() => (sheetOpen = false)}>
@@ -1120,6 +1181,13 @@
 		max-width: 28rem;
 	}
 	.tile-run .m-tile { min-height: var(--size-tap); }
+	/* A run of steps or a column of heading and choices: the width of a play column. */
+	.step-col {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		width: min(100%, var(--layout-column-min));
+	}
 	.piece-col {
 		width: 100%;
 		min-width: 0;

@@ -1,8 +1,11 @@
-<!-- tokens: not migrated -->
 <!-- MainEventView.svelte
-  Main event phase: public record sidebar + focus-player action bar.
-  Owns its local UI state (summary form, refresh-asset selection).
-  Chat now lives in the page-level ChatPanel; this view no longer owns posts.
+  Main event phase: the play surface. It reads as the steps of whatever is
+  happening, in order — finished steps as one line each, then the one open step
+  under its heading (the current ask: "Your move — …" / "Waiting on otto — …").
+  The heading is drawn wherever the open step lives: inside a plan's card or the
+  roll step (PlanPanel and DiceRollPanel draw it), over a scene or a takeover
+  (here). Owns its local UI state (refresh-asset selection).
+  Chat lives in the page-level ChatPanel; this view owns no posts.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -35,6 +38,10 @@
 	import EndgameVotePanel from '$lib/components/EndgameVotePanel.svelte';
 	import { followOnPromptForRow } from '$lib/scenePrompts';
 	import { mainEventWaitingOn, type WaitingOnState } from '$lib/waitingOn';
+	import { untrack } from 'svelte';
+	import { stepHeading } from '$lib/stepHeading';
+	import StepHeading from '$lib/components/shared/StepHeading.svelte';
+	import { provideHeadingSlot } from '$lib/components/plans/shared/headingSlot';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
@@ -163,11 +170,15 @@
 		mainEventWaitingOn({
 			rowState,
 			activeRoll,
-			delayRevealPlanType: delayRevealPlan?.plan_type ?? null,
 			maxRefresh,
+			currentPlayerID,
 		}),
 	);
 	$effect(() => { waitingOn = waitingOnState; });
+
+	// The open step's heading: the current ask, in words. Drawn by whichever
+	// surface holds the open step (see the template); null when nothing is asked.
+	const heading = $derived(stepHeading(waitingOnState, currentPlayerID, players));
 
 
 	// Local error string for non-chat actions (refresh, pass focus).
@@ -260,6 +271,44 @@
 	const warGateWarPlans = $derived(warGatePlans(rowState, wars, plans));
 	const warGateTakeover = $derived(warGate && warGateWarPlans.length > 0);
 
+	// ── Who draws the heading ─────────────────────────────────────────────────
+	// The heading belongs at the top of the open step. This view draws it at the
+	// top of the play surface BY DEFAULT, so no state is ever left without one (a
+	// plan that is pending, a scene that has not loaded, Make War's own panel, a
+	// plan panel still loading). A surface that draws it at the top of its own open
+	// step (a plan's card, the preparation step, an open roll) CLAIMS it while it
+	// does, and the default steps aside (plans/shared/headingSlot.ts).
+	//
+	// The takeovers (endgame vote, replacement main character, a war's cost, a
+	// delay reveal) and the scene panels keep the heading at the top: PlanPanel
+	// and the roll are handed none while one is up (`headingHere`), so a card
+	// somewhere below them never takes it from them.
+	let headingClaims = $state(0);
+	provideHeadingSlot({
+		claim: () => {
+			// untrack: this runs inside the claimer's effect, and reading the count
+			// there would make the effect depend on what it writes.
+			untrack(() => { headingClaims += 1; });
+			return () => untrack(() => { headingClaims -= 1; });
+		},
+	});
+	const headingHere = $derived(
+		endgameVoteActive
+		|| mcChoiceActive
+		|| warGateTakeover
+		|| delayRevealActive
+		|| (activeScene != null && activeScene.kind === 'turn')
+		|| (rowState?.kind === 'scene_setting' && game.focus_player_id != null),
+	);
+	const planHeading = $derived(headingHere ? null : heading);
+
+	// The roll is one of the plan's steps, so while a plan is on screen its card
+	// draws it, between the finished steps and the open one. A plan's card says so
+	// through `rollClaimed`; with no card (a scene's roll) it is drawn below.
+	let rollClaimed = $state(false);
+	// Open until it resolves; after that it is a finished line.
+	const rollOpen = $derived(activeRoll != null && activeRoll.stage !== 'resolved');
+
 	// Block the actor's own leverage if a Make Demands `control_leverage`
 	// winner has authority over this roll's plan. Backend would 403 anyway;
 	// hiding the button avoids confusing UI.
@@ -346,6 +395,25 @@
 	});
 </script>
 
+<!-- The roll, as a step. One definition, drawn in one of two places (see below). -->
+{#snippet rollStep()}
+	{#if activeRoll}
+		<DiceRollPanel
+			bind:roll={activeRoll}
+			bind:dice={activeRollDice}
+			bind:votes={activeRollVotes}
+			bind:participants={activeRollParticipants}
+			bind:bankedDice
+			{assets}
+			{currentPlayerID}
+			{players}
+			{playerNameMap}
+			{actorLeverageBlocked}
+			heading={planHeading}
+		/>
+	{/if}
+{/snippet}
+
 <div class="main-event-view">
 	{#if error}
 		<ErrorText message={error} extra="local-error" />
@@ -356,6 +424,12 @@
 	     wide desktop layouts. -->
 	<div class="play-surface">
 		<div class="scene-panel">
+			<!-- The open step's heading, unless a card, the preparation step or an open roll
+			     has claimed it (see `headingClaims`). -->
+			{#if headingClaims === 0}
+				<StepHeading {heading} />
+			{/if}
+
 			<!-- ── Scene structure ────────────────────────────────────────────
 				Two states:
 				  1. Active turn-scene → SceneDetailsPanel (everyone; controls vary)
@@ -364,7 +438,7 @@
 				PlanPanel takes over. This includes a plan-scene (kind='plan'):
 				it has no location/time/End-Scene button to show here — only
 				the persona picker and chat container react to it (ChatPanel).
-				The page-level WaitingOnBar carries the "who/what we're
+				The open step's heading (above) carries the "who/what we're
 				waiting on" copy.
 			-->
 			<!-- ── Delay-reveal play-area takeover ──────────────────────────
@@ -460,23 +534,18 @@
 				{onPlansChanged}
 				{onPlanPrepared}
 				{preparePlanDraft}
+				heading={planHeading}
+				roll={activeRoll ? rollStep : null}
+				{rollOpen}
+				bind:rollClaimed
 			/>
 			{/if}
 
-			<!-- ── Dice roll panel ───────────────────────────────────────────── -->
-			{#if activeRoll}
-				<DiceRollPanel
-					bind:roll={activeRoll}
-					bind:dice={activeRollDice}
-					bind:votes={activeRollVotes}
-					bind:participants={activeRollParticipants}
-					bind:bankedDice
-					{assets}
-					{currentPlayerID}
-					{players}
-					{playerNameMap}
-					{actorLeverageBlocked}
-				/>
+			<!-- ── Dice roll step ───────────────────────────────────────────────
+			     Inside the plan's card when one is on screen (it claims the roll);
+			     here only when none is, e.g. a scene's roll. -->
+			{#if activeRoll && !rollClaimed}
+				{@render rollStep()}
 			{/if}
 
 			<!-- ── Focus-player action bar ──────────────────────────────────── -->
@@ -510,7 +579,7 @@
 						{/if}
 						<div class="action-buttons">
 							<button
-								class="action-btn primary"
+								class="action-btn secondary"
 								onclick={onRefreshAssets}
 								disabled={actionBusy}
 							>
@@ -549,7 +618,7 @@
 
 	/* :global — see ChatPanel; the element belongs to ErrorText now. */
 	.main-event-view :global(.local-error) {
-		padding: 0.3rem 0;
+		padding: var(--space-2) 0;
 		flex-shrink: 0;
 	}
 
@@ -565,14 +634,15 @@
 	}
 
 	/* ── Scene panel ─────────────────────────────────────────────────────────── */
+	/* The play column is a phone-width column at every viewport, so this padding
+	   is the only padding. The steps stack in it with the step gap (16px) between
+	   the finished steps and the open one; each step spaces its own insides. */
 
 	.scene-panel {
 		display: flex;
 		flex-direction: column;
-		/* The phase column is a phone-width column at every viewport
-		   (300–380; docs/STYLE_GUIDE.md "Layout widths"), so the compact
-		   padding is the only padding. */
-		padding: 0.5rem 0 0;
+		gap: var(--space-4);
+		padding: var(--space-2) var(--space-2) 0;
 		/* Scrollable so a tall PlanPanel doesn't push the action-bar
 		   (Refresh / Pass Focus buttons) out of reach. The parent .table-body
 		   already reserves padding-bottom for the mobile chat strip, so the
@@ -588,17 +658,16 @@
 	.or-divider {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		margin: 0.6rem 0 0.5rem;
+		gap: var(--space-2);
 	}
 	.or-line {
 		flex: 1;
 		height: 1px;
-		background: var(--color-border-warm);
+		background: var(--color-border);
 	}
 	.or-label {
-		font-size: 0.78rem;
-		color: var(--color-accent);
+		font-size: var(--text-label);
+		color: var(--color-text-faint);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 	}
@@ -607,21 +676,17 @@
 
 	.action-bar {
 		flex-shrink: 0;
-		padding: 0.6rem 0 0;
-		border-top: 1px solid var(--color-border-warm);
-		margin-top: 0.25rem;
 	}
 
 	.action-step {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: var(--space-2);
 	}
 
 	.action-buttons {
 		display: flex;
-		gap: 0.5rem;
+		gap: var(--space-2);
 		flex-wrap: wrap;
-		justify-content: center;
 	}
 </style>

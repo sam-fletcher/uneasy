@@ -177,11 +177,6 @@ export async function openAll(g: WarGame): Promise<Record<Who, Page>> {
 	return out;
 }
 
-/** The Waiting On strip's full text. */
-export function waitingBar(page: Page) {
-	return page.locator('.waiting-on-bar');
-}
-
 /**
  * Waits until some post in the game's action log (read as `page`'s player)
  * contains `snippet`. Polls the API, not the DOM, so it is layout-independent.

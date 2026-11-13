@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- SimultaneousRevealInput.svelte
   Shared widget for simultaneous die-face reveals (liaise delay/redelay,
   make war delay, duel stake count). Each participant picks a face; nothing
@@ -12,6 +11,7 @@
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { REVEAL_EVENTS } from '$lib/ws';
 	import D6Face from './D6Face.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Participant {
@@ -150,8 +150,9 @@
 		</div>
 		<div class="submit-row">
 			{#if submitted}
+				<!-- Greyed out like any button that can't be pressed, with the tick that says it is in. -->
 				<button class="action-btn submitted" disabled aria-disabled="true">
-					<span class="tick">✓</span> Submitted
+					<ToneMark tone="success" /> Submitted
 				</button>
 			{:else}
 				<button class="action-btn primary" onclick={submit} disabled={busy || picked == null}>
@@ -188,32 +189,25 @@
 		list-style: none;
 		padding: 0;
 		margin: 0;
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 		line-height: 1.4;
 	}
 	.submit-row {
 		display: flex;
 		justify-content: center;
 	}
-	/* Locked submit button: clearly inactive (grey) once the face is in, with a
-	   confirming check. Distinct from a primary :disabled which only fades. */
+	/* The locked submit is the shared greyed-out button (a disabled .action-btn),
+	   with its tick beside the word: it only needs to line the two up. */
 	.action-btn.submitted {
-		background: var(--color-surface-2);
-		color: var(--color-text-muted);
-		border: 1px solid var(--color-border-strong);
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
 		cursor: default;
-		opacity: 1; /* override the global .action-btn:disabled fade */
 	}
-	.action-btn.submitted .tick {
-		color: var(--color-success); /* green tick */
-	}
-	/* Locked faces: the chosen one keeps its highlight; the rest fade so the
-	   selection stays legible without inviting another click. */
+	/* Locked faces: the chosen one keeps its gold border (the chip recipe's
+	   chosen-and-locked look); the rest are hairlines with faint pips. */
 	.face-chip:disabled {
 		cursor: default;
-	}
-	.face-chip:disabled:not(.active) {
-		opacity: 0.35;
 	}
 </style>

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, stepHeading } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedHFGame, startFestivity, openPages, act, startRoll, forceRoll, choose, rollAndChoose, optOut,
@@ -323,8 +323,9 @@ test('the host ends the event only when everything is settled; generic complete 
 	for (const page of [alice, bob, carol]) {
 		await expect(page.getByText('The Talk of the Event')).toHaveCount(0);
 		await expect(page.getByRole('button', { name: 'End the event' })).toHaveCount(0);
-		// Exact: the closing post now ends "Next: <who> to set the scene.", which a substring match also hits.
-		await expect(page.getByText('Set the scene', { exact: true })).toBeVisible();
+		// The open step's heading says the ask. (Not a text match on the words: the closing post
+		// now ends "Next: <who> to set the scene.", which a substring match also hits.)
+		await expect(stepHeading(page)).toContainText('set the scene');
 	}
 	// Nothing further is accepted.
 	await expectStatus(await act(g, 'alice', planID, 'end-event'), 409);
