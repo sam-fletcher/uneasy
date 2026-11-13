@@ -202,19 +202,24 @@ test('Laws: an edit is new to everyone but the editor, live', async ({ browser }
   await ctx.close();
 });
 
-test('phone: a line in the Public Record opens Chat at that point', async ({ browser }) => {
+test('phone: a plan line in the Public Record opens Chat at that point', async ({ browser }) => {
   const { ctx, page, tableId } = await openTable(browser, PHONE);
-  // The feed has to have something to land on.
-  const post = await ctx.request.post(`/api/tables/${tableId}/posts`, { data: { body: 'hello from the table' } });
-  expect(post.ok()).toBeTruthy();
+  // The feed has to have something to land on: a prepared plan writes its
+  // plan.prepared post, which is where its line in the record opens Chat. (A
+  // row's number does nothing, so a plan or a scene is the only way in.)
+  const prep = await ctx.request.post(`/api/tables/${tableId}/prepare-plan`, {
+    data: { plan_type: 'host_festivity', preparation_notes: 'a grand ball' },
+  });
+  expect(prep.ok(), `prepare-plan failed: ${await prep.text()}`).toBeTruthy();
   await page.reload();
   await expect(tableTitle(page)).toHaveText(/^Row \d+/);
 
   await openPane(page, 'Public Record');
-  await page.getByRole('button', { name: 'Jump to row 1', exact: true }).click();
+  await page.getByRole('button', { name: /^Host Festivity by alice/ }).click();
 
   await expect(paneTabs(page).locator('[aria-current="page"]')).toContainText('Chat');
   await expect(chatColumn(page).getByPlaceholder('Write a message…')).toBeVisible();
+  await expect(chatColumn(page).getByText('alice prepared Host Festivity')).toBeVisible();
 
   await ctx.close();
 });

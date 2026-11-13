@@ -1,74 +1,98 @@
-<!-- tokens: not migrated -->
 <!-- PublicRecord.svelte
   The Public Record's Events list: the thirteen rows of the timeline, each with
-  its plans and scenes, a podium mark between rows 4|5, 8|9, 12|13 marking the
-  algorithmic ranking updates (the same LogMark the chat feed's ranking card
-  carries — one symbol across surfaces; see adr/LOG_MARKS_PLAN.md), and one
-  more pseudo-row for The Shake-Up after row 13: future from row 1 of the main
-  event, lit during the shake-up (with its three Esteem/Knowledge/Power pips
-  filling in as categories complete), and sealed once the game ends. The game
-  doesn't just stop at row 13, it always has a finale ahead of it.
+  its plans and scenes. A ranking mark stands between rows 4|5, 8|9 and 12|13,
+  where the rankings update (the same LogMark the chat feed's ranking card
+  carries, so one symbol means the same thing on both surfaces), and one more
+  row, the Shake-Up, follows row 13: future from the start of the Main Event,
+  current during the Shake-Up (its three Esteem / Knowledge / Power pips fill in
+  as categories complete) and past once the game ends. The game doesn't just stop
+  at row 13; it always has a finale ahead of it.
 
   It is a pane, not an overlay: the table page gives it a column (or a tab) and
   the Events / Laws / Rumors chips at its foot choose what the pane shows. It
-  fills whatever it is put in and scrolls inside. Past rows hold the plans and
-  scenes that happened, and tapping one jumps the chat to it.
+  fills whatever it is put in and scrolls inside.
 
-  See PUBLIC_RECORD_SIDEBAR_SPEC.md.
+  A LINE is a plan or a scene, drawn as a tappable row (tapRow.css, ending in the
+  arrow mark because it opens somewhere else): the preparer's shape, the name,
+  at most one status word, the arrow. Tapping it opens Chat at that point (on a
+  phone the page switches to the Chat tab; in columns it scrolls the chat column).
+  A row's number and an empty row do nothing, so a line is the only thing here
+  that responds to a tap, and its arrow is the only sign of that.
+
+  The CURRENT row is marked by a deep gold number and a 2px deep gold bar down its
+  left edge, with no fill; every other number is faint. A row the plan picker is
+  pointing at (the shared `highlightedRow` store) takes the info blue for the same
+  two marks instead, since "prepare here" is the blue cue.
+
+  What a line says about its plan (the status word) is decided in
+  $lib/recordLines, where a test pins it.
+
+  The Prologue (and the lobby before it) shows the same thirteen blank rows and a
+  line saying when play starts.
 -->
 <script lang="ts">
+	import '$lib/components/shared/tapRow.css';
+	import '$lib/components/shared/statusText.css';
 	import { tick } from 'svelte';
 	import type { RecordRow, Plan, Player, GamePhase } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
-	import { playerColorByID } from '$lib/playerColor';
 	import { PLAN_SHORT } from '$lib/components/plans/shared';
 	import { parseMakeIntroductionsData } from '$lib/plans/resolutionData/make_introductions';
+	import { planStatusWord, sceneSummary } from '$lib/recordLines';
 	import LogMark from '$lib/components/LogMark.svelte';
+	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import RowMark from '$lib/components/shared/RowMark.svelte';
 
 	interface Props {
 		rows: RecordRow[];
 		currentRow: number;
-		/** Drives the Shake-Up pseudo-row's state (future/current/past). */
+		/** Drives the Shake-Up row's state (future/current/past) and the "play starts" note. */
 		phase: GamePhase;
 		/** Current shake-up category, if phase is 'shake_up'; fills the pips. */
 		shakeUpCategory: string | null;
-		/** Map of player_id → display_name for entry attribution. */
+		/** Map of player_id → display_name, for a line's accessible name. */
 		playerNames: Map<number, string>;
-		/** Used to tint plan chips with each plan preparer's color. */
+		/** Whose shape a line carries (the plan's preparer, the scene's author). */
 		players: Player[];
-		/** Tapping a row pill → jump chat to that row's anchor. */
-		onRowJump?: (rowNumber: number) => void;
-		/** Tapping a plan chip → jump chat to that plan's anchor. The status
-		 *  decides which post that is (a chip sits at the plan's *resolution*
-		 *  row, so anything past 'pending' anchors at plan.resolving) — the
-		 *  caller maps it; see jumpToPlan in routes/table/[id]/+page.svelte. */
+		/** Tapping a plan line → open chat at that plan. The status decides which
+		 *  post that is (a line sits at the plan's *resolution* row, so anything past
+		 *  'pending' anchors at plan.resolving) — the caller maps it; see jumpToPlan
+		 *  in routes/table/[id]/+page.svelte. */
 		onPlanJump?: (planID: number, status: Plan['status']) => void;
-		/** Tapping a scene entry → jump chat to the row's first scene.started anchor.
+		/** Tapping a scene line → open chat at the row's first scene.started post.
 		 *  (SceneEntry doesn't carry scene_id, so we anchor by row.) */
 		onSceneJump?: (rowNumber: number) => void;
 	}
 
 	const {
 		rows, currentRow, phase, shakeUpCategory, playerNames, players,
-		onRowJump, onPlanJump, onSceneJump,
+		onPlanJump, onSceneJump,
 	}: Props = $props();
 
 	const TOTAL_ROWS = 13;
 	const ENGRAILED_AFTER = new Set([4, 8, 12]);
 
-	// ── The Shake-Up pseudo-row ────────────────────────────────────────────────
+	// Before the Main Event there is nothing to read here yet, so the list says
+	// when play starts instead of looking broken.
+	const beforePlay = $derived(
+		phase === 'lobby' || phase === 'tone_setting' || phase === 'prologue'
+	);
+
+	// ── The Shake-Up row ──────────────────────────────────────────────────────
 	const SHAKEUP_CATEGORIES = ['esteem', 'knowledge', 'power'] as const;
 	const SHAKEUP_INITIALS: Record<(typeof SHAKEUP_CATEGORIES)[number], string> = {
 		esteem: 'E', knowledge: 'K', power: 'P',
 	};
-	// Reuses the same 'past' | 'current' | 'future' vocabulary as rowState()
-	// so the existing .record-row[data-state=...] styling applies for free,
-	// and the panel's scroll-into-view effect (which looks for
-	// [data-state="current"]) lands here automatically once the Shake-Up
-	// starts (every real row is 'past' by then — see currentRow above).
+	// Same 'past' | 'current' | 'future' vocabulary as rowState(), so the same
+	// styling applies, and the scroll-into-view effect below (which looks for
+	// [data-state="current"]) lands here once the Shake-Up starts: every real row
+	// is 'past' by then.
 	const shakeUpRowState = $derived<'past' | 'current' | 'future'>(
 		phase === 'ended' ? 'past' : phase === 'shake_up' ? 'current' : 'future'
 	);
+	// The pips only mean something once the Shake-Up is under way: before it
+	// there is nothing to fill in.
+	const showPips = $derived(phase === 'shake_up' || phase === 'ended');
 	function shakeUpPipState(cat: (typeof SHAKEUP_CATEGORIES)[number]): 'done' | 'current' | 'pending' {
 		if (phase === 'ended') return 'done';
 		if (phase !== 'shake_up' || !shakeUpCategory) return 'pending';
@@ -79,10 +103,9 @@
 	}
 
 	// A Make Introductions plan on a future row is usually a plan being made;
-	// a *synthetic* one is a peer on the road, and reading "Make Intro." there
-	// misdescribes it. Name the traveller instead (D9,
-	// adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md). Peers lost past row 13 leave no
-	// chip at all — they never got a row.
+	// a *synthetic* one is a peer on the road, and reading "Make Introductions"
+	// there misdescribes it. Name the traveller instead. Peers lost past row 13
+	// leave no line at all: they never got a row.
 	const planLabel = (p: Plan) => {
 		if (p.plan_type === 'make_introductions') {
 			const mi = parseMakeIntroductionsData(p);
@@ -90,16 +113,11 @@
 		}
 		return PLAN_SHORT[p.plan_type] ?? p.plan_type;
 	};
-	// 'cancelled' gets no class: a plan is only ever cancelled because no valid
-	// row exists for it (a delay reveal past row 13 with no Explosive Finale
-	// slot), so its row_number is NULL and it never appears in row.plans at all.
-	// The styling that used to exist for it was unreachable — see
-	// adr/ENDGAME_VOTE_AND_FINALE_PLAN.md §6.
-	const planStatusClass = (s: Plan['status']) =>
-		s === 'pending' ? 'plan-pending'
-			: s === 'resolving' ? 'plan-resolving'
-			: s === 'resolved' ? 'plan-resolved' : '';
-	const authorName = (id: number) => playerNames.get(id) ?? '?';
+	// A cancelled plan is never listed: it is only cancelled because no valid row
+	// exists for it (a delay reveal past row 13 with no Explosive Finale slot), so
+	// its row_number is NULL and it never appears in row.plans at all.
+	const playerOf = (id: number) => players.find((p) => p.id === id) ?? null;
+	const nameOf = (id: number) => playerNames.get(id) ?? '?';
 
 	// Index incoming rows by row_number so we can render a complete 1–13
 	// list even before the backend has populated every row.
@@ -107,6 +125,8 @@
 	const rowAt = (n: number): RecordRow | undefined => rowMap.get(n);
 	const rowState = (n: number): 'past' | 'current' | 'future' =>
 		n < currentRow ? 'past' : n === currentRow ? 'current' : 'future';
+	const hasLines = (row: RecordRow | undefined) =>
+		!!row && (row.plans.length > 0 || row.entries.length > 0);
 
 	// ── Scroll the current row into view ──────────────────────────────────────
 	// Without this the list opens at row 1 and the focus player has to scroll
@@ -124,7 +144,25 @@
 </script>
 
 <div class="record">
+	<!-- The engrailed pattern (a row of small scallops), drawn once and used by the
+	     three ranking dividers. Not display:none: some browsers won't paint a
+	     pattern whose svg isn't rendered. -->
+	<svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+		<defs>
+			<pattern id="record-engrailed" width="10" height="6" patternUnits="userSpaceOnUse">
+				<path d="M0 0.5A5 5 0 0 0 10 0.5" fill="none" stroke-width="1"
+					style="stroke: var(--color-border-warm-antique)" />
+			</pattern>
+		</defs>
+	</svg>
+
 	<ol class="row-list" bind:this={rowListEl}>
+		{#if beforePlay}
+			<li class="starts-note">
+				<p class="muted-text">Play starts when the Prologue ends. Each row fills in as the game reaches it.</p>
+			</li>
+		{/if}
+
 		{#each Array(TOTAL_ROWS) as _, i}
 			{@const n = i + 1}
 			{@const row = rowAt(n)}
@@ -133,72 +171,69 @@
 				data-state={rowState(n)}
 				class:highlighted={$highlightedRow === n}
 			>
-				<button
-					class="row-num-pill"
-					class:highlighted={$highlightedRow === n}
-					onclick={() => onRowJump?.(n)}
-					aria-label="Jump to row {n}"
-				>
-					{n}
-				</button>
-				<div class="row-content">
-					{#if row}
+				<span class="row-num" class:with-lines={hasLines(row)}>
+					<span class="sr-only">Row&nbsp;</span>{n}
+				</span>
+				{#if row && hasLines(row)}
+					<div class="lines">
 						{#each row.plans as plan (plan.id)}
-							{@const tint = playerColorByID(plan.preparer_id, players)}
+							{@const word = planStatusWord(plan)}
 							<button
-								class="plan-chip {planStatusClass(plan.status)}"
-								style:--player-color={tint}
+								class="tap-row line"
 								onclick={() => onPlanJump?.(plan.id, plan.status)}
-								aria-label="Jump to {planLabel(plan)} by {authorName(plan.preparer_id)}"
+								aria-label="{planLabel(plan)} by {nameOf(plan.preparer_id)}{word ? `, ${word.text}` : ''}. Open in Chat"
 							>
-								<span class="plan-name">{planLabel(plan)}</span>
-								{#if plan.status !== 'resolved'}
-									<span class="plan-status">{plan.status}</span>
+								<PlayerShape player={playerOf(plan.preparer_id)} />
+								<span class="line-text">{planLabel(plan)}</span>
+								{#if word}
+									<span
+										class="status-word"
+										class:success={word.tone === 'success'}
+										class:danger={word.tone === 'danger'}
+									>{word.text}</span>
 								{/if}
+								<RowMark kind="arrow" />
 							</button>
 						{/each}
 						{#each row.entries as entry (entry.id)}
-							{@const authorColor = playerColorByID(entry.author_id, players)}
+							{@const scene = sceneSummary(entry.body)}
 							<button
-								class="entry-line"
+								class="tap-row line"
 								onclick={() => onSceneJump?.(entry.row_number)}
-								aria-label="Jump to scene on row {entry.row_number}"
+								aria-label="{scene.isScene ? 'Scene' : 'Note'} by {nameOf(entry.author_id)}: {scene.text}. Open in Chat"
 							>
-								{#if entry.body.startsWith('Scene:')}
-									<span class="entry-scene-label" style:color={authorColor}>Scene:</span>{entry.body.slice('Scene:'.length)}
-								{:else}
-									{entry.body}
+								<PlayerShape player={playerOf(entry.author_id)} />
+								{#if scene.isScene}
+									<span class="scene-mark"><LogMark family="scene" /></span>
 								{/if}
+								<span class="line-text">{scene.text}</span>
+								<RowMark kind="arrow" />
 							</button>
 						{/each}
-						{#if row.plans.length === 0 && row.entries.length === 0}
-							<span class="row-empty">—</span>
-						{/if}
-					{:else}
-						<span class="row-empty">—</span>
-					{/if}
-				</div>
+					</div>
+				{/if}
 			</li>
 
 			{#if ENGRAILED_AFTER.has(n)}
-				<li class="engrailed" aria-label="Ranking update">
-					<span class="engrailed-line"></span>
+				<li class="engrailed">
+					<span class="sr-only">Ranking update</span>
+					<svg class="engrailed-line" height="6" aria-hidden="true"><rect width="100%" height="6" fill="url(#record-engrailed)" /></svg>
 					<span class="engrailed-rank"><LogMark family="ranking" /></span>
-					<span class="engrailed-line"></span>
+					<svg class="engrailed-line" height="6" aria-hidden="true"><rect width="100%" height="6" fill="url(#record-engrailed)" /></svg>
 				</li>
 			{/if}
 		{/each}
 
-		<li class="record-row shakeup-row" data-state={shakeUpRowState}>
-			<span class="row-star-pill" aria-hidden="true">✶</span>
-			<div class="row-content">
-				<span class="shakeup-label">The Shake-Up</span>
-				<div class="shakeup-pips" aria-label="Esteem, Knowledge, Power">
+		<li class="shakeup-row" data-state={shakeUpRowState}>
+			<span class="row-num shakeup-mark"><span class="burst"><LogMark family="shake_up" /></span></span>
+			<span class="shakeup-label">The Shake-Up</span>
+			{#if showPips}
+				<span class="shakeup-pips" role="group" aria-label="Esteem, Knowledge, Power">
 					{#each SHAKEUP_CATEGORIES as cat (cat)}
-						<span class="pip" data-state={shakeUpPipState(cat)} aria-label={cat}>{SHAKEUP_INITIALS[cat]}</span>
+						<span class="pip" data-state={shakeUpPipState(cat)} role="img" aria-label="{cat}: {shakeUpPipState(cat)}">{SHAKEUP_INITIALS[cat]}</span>
 					{/each}
-				</div>
-			</div>
+				</span>
+			{/if}
 		</li>
 	</ol>
 </div>
@@ -215,207 +250,162 @@
 		background: var(--color-bg);
 	}
 
+	.defs {
+		position: absolute;
+		width: 0;
+		height: 0;
+	}
+
 	.row-list {
 		list-style: none;
 		margin: 0;
-		padding: 0.4rem 0.5rem;
+		padding: 0 var(--space-4) var(--space-4);
 		overflow-y: auto;
 		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
 	}
 
+	.starts-note { padding: var(--space-3) 0 var(--space-2); }
+
+	/* ── A row ─────────────────────────────────────────────────────────────── */
+
+	/* The row is a pane of the list, not a thing to touch: a hairline under it,
+	   no box and no fill. The current row's mark is the bar down its left edge,
+	   drawn inset so it never changes the row's size. */
 	.record-row {
 		display: flex;
-		gap: 0.6rem;
-		align-items: flex-start;
-		padding: 0.35rem 0.4rem;
-		border-radius: 4px;
+		border-bottom: 1px solid var(--color-border-quiet);
 	}
+	.record-row[data-state='current'],
+	.shakeup-row[data-state='current'] { box-shadow: inset 2px 0 0 var(--color-accent); }
+	/* The plan picker is pointing at this row. It wins over "current", so the two
+	   never show as one gold and one blue bar. */
+	.record-row.highlighted { box-shadow: inset 2px 0 0 var(--color-highlight); }
 
-	/* Past rows hold real content (earlier plans + scenes), so they stay at
-	   full contrast. Timeline position is already conveyed by the current
-	   row's warm fill + accent border, so we don't need to dim past content. Future rows are nearly always empty (—), so a light
-	   dim is enough to read as "not yet" without greying out anything real. */
-	.record-row[data-state="past"]    { opacity: 1; }
-	.record-row[data-state="current"] { background: var(--color-surface-gold-dim); border-left: 2px solid var(--color-accent); padding-left: 0.3rem; }
-	.record-row[data-state="future"]  { opacity: 0.8; }
-
-	.row-num-pill {
-		flex-shrink: 0;
-		width: 1.5rem;
-		height: 1.5rem;
+	/* The row's number: faint, except the current row's, which is deep gold (the
+	   game's colour). It lines up with the first line, and an empty row is only as
+	   tall as its number needs. */
+	.row-num {
+		flex: none;
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		font-size: 0.7rem;
-		border-radius: 50%;
-		background: var(--color-border);
-		color: var(--color-text-muted);
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		transition: background 0.12s;
+		box-sizing: border-box;
+		width: 36px;
+		height: 28px;
+		padding-left: var(--space-2);
+		font-size: var(--text-small);
+		color: var(--color-text-faint);
 	}
-	.row-num-pill:hover { background: var(--color-border-strong); color: var(--color-text); }
+	.row-num.with-lines { height: var(--size-tap); }
+	.record-row[data-state='current'] .row-num { color: var(--color-accent); }
+	.record-row.highlighted .row-num { color: var(--color-highlight); }
 
-	.record-row[data-state="current"] .row-num-pill {
-		background: var(--color-accent);
-		color: var(--color-bg);
-	}
-
-	.row-num-pill.highlighted { box-shadow: 0 0 0 2px var(--color-highlight); }
-	.record-row.highlighted { background: color-mix(in srgb, var(--color-highlight) 12%, var(--color-surface)); }
-
-	.row-content {
+	/* Whatever a row holds, plan lines first and then scenes. */
+	.lines {
 		flex: 1;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
-		min-width: 0;
 	}
 
-	.plan-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		font-size: 0.72rem;
-		padding: 0.15rem 0.45rem;
-		border-radius: 10px;
-		/* --player-color is set inline to the preparer's color. The chip's
-		   border uses it directly (matching ChatPanel's name-color treatment);
-		   background stays the neutral dark so other status borders (resolving,
-		   resolved) can override the right/top/bottom edges. */
-		background: var(--color-surface-2);
-		border: 1px solid var(--player-color, var(--color-border-strong));
-		border-left: 3px solid var(--player-color, var(--color-border-strong));
-		align-self: flex-start;
-		max-width: 100%;
-		color: inherit;
-		cursor: pointer;
-		font-family: inherit;
-		text-align: left;
+	/* A line is a tapRow, but its hairline belongs to the row, not to each line,
+	   so two plans in one row aren't ruled apart. The 44px floor stays. */
+	.line {
+		border-bottom: 0;
+		padding-top: 0;
+		padding-bottom: 0;
+		font-size: var(--text-small);
+		color: var(--color-text);
 	}
-	.plan-chip:hover { background: var(--color-border); }
 
-	/* A delayed-arrival chip carries a player-written name, so the label has no
-	   fixed length the way the plan short-names do; truncate rather than let a
-	   long one push the row wider than its column. */
-	.plan-name {
-		color: var(--player-color, var(--color-text));
+	/* A plan's name carries no fixed length: a delayed arrival is named by
+	   whoever wrote it, and a scene's summary is free text. Truncate rather than
+	   let one push the row wider than its column; the tap opens the whole thing. */
+	.line-text {
+		flex: 1;
 		min-width: 0;
 		overflow: hidden;
-		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-	.plan-status { color: var(--color-text-muted); font-size: 0.65rem; text-transform: uppercase; }
-	/* Status colors override the right/top/bottom border (keeping the
-	   preparer-color left edge intact). Pending chips get no override — the
-	   preparer color on the left edge carries identity. */
-	.plan-resolving .plan-status { color: var(--color-text); }
-	.plan-resolved  { opacity: 0.7; }
-
-	.entry-line {
-		font-size: 0.82rem;
-		color: var(--color-text);
-		line-height: 1.4;
-		margin: 0;
-		word-break: break-word;
-		background: none;
-		border: none;
-		padding: 0.1rem 0;
-		text-align: left;
-		font-family: inherit;
-		cursor: pointer;
-		display: block;
-		width: 100%;
-	}
-	.entry-line:hover { color: var(--color-accent-hover); }
-
-	/* .entry-scene-label color is set inline from the entry author's
-	   playerColor; the trailing space in the "Scene: …" body provides the
-	   gap to the summary text. */
-
-	.row-empty {
-		font-size: 0.75rem;
-		color: var(--color-border-strong);
+		text-overflow: ellipsis;
 	}
 
-	/* ── Engrailed divider ──────────────────────────────────────────────────── */
+	.scene-mark {
+		display: flex;
+		flex: none;
+		width: 16px;
+		height: 16px;
+		color: var(--color-text-faint);
+	}
+
+	/* ── Ranking dividers ───────────────────────────────────────────────────── */
 
 	.engrailed {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		padding: 0.25rem 0;
+		gap: var(--space-2);
+		height: 20px;
+		border-bottom: 1px solid var(--color-border-quiet);
 	}
+	.engrailed-line { flex: 1; min-width: 0; }
 
-	.engrailed-line {
-		flex: 1;
-		height: 1px;
-		background: linear-gradient(to right, transparent, var(--color-border-warm-antique), transparent);
-	}
-
-	/* The podium: the app's one ranking symbol. Its own base bar sits on the
-	   flanking hairlines, so it reads as standing on the engrailed line rather
-	   than floating over it. */
+	/* The podium: the app's one ranking symbol, in deep gold, the game's colour. */
 	.engrailed-rank {
 		display: flex;
+		flex: none;
 		width: 16px;
 		height: 16px;
 		color: var(--color-accent);
 	}
 
-	/* ── The Shake-Up pseudo-row ────────────────────────────────────────────── */
+	/* ── The Shake-Up row ───────────────────────────────────────────────────── */
 
+	/* The house burst, not a typed star: a typed symbol falls back to a different
+	   font on every platform. Faint until the Shake-Up is under way. */
 	.shakeup-row {
-		margin-top: 0.3rem;
-		padding-top: 0.6rem;
-		border-top: 1px dashed var(--color-border-strong);
-	}
-
-	.row-star-pill {
-		flex-shrink: 0;
-		width: 1.5rem;
-		height: 1.5rem;
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		font-size: 1.05rem;
-		line-height: 1;
+		gap: var(--space-2);
+		min-height: var(--size-tap);
+		color: var(--color-text-faint);
 	}
-	.shakeup-row[data-state="current"] .row-star-pill { color: var(--color-accent); }
-	.shakeup-row[data-state="past"]    .row-star-pill { color: var(--color-text-faint); }
-	.shakeup-row[data-state="future"]  .row-star-pill { color: var(--color-text-muted); }
+	.shakeup-mark { height: auto; }
+	.burst { display: flex; width: 16px; height: 16px; }
+	.shakeup-label { font-size: var(--text-small); }
+	.shakeup-row[data-state='current'] { color: var(--color-accent); }
 
-	.shakeup-label {
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: var(--color-text);
-	}
-	.shakeup-row[data-state="future"] .shakeup-label { color: var(--color-text-muted); }
+	.shakeup-pips { display: flex; gap: var(--space-1); margin-left: auto; }
 
-	.shakeup-pips { display: flex; gap: 0.3rem; margin-top: 0.25rem; }
-
+	/* A pip is a status dot with an initial in it: the one circle this list is
+	   allowed. Done is filled, the one in play is outlined in gold, the rest are
+	   quiet. Nothing fades with opacity, which would take words under their floor. */
 	.pip {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.15rem;
-		height: 1.15rem;
-		border-radius: 50%;
-		font-size: 0.6rem;
-		font-weight: 700;
-		border: 1px solid var(--color-border-strong);
-		color: var(--color-text-muted);
-		flex-shrink: 0;
+		box-sizing: border-box;
+		width: 20px;
+		height: 20px;
+		flex: none;
+		border-radius: var(--radius-dot);
+		border: 1px solid var(--color-border-control);
+		font-size: var(--text-label);
+		font-weight: 600;
+		color: var(--color-text-faint);
 	}
-	.pip[data-state="done"] {
+	.pip[data-state='done'] {
 		background: var(--color-accent);
-		color: var(--color-bg);
 		border-color: var(--color-accent);
+		color: var(--color-bg);
 	}
-	.pip[data-state="current"] { border-color: var(--color-accent); color: var(--color-accent); }
-	.pip[data-state="pending"] { opacity: 0.6; }
+	.pip[data-state='current'] { border-color: var(--color-accent); color: var(--color-accent); }
+
+	/* Words for a screen reader only: off-screen for the eye. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
 </style>
