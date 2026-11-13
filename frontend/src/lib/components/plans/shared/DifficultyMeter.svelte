@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- shared/DifficultyMeter.svelte
   A presentational "thermometer" for plans whose difficulty is built up during
   the pre-roll (Chronicle Histories: max(knowledge rank, #invoked); Make
@@ -64,30 +63,32 @@
 </div>
 
 <style>
-	.meter { margin: 0 0 0.6rem; }
+	.meter { display: flex; flex-direction: column; gap: var(--space-1); }
 	.meter-head {
 		display: flex;
 		align-items: baseline;
-		gap: 0.5rem;
+		gap: var(--space-2);
 	}
-	.meter-label { color: var(--color-text-muted); font-size: 0.85rem; }
+	.meter-label { color: var(--color-text-secondary); font-size: var(--text-small); }
+	/* The number is the one thing here a player reads at a glance: a standalone
+	   counter, so it is the one bold figure. Orange, as the "greed" band below. */
 	.meter-value {
 		color: var(--color-leveraged);
-		font-size: 1.5rem;
+		font-size: var(--text-title);
 		font-weight: 600;
 		line-height: 1;
 	}
 	.meter-reason {
-		margin: 0.15rem 0 0.4rem;
+		margin: 0;
 		color: var(--color-text-faint);
-		font-size: 0.72rem;
+		font-size: var(--text-label);
 	}
-	.meter-bar { display: flex; gap: 4px; }
+	.meter-bar { display: flex; gap: var(--space-1); }
 	.seg {
 		flex: 1;
 		height: 14px;
-		border-radius: 3px;
-		background: var(--color-surface-sunken);
+		border-radius: var(--radius-piece);
+		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
 	}
 	.seg.floor {
@@ -106,9 +107,8 @@
 	.meter-ends {
 		display: flex;
 		justify-content: space-between;
-		margin-top: 0.25rem;
 		color: var(--color-text-faint);
-		font-size: 0.68rem;
+		font-size: var(--text-label);
 	}
 	.meter-next { color: var(--color-accent); }
 </style>

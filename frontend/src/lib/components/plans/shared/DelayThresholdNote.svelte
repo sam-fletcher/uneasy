@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- plans/shared/DelayThresholdNote.svelte
   The line every Make War / Clandestinely Liaise delay reveal is played
   against: how high the average may go before the plan lands past row 13, and
@@ -16,6 +15,7 @@
 -->
 <script lang="ts">
 	import { FINAL_ROW } from '../shared';
+	import Notice from '$lib/components/shared/Notice.svelte';
 
 	let { currentRow, endingMode, slotSpent, preparerName }: {
 		currentRow: number;
@@ -45,7 +45,9 @@
 </script>
 
 {#if canOverflow}
-	<p class="delay-threshold" role="note">
+	<!-- A warning: an overflow here costs either the bonus plan or the whole
+	     declaration. A mark and orange words, no box. -->
+	<Notice tone="warning">
 		{#if maxDelay < 1}
 			<span class="delay-threshold-head">There is no room left on the record.</span>
 			Any delay at all lands past row {FINAL_ROW}: {outcome}
@@ -54,25 +56,11 @@
 			The delay is everyone's face averaged and rounded up. Anything higher lands past
 			row {FINAL_ROW}: {outcome}
 		{/if}
-	</p>
+	</Notice>
 {/if}
 
 <style>
-	/* The warning family — orange is the one warning trio (app.css), and an
-	   overflow here costs either the bonus plan or the whole declaration. */
-	.delay-threshold {
-		margin: 0.35rem 0 0;
-		padding: 0.45rem 0.55rem;
-		font-size: 0.78rem;
-		line-height: 1.45;
-		background: var(--color-warning-bg);
-		border: 1px solid var(--color-warning-border);
-		border-radius: 5px;
-		color: var(--color-text-secondary);
-	}
-
 	.delay-threshold-head {
 		display: block;
-		color: var(--color-warning);
 	}
 </style>

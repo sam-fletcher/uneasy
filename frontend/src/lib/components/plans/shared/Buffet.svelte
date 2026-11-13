@@ -1,8 +1,8 @@
-<!-- tokens: not migrated -->
 <!-- shared/Buffet.svelte
-  Read-only "what can happen?" reference, shared across plans. Collapsible
-  (collapsed by default) and fully interactive for everyone — switching tabs
-  commits nothing. The actual choice is made via each plan's own picker; this is
+  Read-only "what can happen?" reference, shared across plans. A disclosure row
+  (the house tappable row with its caret), collapsed by default, and fully
+  interactive for everyone — switching tabs commits nothing. The tabs are chips
+  and the reference itself is plain text: only the things you press have boxes. The actual choice is made via each plan's own picker; this is
   purely informational so players can weigh the consequences before they roll.
 
   Data-driven: pass `tabs`, each with an optional `always` line (an effect that
@@ -11,6 +11,10 @@
   renders just that line (e.g. the festivity opt-out tab).
 -->
 <script lang="ts">
+	import '$lib/components/shared/chip.css';
+	import '$lib/components/shared/tapRow.css';
+	import RowMark from '$lib/components/shared/RowMark.svelte';
+
 	export type BuffetOpt = { key: string; label: string; desc?: string };
 	export type BuffetTab = {
 		key: string;
@@ -40,22 +44,22 @@
 	const current = $derived(tabs.find((t) => t.key === active) ?? tabs[0]);
 </script>
 
-<div class="choices-section buffet" class:open={isOpen}>
+<div class="choices-section buffet">
 	<button
 		type="button"
-		class="buffet-toggle"
+		class="tap-row buffet-toggle"
 		aria-expanded={isOpen}
 		onclick={() => (isOpen = !isOpen)}
 	>
-		<span class="choices-header" style="margin:0;">{heading}</span>
-		<span class="buffet-caret" aria-hidden="true">▾</span>
+		<span class="choices-header buffet-heading">{heading}</span>
+		<RowMark kind="caret" open={isOpen} />
 	</button>
 
 	{#if isOpen}
 	<div class="buffet-body">
 		<div class="buffet-tabs" role="tablist">
 			{#each tabs as t (t.key)}
-				<button type="button" class="buffet-tab" class:active={active === t.key}
+				<button type="button" class="chip compact buffet-tab" class:selected={active === t.key}
 					role="tab" aria-selected={active === t.key} onclick={() => (active = t.key)}>{t.label}</button>
 			{/each}
 		</div>
@@ -66,7 +70,7 @@
 			{/if}
 			{#if current?.opts && current.opts.length > 0}
 				{#if current.intro}
-					<p class="choices-note" style="margin:0 0 0.25rem;">{current.intro}</p>
+					<p class="choices-note">{current.intro}</p>
 				{/if}
 				<ul class="buffet-list">
 					{#each current.opts as o (o.key)}
@@ -80,92 +84,39 @@
 </div>
 
 <style>
-	/* Override the parent .choices-section gap so the header bar and the
-	   expanded body read as one connected accordion unit. */
 	.buffet { gap: 0; }
 
-	.buffet-toggle {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		width: 100%;
-		min-height: 44px;
-		padding: 0.55rem 0.75rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		cursor: pointer;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-	}
-	/* When open, the bar joins the body below: square the bottom corners,
-	   drop the dividing border, and outline the whole unit in gold. */
-	.buffet.open .buffet-toggle {
-		border-color: var(--color-accent);
-		border-bottom-color: transparent;
-		border-bottom-left-radius: 0;
-		border-bottom-right-radius: 0;
-	}
-	.buffet-caret {
-		flex-shrink: 0;
-		color: var(--color-accent);
-		font-size: 0.75rem;
-		/* Points right when collapsed; rotates down to ▾ on open. */
-		transform: rotate(-90deg);
-		transition: transform 0.15s ease;
-	}
-	.buffet.open .buffet-caret { transform: rotate(0); }
-	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the caret still
-	   turns — which way it points is the open/closed state, not decoration. It
-	   just arrives pointing the new way instead of sweeping there. */
-	@media (prefers-reduced-motion: reduce) {
-		.buffet-caret { transition: none; }
-	}
+	/* The heading is the row's text; the caret at the end says it expands. */
+	.buffet-toggle { justify-content: space-between; }
+	.buffet-heading { flex: 1; }
 
 	.buffet-body {
-		border: 1px solid var(--color-accent);
-		border-top: none;
-		border-bottom-left-radius: 8px;
-		border-bottom-right-radius: 8px;
-		padding: 0.55rem 0.7rem;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		padding-top: var(--space-3);
 	}
 	.buffet-tabs {
 		display: flex;
-		gap: 6px;
-		margin: 0 0 0.5rem;
+		flex-wrap: wrap;
+		gap: var(--space-2);
 	}
-	.buffet-tab {
-		flex: 1;
-		min-height: 36px;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		color: var(--color-text-muted);
-		font: inherit;
-		cursor: pointer;
-	}
-	.buffet-tab.active {
-		background: var(--color-surface-2);
-		border-color: var(--color-accent);
-		color: var(--color-text);
-	}
+	.buffet-tab { flex: 1 1 0; }
 	.buffet-pane {
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 0.6rem 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
 	}
 	.buffet-always {
-		margin: 0 0 0.5rem;
-		color: var(--color-accent);
-		font-size: 0.88em;
+		margin: 0;
+		color: var(--color-text);
 	}
 	.buffet-list {
 		margin: 0;
-		padding-left: 1.1rem;
+		padding-left: var(--space-4);
+		font-size: var(--text-small);
 	}
 	.buffet-list li {
-		margin: 0.2rem 0;
+		margin: var(--space-1) 0;
 	}
 </style>

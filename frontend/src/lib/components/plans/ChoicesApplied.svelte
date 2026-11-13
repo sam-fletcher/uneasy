@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- ChoicesApplied.svelte
   Shared "Choices applied:" summary for plans whose make/mar resolution is a
   repeatable pick from a fixed option list (Seek Answers, Spread Rumors,
@@ -44,15 +43,15 @@
 	.choices-summary { margin: 0; }
 	.choices-summary-label {
 		margin: 0;
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
 	.choices-summary-list {
-		margin: 0.25rem 0 0 1.1rem;
+		margin: var(--space-1) 0 0 var(--space-4);
 		padding: 0;
 		list-style: disc;
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
-	.choices-summary-list li { margin: 0.15rem 0; }
+	.choices-summary-list li { margin: var(--space-1) 0; }
 </style>

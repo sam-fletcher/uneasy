@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- plans/shared/EndsNote.svelte
   The line under a submit button that ends a plan or a sub-flow, so the player
   who presses it knows it is the last step before the view changes under them
@@ -21,8 +20,8 @@
 <style>
 	.ends-note {
 		margin: 0;
-		font-size: 0.82rem;
+		font-size: var(--text-small);
 		line-height: 1.35;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 	}
 </style>

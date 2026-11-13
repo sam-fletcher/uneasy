@@ -2,15 +2,19 @@
   Shared make/mar option picker used by every plan component. Renders each
   option as a tappable card (≥44px) rather than a native radio/checkbox:
   `single` plans pick exactly one (selecting deselects the rest); multi plans
-  toggle independently and show a check indicator. Options carrying a `level`
-  render a signed badge ("+1", "−2"); the parent gates out-of-reach levels via
-  `disabledKeys` and explains why via `lockReason`. Parent owns selected[].
+  toggle independently. A pick is the card's bright gold border and a tick:
+  the options wear no meaning colour (a choice is told apart by its words),
+  though the RESULT above them does (Make green, Mar red, each beside its
+  word). Options carrying a `level` show it as a signed number ("+1", "−2");
+  the parent gates out-of-reach levels via `disabledKeys` and explains why via
+  `lockReason`. Parent owns selected[].
 -->
 <script lang="ts">
 	import './planPanel.css';
 	import type { Snippet } from 'svelte';
 	import type { PlanChoiceOption } from './shared';
 	import EndsNote from './shared/EndsNote.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 
 	interface Props {
 		outcome: 'make' | 'mar';
@@ -46,7 +50,7 @@
 
 <div class="choices-section">
 	<p class="choices-header">
-		Result: <span class="outcome-{outcome}">{outcome === 'make' ? '✓ Make' : '✗ Mar'}</span>
+		Result: <span class="outcome-{outcome}">{outcome === 'make' ? 'Make' : 'Mar'}</span>
 	</p>
 
 	{#if header}{@render header()}{/if}
@@ -60,16 +64,17 @@
 				{@const reason = isLocked ? lockReason?.(opt.key) : undefined}
 				<button type="button" class="choice-card" class:active={isSelected} class:locked={isLocked}
 					disabled={isLocked} aria-pressed={isSelected} onclick={() => onToggle(opt.key)}>
-					<span class="choice-badge">
-						{#if opt.level != null}{sign}{opt.level}
-						{:else if isSelected}✓
-						{/if}
-					</span>
+					{#if opt.level != null}
+						<span class="choice-badge">{sign}{opt.level}</span>
+					{/if}
 					<span class="choice-text">
-						<span class="choice-title">{opt.label}{#if isSelected}<span class="choice-tick"> ✓</span>{/if}</span>
+						<span class="choice-title">{opt.label}</span>
 						{#if opt.desc}<span class="choice-desc">{opt.desc}</span>{/if}
 					</span>
 					{#if reason}<span class="choice-lock">{reason}</span>{/if}
+					{#if isSelected}
+						<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
+					{/if}
 				</button>
 			{/each}
 		</div>
