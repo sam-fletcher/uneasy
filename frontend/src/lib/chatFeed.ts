@@ -99,8 +99,16 @@ const HOSTILE_MARKS: Record<string, string> = {
 // `prologue.track_ranked` announces a track's opening standing — the same
 // statement `ranking.updated` makes later — so it takes the podium. The sun
 // stays for `prologue.closing_entered`, which is a genuine phase boundary.
+//
+// `plan.make_war` is every line a war posts once it has begun: the cost of
+// battle each row, a seizure, a peace term. The family would give them the flag,
+// which is every plan's mark; war has its own, the barbute, so a reader scanning
+// the feed can pick its lines out. (`plan.prepared` and `plan.resolving` are
+// shared by every plan, so a war's own header takes the barbute from its plan
+// type instead: see `planMarkFamily` in chatView.ts.)
 const CODE_MARK_OVERRIDES: Record<string, string> = {
 	'prologue.track_ranked': 'ranking',
+	'plan.make_war': 'war',
 };
 
 export function markForCode(code: string | null): string | null {

@@ -789,6 +789,19 @@ describe('markForCode', () => {
 		expect(markForCode('prologue.closing_entered')).toBe('prologue');
 	});
 
+	it("gives a war's own lines the barbute, and every other plan line the flag", () => {
+		// `plan.make_war` is what mwLog posts for the cost of battle, a seizure, a
+		// peace term. The family alone would give them the flag; war has its own
+		// mark so its lines can be picked out of the feed. The posts every plan
+		// shares (prepared, resolving, resolved) stay on the flag: a war's header
+		// takes the barbute from its plan type instead.
+		expect(markForCode('plan.make_war')).toBe('war');
+		expect(markForCode('plan.prepared')).toBe('plan');
+		expect(markForCode('plan.resolving')).toBe('plan');
+		expect(markForCode('plan.resolved.make')).toBe('plan');
+		expect(markForCode('plan.seek_answers')).toBe('plan');
+	});
+
 	it('routes the three hostile verbs to their second mark', () => {
 		expect(markForCode('marginalia.torn')).toBe('tear');
 		expect(markForCode('asset.taken')).toBe('seize');
