@@ -1166,6 +1166,7 @@
 					{activeScene}
 					{activeScenePeers}
 					{assets}
+					{plans}
 					jumpRequest={chatJumpRequest}
 					visible={paneShown.chat}
 					showName={layoutMode !== 'phone'}
