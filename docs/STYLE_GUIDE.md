@@ -24,7 +24,7 @@ Shared components.
 | font size | `--text-label`, `-small`, `-body`, `-heading`, `-title` | `scaleTokens.test.ts` |
 | padding, margin, gap | `--space-1` … `--space-6` | `scaleTokens.test.ts` |
 | corner radius | `--radius-piece`, `-control`, `-chip`, `-sheet`, `-dot` | `scaleTokens.test.ts` |
-| widths, heights, breakpoints | see **Layout widths** below | `layoutTokens.test.ts` |
+| widths, heights, breakpoints | `--layout-*` and see **Layout widths** below | `layoutTokens.test.ts` |
 | touch target | `--size-tap` (44px): the smallest a pressable thing may be | `tapTarget.test.ts`, for the shared recipes |
 
 A token's name describes its job rather than its pixels, so tuning a value
@@ -333,36 +333,22 @@ skips it:
 
 ## State channels on a player row
 
-*This describes the player row before the redesign. A waiting clock replaces the
-gold border, and player colours gain shapes. `shared/TableRoster.svelte` has
-already moved (a shape, the clock, and no pill); the header chips and the
-profile's table-card pills follow in their own pieces, which rewrite this
-section.*
-
-Wherever the app draws a player — the header chips, `TableRoster` (lobby
-seats, ready roster, retinue tallies), the profile's table-card pills —
+Wherever the app draws a player — the table page's player row,
+`TableRoster` (lobby seats, ready roster, retinue tallies), the profile's rows —
 each fact gets **one** channel, and it is the same channel on every surface:
 
 | fact | channel |
 |---|---|
-| **identity** | the colour dot + the name; the current player always reads **You** |
-| **waiting on** | a **gold border** (`--color-accent`); border **+ glow** when it is you |
+| **identity** | the player's shape and their name in their colour; the current player always reads **You** |
+| **waiting on** | the clock mark: bright gold on you (`tone="you"`), secondary on anyone else |
+| **at risk** | a warning mark in the at-risk red, with no number (the count is in the retinue) |
 | **ready / not ready** | words in the row's trailing slot, never colour |
 
-The gold is two tiers of one hue, and the tiers mean different things: a
-plain border is *information* ("the table is waiting on them"), border plus
-glow is *act now*. Reserving the glow for your own row is the point — a
-roster where every waiting row glowed would be shouting at you about other
-people's business.
-
-**Waiting-on is never a fill.** It was one, on `TableRoster` and the profile
-pill, until 2026-08-16: gold-850 across a 44px row is the app's largest gold
-slab, it broke the "gold arrives as the label/frame" ruling, and it measured
-**ΔE 4.8** from the prologue closing stage's orange deadline row — under
-ADR-009's own ΔE 6 near-duplicate bar, which is why both read as the same
-brown. No retune fixes that: every orange fill in the ramp lands ΔE 3–5 from
-gold-850, because two warm hues as dark low-chroma washes over near-black
-*are* the same brown. One of them had to stop being a fill.
+There is no gold border, no glow and no ring: the clock is the one way to say the
+game is waiting on someone, and bright gold on it is reserved for you. A row where
+everyone glowed would be shouting at you about other people's business, which is
+why only your own clock is gold. A player's colour only ever identifies that
+player; a selection and "you" are shown some other way.
 
 **Online presence is not drawn on a player row.** It was a green ring on the
 lobby seat and the profile pill; it was removed in the same pass. It put a
@@ -375,13 +361,10 @@ which is the form to reuse if it ever comes back to the pills ("last seen
 player colour). Do not reach for a green ring again: `--color-success` sits
 ΔE 6.0 from player-3's jade, right on the near-duplicate bar.
 
-**At-risk is red-500 rim + red-300 ink**, on every surface that shows it —
-`RetinueView`'s marginalia slot, the header `.risk-badge` counting them, its
-`HelpContent` mirror, and the closing stage's checklist row. Do not brighten
-the rim: the badge's contrast note records that inverting the two steps
-lands near 3.8:1, under AA, with no lighter ink in the palette to rescue it,
-and the owner's 2026-07-30 ruling is that a counter matches the box it
-points at rather than shouting louder than it.
+**At-risk is red-500 rim + red-300 ink** where it is a box, as on `RetinueView`'s
+marginalia slot and the closing stage's checklist row. On the player row it is the
+warning mark in `--color-danger`. The retinue is where the count lives, because it
+is where a player can act on it.
 
 **Player colours** (categorical, owned by `lib/playerColor.ts`; reference
 block in `app.css`, sync enforced by `designTokens.test.ts`) are jewel
@@ -432,49 +415,73 @@ never means "a quieter player."
 
 ## Layout widths
 
-Every content region is a phone-width column; desktop layouts differ only
-in how many columns sit side by side. The numbers are **derived** — when a
-new device class ships, recompute from the formulas rather than inventing
-values (`adr/LAYOUT_WIDTHS_PLAN.md` has the derivations, decision history,
-and the layout-by-range spec).
+The table page has three panes: the **Public Record**, **Play** and **Chat**. A
+wide window lays them out side by side as columns; a narrow one shows fewer at a
+time and switches between them with tabs. Each pane is drawn at phone width, so
+the layouts differ only in how many fit across. The numbers are **derived**: when a new device class ships, recompute them from
+the formulas rather than inventing values.
 
 | token | px | derivation |
 |---|---|---|
-| touch minimum | 44 | Apple HIG / WCAG 2.5.5; the record rail is exactly this wide at every viewport |
-| gutter | 8 | the shell's gap and edge padding |
-| design band | 360–440 | narrowest (Galaxy S) → widest (iPhone Pro Max) mainstream phone |
-| record-phase content min | 300 | 360 − 44 rail − 2×8. **A content box, not a viewport** — the narrowest box Main-Event/Shake-Up content (every Plan and Scene UI) must render in |
-| record-phase content cap | 380 | 440 − 44 − 2×8; one design target whether or not the rail is present |
-| column cap | 440 | top of the band. No other content column — chat, prologue, modals, profile — is ever wider; extra space becomes centering margins |
-| record width | 316 | 360 − 44: at the viewport floor the overlay peek is exactly the touch minimum (retuned up from the eye-frozen 280, 2026-07-17; no-chip-wrap floor ≈ 246); overlay = docked panel = this token, home is `RECORD_WIDTH_PX` in `lib/breakpoints.ts` |
-| chat dock | 790 | 44+8+360+8+360+8: chat docks right as soon as both columns fit at the band floor |
-| record dock | 1070 | 8+316+8+360+8+360+8 = 1068, pinned round; the rail/overlay becomes a permanent panel |
+| touch minimum | 44 | Apple HIG / WCAG 2.5.5 (`--size-tap`) |
+| gutter | 8 | the gap between columns and the padding beside the outer two (`--space-2`) |
+| column band | 360–440 | narrowest (Galaxy S) → widest (iPhone Pro Max) mainstream phone: `--layout-column-min` and `--layout-column-max` |
+| two columns | 744 | 8 + 360 + 8 + 360 + 8, an upright iPad mini. Chat docks on the right |
+| three columns | 1112 | 8 + 360 + 8 + 360 + 8 + 360 + 8, an iPad on its side. Every pane is a column |
+| play content box | 344–424 | a column minus 8px of padding on each side: the box a plan or scene panel must render in |
+
+The two breakpoints live in `lib/breakpoints.ts`, and `layoutTokens.test.ts`
+checks that they are exactly where two and three minimum-width columns fit and
+that `app.css` agrees about the band. Spare room is shared equally between
+columns up to 440 each; past that the group is centred. The bar heights are tokens too: `--layout-title-bar`,
+`--layout-column-head` (a column's name bar, the same height as Chat's header so
+the three line up) and `--layout-tab-bar`.
+
+| width | what the table shows |
+|---|---|
+| under 744 | one pane at a time, with a three-tab bar at the foot. The table always opens on Play |
+| 744 to 1111 | two columns: Chat on the right, and on the left either Public Record or Play, with two tabs at the foot of that column |
+| 1112 and up | three columns, no tabs, each starting with its name |
+
+The title bar and the player row span the full width at every size, above the
+columns. The Public Record's Events / Laws / Rumors chips sit at the foot of its
+column at every size, above the tab bar, and show only while that pane does. A
+sheet takes its column's width and opens over the column that launched it, leaving
+the other columns visible and usable (see `RetinueSheet.svelte` and
+`lib/sheetHost.ts`); on a phone it covers the screen.
 
 Rules:
 
-- Viewport `@media` / `matchMedia` may appear **only** in the shell (the
-  table page, ChatPanel, PublicRecord) and only with the two dock
-  literals. JS reads them from `lib/breakpoints.ts`.
+- Viewport `@media` / `matchMedia` may appear **only** where the layout itself
+  changes, and only with the two breakpoint literals (or their `max-width`
+  complements, 743 and 1111). JS reads them from `lib/breakpoints.ts`; the table
+  page reads the layout once, through `lib/tableLayout.svelte.ts`.
   `layoutTokens.test.ts` fails anything else.
 - Components adapt with `@container` against their column, or with fluid
-  CSS — never against the viewport. Container-width allowlist: 420 (the
-  prologue tile grid's 2→3 column flip, i.e. "the column is at its cap").
+  CSS — never against the viewport. The play column is the named container
+  (`column`). Container-width allowlist: 300 (a squeezed column), 400 (the asset
+  card's compact meta line) and 420 (the prologue tile grid's 2→3 column flip,
+  i.e. "the column is at its cap").
 - Design and verify at 360 first; 344 (foldable covers) must not break
   (fluid layout + `min-width: 0`, no dedicated styles).
 - Cap-and-center: above its cap a column stops growing and margins take
-  the slack.
+  the slack. No width is ever a percentage of the window.
 - The derivations above measure from the **raw viewport**, so the table
   route's `main.full-bleed` (`routes/+layout.svelte`) must add no
   horizontal padding and no auto inline margins — any gutter there comes
-  straight out of the phase column, and a shrink-to-fit `main` collapses
-  it entirely. Pad inside the phase views instead.
+  straight out of the columns, and a shrink-to-fit `main` collapses
+  it entirely. Pad inside the columns instead.
   `layoutTokens.test.ts` fails a gutter.
+- A pane that isn't showing stays laid out but hidden (`visibility`, not
+  `display`), so its scroll position and state survive a trip to another tab.
 
 ## Layout & interaction
 
 - **Mobile-first.** Design and verify at a narrow viewport (360px) before
   desktop. Tap targets ≥ 44px (`min-height: var(--size-tap)` on buttons and rows).
-- Chat is a bottom strip below 790px, a docked right column at ≥ 790px.
+- The panes are tabs below 744px and columns above it (see **Layout widths**).
+  Which pane you picked is kept only for the visit and is never a history entry,
+  so Back leaves the table; only sheets are dismissed by Back.
 - Wide content scrolls inside its own container — the page never scrolls
   horizontally.
 - Disabled-but-tappable: prefer `aria-disabled` + an explanation on tap
@@ -543,7 +550,7 @@ Reuse before writing new CSS — these live in
 | `jumpPulse.css` | the "you landed here" accent flash after the app scrolls the reader somewhere (chat jump, prologue claim). Carries its own reduced-motion guard |
 | `marginaliaTile.css` | the warm ledger tile for marginalia |
 | `modalShell.css` | the sheet's scrim, close button and title, and the full-screen sheet variant; see Recipes |
-| `rankChip.css`, `rankStrip.css` | rank track pieces |
+| `rankStrip.css` | the Power / Knowledge / Esteem rank strip at the top of a retinue |
 | `statusText.css` | caption and error text (`.muted-text`, `.error-text`) and **the** status word (`.status-word`: small capitals in a colour, never a chip) |
 | `trackCode.css` | the prologue ranking track as three letters (`POW`/`KNO`/`EST`, and `ANY` dashed) — **the** way a track reaches the screen in a tight slot. Read the letters from `choosing.ts`'s `trackCode()`, never a literal |
 | `ChecklistRow.svelte` | **the** checklist/disclosure row: glyph · title+subtitle · state word · caret-or-arrow, with an optional body. A `tapRow.css` row, so no box. Used by the lobby's *While you wait* and the prologue's closing stage; `action` picks the affordance (see the caret rule above) |
@@ -551,6 +558,7 @@ Reuse before writing new CSS — these live in
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `HelpDisclosure.svelte` | the collapsible "? How X works" panel — a `ChecklistRow` specialisation. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
+| `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), `TonesSheet`, and the Waiting On stopgap `WarEntry`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`, `clock`, `war`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below. The newer marks have a component of their own that adds the size, colour rule and label |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
@@ -844,9 +852,8 @@ given), and only when the mark's *noun* is the thing the slot is about — a
 mark picked for its silhouette is a new mark, and that needs owner sign-off.
 
 **One ranking mark, everywhere.** The `ranking` podium is *not* chat-only.
-`PublicRecord.svelte` reuses the same `<LogMark family="ranking">` on the rail
-divider (`.rail-rank`, 14px) and the expanded engrailed dividers
-(`.engrailed-rank`, 16px), so the Public Record and the chat card share one
+`PublicRecord.svelte` reuses the same `<LogMark family="ranking">` on its engrailed
+dividers (`.engrailed-rank`, 16px), so the Public Record and the chat card share one
 component and can't drift. Consequently `★` now means **only Main Character**
 (the `AssetCardSelectable` badge) and `✶` **only the Shake-Up**, app-wide —
 neither doubles as the ranking marker any longer. The Help "record" schematic
