@@ -830,10 +830,15 @@ One chronology, no threads. What each thing in it looks like is decided by what 
   (greyed out until there is text, so it never spends the deep gold on nothing) and,
   above them, "Speaking as" **only when there is a voice to choose**. The keyboard
   opens only when the box is tapped: nothing here ever calls `focus()` on arrival.
-- **The pale dot on Chat clears once the new messages have been on screen.** The
+- **The pale dot on Chat clears once the new messages have been on screen.** Opening
+  the chat with unread lands on the "N new" divider (a quarter of the way down), not
+  at the bottom, so the reader starts where the new messages start. The
   read marker moves two seconds after the pane is on screen, the window is visible
-  and the reader is within 150px of the newest line. The tab and the column name
-  both read the marker, so they clear together.
+  and the reader is within 150px of the newest line, and it moves only as far as the
+  newest post that was on screen when that was decided. Leaving the pane (a tab
+  switch, navigating away) sends a report already pending and nothing else: it never
+  marks an unread run as read. The tab and the column name both read the marker, so
+  they clear together.
 - **The Tones sheet has two shapes.** Before the Main Event it is the grid of tiles
   you set tones on. Once tones lock it lists only the topics someone set, grouped
   Never, Avoid detail, Include (a swatch and a word each), with one line counting
