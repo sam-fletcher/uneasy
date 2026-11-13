@@ -23,7 +23,7 @@ comment at the top explaining the *why*; this is just the map.
     (`demand/`, `duel/`, `festivity/`, `war/`) for plans complex enough to
     need their own sub-components.
   - `shared/` — CSS partials (not components) reused across many
-    components: `actionButton.css`, `modalShell.css`, `rankChip.css`, etc.
+    components: `actionButton.css`, `modalShell.css`, `rankStrip.css`, etc.
 
 - **`plans/resolutionData/`** — one file per plan type, typed parsers/view
   helpers over that plan's `resolution_data` JSON blob. The frontend mirror

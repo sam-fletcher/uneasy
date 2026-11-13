@@ -349,6 +349,18 @@
 	   (tapTarget.test.ts). A row or button may grow taller; none may shrink. */
 	--size-tap: 44px;
 
+	/* ── Table layout ──────────────────────────────────────────────────────
+	   The widths and bar heights of the table page's frame. A column is drawn at
+	   phone width, between 360 and 440: columns share spare room equally up to
+	   the top of that band, and past it the group is centred. Gaps are --space-2. The two
+	   widths are also in lib/breakpoints.ts (CSS can't read a constant), and
+	   layoutTokens.test.ts holds the two copies together. */
+	--layout-column-min: 360px;
+	--layout-column-max: 440px;
+	--layout-title-bar: 52px;     /* Home, the title, Help */
+	--layout-column-head: 52px;   /* a column's name bar: the same height as Chat's header, so the three line up */
+	--layout-tab-bar: 56px;       /* the pane tabs at the foot */
+
 	/* The old size-named radii. RETIRING, and left at their old values so no
 	   unmigrated file changes shape. They are not tokens to the guard test:
 	   each migration piece picks a radius by what the thing IS. */

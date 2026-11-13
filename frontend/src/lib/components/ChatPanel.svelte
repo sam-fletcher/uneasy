@@ -2,13 +2,12 @@
 <!--
 	ChatPanel.svelte — the unified game-wide chat surface.
 
-	Layout (driven by CSS, not by the parent):
-	- below the chat dock (790px): collapsed = a thin strip pinned to the bottom of the viewport
-	  showing the latest message + unread badge. Tapping the strip expands the
-	  panel into a full-screen sheet below the page header (header stays
-	  visible). Expanding does NOT auto-focus the input — the keyboard only
-	  appears when the user taps the input box (matches Discord/Slack/iMessage).
-	- at ≥790px: always-open right column. No collapse toggle.
+	Layout: the panel fills the column the page gives it (docs/STYLE_GUIDE.md
+	"Layout widths"). On a phone that column is one pane among three, shown when
+	its tab is chosen; from two columns up it is docked on the right. The page
+	owns which, and says whether the pane is on screen through `visible`. The
+	keyboard only appears when the user taps the input box, never on arrival
+	(matches Discord/Slack/iMessage).
 
 	Two shapes of entry flow through the same feed:
 	- Player message: author_id != null, system_code == null, severity 0.
@@ -27,7 +26,6 @@
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/jumpPulse.css';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
-	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 	import {
 		createPlayerPost,
 		type Asset,
@@ -36,9 +34,8 @@
 		type Scene,
 		type ScenePeerView,
 	} from '$lib/api';
-	import { chatDockQuery } from '$lib/breakpoints';
 	import { controlledPeers } from '$lib/controlledPeers';
-	import { renderLogBody, stripLogMarkup } from '$lib/logMarkup';
+	import { renderLogBody } from '$lib/logMarkup';
 	import { playerColorByID } from '$lib/playerColor';
 	import { scrollBehavior } from '$lib/reducedMotion';
 	import { SEVERITY } from '$lib/severity';
@@ -60,6 +57,8 @@
 	} from '$lib/chatFeed';
 	import LogMark from '$lib/components/LogMark.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Chip from '$lib/components/shared/Chip.svelte';
+	import PaneName from '$lib/components/table/PaneName.svelte';
 
 	// System-log bodies carry a tiny server-written markup subset — **asset
 	// names** and @@id|player names@@ — parsed in $lib/logMarkup (which also
@@ -90,22 +89,27 @@
 		/** Full asset list — used to look up names for the persona picker. */
 		assets?: Asset[];
 		/**
-		 * Jump request from the Public Record sidebar. When this changes to a
-		 * non-null value, the panel expands (on mobile) and scrolls to the
-		 * post with the given ID. The `key` field disambiguates repeated
-		 * requests for the same post so the effect re-runs. By the time this
-		 * fires, the caller (+page.svelte) has already ensured the post is
-		 * loaded into `feed` — resolving the anchor and entering history mode
-		 * if it wasn't in the live window.
+		 * Jump request from the Public Record. When this changes to a non-null
+		 * value, the panel scrolls to the post with the given ID. The `key`
+		 * field disambiguates repeated requests for the same post so the effect
+		 * re-runs. By the time this fires, the caller (+page.svelte) has already
+		 * ensured the post is loaded into `feed` — resolving the anchor and
+		 * entering history mode if it wasn't in the live window — and, on a
+		 * phone, switched to this pane.
 		 */
 		jumpRequest?: { postID: number; key: number } | null;
 		/**
-		 * Mobile expand/collapse state. Bindable so the page can close the chat
-		 * when another full-screen surface (Tones/Laws/Rumors/Retinue/War) opens
-		 * — only one such surface is shown at a time on mobile. Ignored on
-		 * desktop, where the panel is a permanent column.
+		 * Whether this pane is on screen. A phone shows one pane at a time, so
+		 * the others are laid out but hidden; the chat must not count messages as
+		 * seen, or land on the unread divider, until the reader can see it.
 		 */
-		expanded?: boolean;
+		visible?: boolean;
+		/** Start the header with the pane's name (from three columns up, where no
+		 *  tab names it). */
+		showName?: boolean;
+		/** "Tones · N set" in the header opens the Tones sheet. */
+		tonesSetCount?: number;
+		onOpenTones?: () => void;
 	}
 
 	let {
@@ -118,7 +122,10 @@
 		activeScenePeers = [],
 		assets = [],
 		jumpRequest = null,
-		expanded = $bindable(false),
+		visible = true,
+		showName = false,
+		tonesSetCount = 0,
+		onOpenTones = () => {},
 	}: Props = $props();
 
 	const posts = $derived(feed.posts);
@@ -214,57 +221,21 @@
 
 	let pickerOpen = $state(false);
 
-	// ── Expand/collapse (mobile only; desktop ignores this state) ─────────────
-	// `expanded` is a bindable prop (see Props above) so the page can close
-	// the sheet when another surface opens. Closing flushes any pending
-	// read-marker report — see "Read-marker reporting" below.
-	function toggleExpanded() {
-		if (expanded) collapse();
-		else expanded = true;
-	}
-
-	/** The one close path for the mobile sheet — Escape, phone Back, and the
-	 *  strip's own toggle all land here so none of them can skip the pending
-	 *  read-marker report. */
-	function collapse() {
-		if (!expanded) return;
-		expanded = false;
-		flushReadReport();
-	}
-
-	// On desktop the panel is always visible as a column, even before the user
-	// has explicitly "expanded" anything (that flag is mobile-only).
-	let isDesktop = $state(false);
-	onMount(() => {
-		const mq = window.matchMedia(chatDockQuery);
-		const sync = () => { isDesktop = mq.matches; };
-		sync();
-		mq.addEventListener('change', sync);
-		// ESC closes the expanded mobile sheet (matches the other overlays;
-		// no-op on desktop where the panel is a permanent column).
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape' && expanded && !isDesktop) collapse();
-		};
-		window.addEventListener('keydown', onKey);
-		return () => {
-			mq.removeEventListener('change', sync);
-			window.removeEventListener('keydown', onKey);
-		};
+	// ── Visibility ─────────────────────────────────────────────────────────────
+	// Hiding the pane (choosing another tab) flushes any pending read-marker
+	// report, as closing the old mobile sheet did — see "Read-marker reporting"
+	// below. Starting hidden reports nothing: messages stay unread until seen.
+	let wasVisible = untrack(() => visible);
+	$effect(() => {
+		const now = visible;
+		untrack(() => {
+			if (wasVisible && !now) flushReadReport();
+			wasVisible = now;
+		});
 	});
-
-	// Phone Back closes the sheet instead of leaving the table. Gated on
-	// !isDesktop: past the chat dock this panel is a permanent column, not an
-	// overlay, so there's nothing for Back to dismiss.
-	dismissOnBack(() => expanded, collapse, () => !isDesktop);
-	const isOpen = $derived(expanded || isDesktop);
 
 	// ── Unread state (server-side marker; adr/CHAT_OVERHAUL_PLAN.md Phase 1c/2a) ─
 	const unreadCount = $derived(countUnread(posts, feed.lastReadPostID, currentPlayerID));
-	const hasImportantUnread = $derived(
-		posts.some(p =>
-			p.id > feed.lastReadPostID && p.author_id !== currentPlayerID && p.severity >= SEVERITY.IMPORTANT
-		)
-	);
 
 	// ── "Hide bookkeeping" toggle (Phase 3) ────────────────────────────────────
 	// Player messages (author_id != null) are always shown; the toggle only
@@ -382,21 +353,6 @@
 		}
 	}
 
-	// ── Latest message preview (for the collapsed strip) ──────────────────────
-	const latestPost = $derived(posts.length > 0 ? posts[posts.length - 1] : null);
-	const latestPreview = $derived.by(() => {
-		// Lowercase and phrased as a state, not a headline: the empty case is
-		// now secondary text sitting after the gold CHAT label, where the old
-		// "No messages yet" read as the bar's own (dead-end) title.
-		if (!latestPost) return 'no new messages';
-		// System posts (no author) just show the body — boundaries and log
-		// entries are already self-contained sentences. Strip the bold markup
-		// since the strip is plain text.
-		if (latestPost.author_id == null) return stripLogMarkup(latestPost.body);
-		const author = playerName(latestPost.author_id);
-		return author ? `${author}: ${latestPost.body}` : latestPost.body;
-	});
-
 	// ── Scroll behavior (Phase 2c) ─────────────────────────────────────────────
 	// Auto-follow the tail only while the reader is at (or returns to) the
 	// bottom; otherwise leave their position alone and surface a "↓ N new"
@@ -441,7 +397,7 @@
 		void posts.length;
 		if (!feedEl) return;
 		if (!didInitialScroll) {
-			if (!isOpen || posts.length === 0) return;
+			if (!visible || posts.length === 0) return;
 			didInitialScroll = true;
 			void tick().then(() => {
 				if (!feedEl) return;
@@ -487,7 +443,7 @@
 	// window that may be discontiguous with the true unread span).
 	let readReportTimer: ReturnType<typeof setTimeout> | null = null;
 	function scheduleReadReport() {
-		if (feed.mode !== 'live' || !isOpen) return;
+		if (feed.mode !== 'live' || !visible) return;
 		if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 		if (!feedEl || !isNearBottom(feedEl.scrollTop, feedEl.scrollHeight, feedEl.clientHeight, NEAR_BOTTOM_PX)) return;
 		if (readReportTimer) clearTimeout(readReportTimer);
@@ -503,7 +459,7 @@
 
 	$effect(() => {
 		void posts.length;
-		void isOpen;
+		void visible;
 		scheduleReadReport();
 	});
 
@@ -517,20 +473,14 @@
 		flushReadReport();
 	});
 
-	// ── Jump-to-anchor (from Public Record sidebar) ───────────────────────────
+	// ── Jump-to-anchor (from the Public Record) ───────────────────────────────
 	// By the time a jumpRequest arrives, +page.svelte has already resolved the
 	// anchor and (if needed) loaded it into `feed` via history mode — this
-	// effect only expands the panel (mobile) and scrolls the post into view.
+	// effect only scrolls the post into view.
 	$effect(() => {
 		if (!jumpRequest) return;
 		const targetID = jumpRequest.postID;
-		// On mobile the panel needs to be expanded to show the scroll target.
-		// On desktop the panel is always visible as a column — flipping
-		// `expanded` there would only trigger the mobile overlay CSS path.
-		// Untracked: we don't want this effect to re-fire when the user
-		// closes the panel via the X button (otherwise it re-opens itself).
 		untrack(() => {
-			if (!expanded && !isDesktop) expanded = true;
 			// A collapsed scene/plan container hides its inner posts entirely
 			// (not just visually) — expand them first so the target actually
 			// exists in the DOM by the time we query for it below.
@@ -629,52 +579,20 @@
 </script>
 
 <!--
-	The component renders TWO surfaces and lets CSS decide which is visible:
-	- A "strip" (mobile collapsed only) — a button-like row pinned to the
-	  bottom of the viewport.
-	- A "panel" — the message list + input. On mobile, only visible when
-	  `expanded`; on desktop, always visible.
-	This avoids JS-driven layout flips on resize.
+	The panel fills its column. The page wraps it in the Chat column and gives
+	that column's name, tab and sheet; this renders only the feed, the header's
+	two controls and the composer.
 -->
 
-<button
-	type="button"
-	class="strip"
-	class:hidden={expanded}
-	class:has-unread={unreadCount > 0}
-	class:has-important={hasImportantUnread}
-	onclick={toggleExpanded}
-	aria-label={unreadCount > 0 ? `Open chat, ${unreadCount} unread` : 'Open chat'}
-	aria-expanded={expanded}
->
-	<span class="strip-mark" aria-hidden="true"><LogMark family="chat" /></span>
-	<span class="strip-label">Chat</span>
-	<span class="strip-preview">{latestPreview}</span>
-	{#if unreadCount > 0}
-		<span class="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
-	{/if}
-	<span class="strip-caret" aria-hidden="true">▴</span>
-</button>
-
-<!--
-	Dimming scrim behind the expanded mobile sheet. Covers the body region
-	(it's absolutely positioned inside the table-body, so the header above it
-	stays bright and interactive). Tapping it closes the chat. Hidden on
-	desktop, where the panel is a permanent column.
--->
-{#if expanded}
-	<button type="button" class="scrim" onclick={toggleExpanded} aria-label="Close chat"></button>
-{/if}
-
-<aside
-	class="panel"
-	class:expanded
-	aria-label="Chat"
-	role={expanded ? 'dialog' : undefined}
-	aria-modal={expanded ? 'true' : undefined}
->
+<div class="panel">
 	<header class="panel-header">
-		<h2>Chat</h2>
+		{#if showName}
+			<PaneName pane="chat" marked={unreadCount > 0} />
+		{/if}
+		<!-- A stopgap header, until the chat piece redesigns it: the Tones chip the
+		     redesign puts here (Tones are reference for what is said, so they sit
+		     where it is said), and the bookkeeping toggle as it was. -->
+		<Chip compact aria-haspopup="dialog" onclick={onOpenTones}>Tones · {tonesSetCount} set</Chip>
 		<label class="bookkeeping-toggle" title="Hide low-severity system events">
 			<input
 				type="checkbox"
@@ -683,14 +601,6 @@
 			/>
 			<span>Hide bookkeeping</span>
 		</label>
-		<button
-			type="button"
-			class="collapse"
-			onclick={toggleExpanded}
-			aria-label="Minimize chat"
-		>
-			✕
-		</button>
 	</header>
 
 	<!--
@@ -1107,220 +1017,43 @@
 			{sending ? '…' : 'Send'}
 		</button>
 	</div>
-</aside>
+</div>
 
 <style>
-	/* ── Strip (mobile collapsed) ────────────────────────────────────────── */
+	/* ── Panel and header ─────────────────────────────────────────────────── */
 
-	/* The bar is a BUTTON, and has to look like one at a glance: playtesting
-	   found a player who never discovered the game had chat at all. The old
-	   bar was a hairline band whose entire content was the latest message's
-	   prose — the visual signature of a ticker, i.e. the one genre that is
-	   definitionally not tappable, with the word "chat" appearing only in an
-	   aria-label sighted users never receive.
-	   The fix borrows .action-btn.secondary's register verbatim (raised
-	   --color-border fill, warm border, gold label text): the app's own idiom
-	   for "this is a control, but not the primary CTA". Gold arrives as the
-	   LABEL, never as fill, so the bar never competes with an in-game call to
-	   action — that stays the exclusive meaning of a gold surface. */
-	.strip {
-		position: absolute;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		/* Defined on .table-page so the page-level padding reservation uses the
-		   same value. Note this is a border-box height that has to contain the
-		   padding below — at the old 46px the content box was ~19px, too short
-		   for a mark and a label, which is part of why the bar could only ever
-		   be a line of text. */
-		min-height: var(--chat-strip-height, 56px);
-		/* Extra bottom padding accounts for the iOS home-indicator safe area
-		   so the preview text isn't clipped on devices with a gesture bar. */
-		padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom));
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
-		background: var(--color-border);
-		border-top: 1px solid var(--color-border-warm-strong);
-		color: var(--color-text);
-		font-size: 0.9rem;
-		text-align: left;
-		z-index: 50;
-		cursor: pointer;
-		box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
-	}
-
-	/* Mark and label are the bar's identity and never shrink or ellipsize —
-	   the preview yields space to them, not the other way round. */
-	.strip-mark {
-		width: 18px;
-		height: 18px;
-		flex-shrink: 0;
-		color: var(--color-accent);
-	}
-
-	.strip-label {
-		flex-shrink: 0;
-		color: var(--color-accent);
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		font-size: 0.78rem;
-	}
-
-	/* Trailing caret: points UP because tapping raises the sheet. Paired with
-	   aria-expanded on the button, so it's decoration only.
-	   Accent, not muted: the app's three "this header expands" carets
-	   (.buffet-caret, .sheet-caret, .intro-caret) are all --color-accent, and
-	   that is what this is. The muted carets are the two *inside* the chat
-	   panel (.scene-caret, .persona-caret), where many appear at once and a
-	   gold one each would be noise — not this case.
-	   Sized up a step from the app's usual 0.75–0.8rem because this caret sits
-	   beside an 18px mark rather than beside text, and at 0.8rem it read as
-	   out-scaled next to it. (The shape is the house filled triangle, same as
-	   every other expander in the app — deliberately not a chevron.) */
-	.strip-caret {
-		flex-shrink: 0;
-		color: var(--color-accent);
-		font-size: 0.9rem;
-	}
-
-	/* Supporting detail, not the bar's identity: muted and a step smaller than
-	   the label so a glance lands on "CHAT" first and the preview second. It
-	   keeps its place (seeing whether anything happened without opening is
-	   worth a line) now that it is no longer masquerading as the whole bar. */
-	.strip-preview {
-		flex: 1;
-		min-width: 0;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		color: var(--color-text-muted);
-		/* Matches the label's size rather than exceeding it — the preview is
-		   the longest run of text on the bar, so letting it set the largest
-		   type would undo the demotion. Gold+caps vs muted lowercase carries
-		   the hierarchy from there. */
-		font-size: 0.78rem;
-	}
-
-	/* Unread lifts the preview out of the muted register — the text is now
-	   something you haven't seen, not ambient context. */
-	.strip.has-unread .strip-preview { color: var(--color-text); }
-	.strip.has-important {
-		border-top: 2px solid var(--color-accent);
-	}
-
-	.unread-badge {
-		background: var(--color-accent);
-		color: var(--color-bg);
-		font-size: 0.72rem;
-		padding: 0.1rem 0.5rem;
-		border-radius: 999px;
-		min-width: 1.5rem;
-		text-align: center;
-	}
-
-	.strip.hidden { display: none; }
-
-	/* ── Panel (mobile expanded sheet, desktop right column) ─────────────── */
-
+	/* Fills the Chat column. The column is drawn at phone width, so there is no
+	   overlay, no strip and no scrim: the pane is either on screen or not. */
 	.panel {
-		display: none;
+		flex: 1;
+		display: flex;
 		flex-direction: column;
 		min-height: 0;
 		background: var(--color-bg);
 		color: var(--color-text-secondary);
 	}
 
-	/* Dimming scrim — only shown on mobile while expanded (rendered
-	   conditionally, so it only exists in the DOM then). Absolutely positioned
-	   inside .table-body, so it dims the body but leaves the header bright. */
-	.scrim {
-		position: absolute;
-		inset: 0;
-		z-index: 109;
-		border: none;
-		padding: 0;
-		background: rgba(0, 0, 0, 0.55);
-		cursor: pointer;
-		animation: chat-scrim-fade 150ms ease-out;
-	}
-	@keyframes chat-scrim-fade {
-		from { opacity: 0; }
-		to { opacity: 1; }
-	}
-	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the dimming is
-	   the feedback — the page behind is out of play — and it still happens, it
-	   just doesn't ease in. The scrim only exists in the DOM while expanded, so
-	   there is nothing to fade out either way. */
-	@media (prefers-reduced-motion: reduce) {
-		.scrim { animation: none; }
-	}
-
-	/* Mobile-only: when expanded, rise as a bottom sheet over the page. A
-	   small top gap leaves the dimmed body peeking above, and rounded top
-	   corners + shadow read clearly as a floating layer rather than a page
-	   swap. Scoped to below the chat dock (790, docs/STYLE_GUIDE.md "Layout
-	   widths") so a stray `expanded` on desktop can't burst out of the chat
-	   column. Like every content column the sheet caps at 440 — on tablets
-	   and half-screens it centers instead of stretching. */
-	@media (max-width: 789px) {
-		.panel.expanded {
-			display: flex;
-			position: absolute;
-			left: 0;
-			right: 0;
-			max-width: 440px;
-			margin-inline: auto;
-			bottom: 0;
-			/* Gap at the top so the scrim-dimmed body shows above the sheet. */
-			top: 0.75rem;
-			/* Above the scrim (109) and the Public Record overlay (z-index 100
-			   in PublicRecord.svelte) so a jump from the rail opens chat *over*
-			   the still-expanded PR. Closing chat returns to the PR underneath. */
-			z-index: 110;
-			border-top: 1px solid var(--color-surface-2);
-			border-radius: 14px 14px 0 0;
-			box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
-			/* Clip the panel header to the rounded top corners. */
-			overflow: hidden;
-		}
-	}
-
+	/* One line: the column's name (from three columns up), the Tones chip,
+	   and the toggle pushed to the far end. 52px tall like the other two
+	   columns' name bars, so the three line up. */
 	.panel-header {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		padding: 0.5rem 0.8rem;
-		border-bottom: 1px solid var(--color-surface-2);
+		gap: var(--space-2);
+		min-height: var(--layout-column-head);
+		padding: 0 var(--space-2);
+		border-bottom: 1px solid var(--color-border);
 		flex-shrink: 0;
-	}
-
-	.panel-header h2 {
-		margin: 0;
-		font-size: 0.95rem;
-		color: var(--color-accent);
-	}
-
-	.collapse {
-		background: none;
-		border: none;
-		color: var(--color-text-muted);
-		font-size: 1.1rem;
-		cursor: pointer;
-		padding: 0.2rem 0.4rem;
-		min-width: 44px;
-		min-height: 44px;
 	}
 
 	.bookkeeping-toggle {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
-		min-height: 44px;
-		padding: 0 0.3rem;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
+		gap: var(--space-2);
+		min-height: var(--size-tap);
 		margin-left: auto;
+		font-size: var(--text-label);
+		color: var(--color-text-secondary);
 		cursor: pointer;
 	}
 
@@ -1331,18 +1064,15 @@
 		cursor: pointer;
 	}
 
-	/* At the chat dock, hide the collapse button and the strip; the panel is
-	   the permanent right column. */
-	@media (min-width: 790px) {
-		.strip { display: none; }
-		.collapse { display: none; }
-		.scrim { display: none; }
-		.panel {
-			display: flex;
-			position: static;
-			height: 100%;
-			width: 100%;
-		}
+	/* The count pill that sits on a collapsed scene's or plan's header line. */
+	.unread-badge {
+		background: var(--color-accent);
+		color: var(--color-bg);
+		font-size: 0.72rem;
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+		min-width: 1.5rem;
+		text-align: center;
 	}
 
 	/* ── Feed ─────────────────────────────────────────────────────────────── */

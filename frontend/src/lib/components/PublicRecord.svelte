@@ -1,35 +1,25 @@
 <!-- tokens: not migrated -->
 <!-- PublicRecord.svelte
-  Two-state public-record sidebar.
+  The Public Record's Events list: the thirteen rows of the timeline, each with
+  its plans and scenes, a podium mark between rows 4|5, 8|9, 12|13 marking the
+  algorithmic ranking updates (the same LogMark the chat feed's ranking card
+  carries — one symbol across surfaces; see adr/LOG_MARKS_PLAN.md), and one
+  more pseudo-row for The Shake-Up after row 13: future from row 1 of the main
+  event, lit during the shake-up (with its three Esteem/Knowledge/Power pips
+  filling in as categories complete), and sealed once the game ends. The game
+  doesn't just stop at row 13, it always has a finale ahead of it.
 
-  Collapsed (default): a thin vertical rail showing all 13 row pills, with
-  a podium mark between rows 4|5, 8|9, 12|13 marking the algorithmic ranking
-  updates (the same LogMark the chat feed's ranking card carries — one symbol
-  across surfaces; see adr/LOG_MARKS_PLAN.md). Past rows are dimmed; the current row is filled in the accent
-  colour; future rows are outlined. Rows that have ≥1 plan get a numeric
-  bubble at the top-right.
-
-  After row 13, both rail and expanded list carry one more pseudo-row for
-  The Shake-Up — a heavier ✶ glyph (vs. the engrailed podium dividers), visible
-  from row 1 of main_event onward (future), lit during shake_up (current,
-  with its three Esteem/Knowledge/Power pips filling in as categories
-  complete), and sealed once the game ends (past). This is the point: the
-  game doesn't just stop at row 13, it always has a finale ahead of it.
-
-  Expanded: shows plan chips and scene-entry summaries per row. Tapping
-  the rail toggles between the two states. (Animation, mobile overlay,
-  and jump-to-anchor wiring all land in later steps.)
+  It is a pane, not an overlay: the table page gives it a column (or a tab) and
+  the Events / Laws / Rumors chips at its foot choose what the pane shows. It
+  fills whatever it is put in and scrolls inside. Past rows hold the plans and
+  scenes that happened, and tapping one jumps the chat to it.
 
   See PUBLIC_RECORD_SIDEBAR_SPEC.md.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
-	import { fly } from 'svelte/transition';
-	import { recordDockQuery, RECORD_WIDTH_PX } from '$lib/breakpoints';
+	import { tick } from 'svelte';
 	import type { RecordRow, Plan, Player, GamePhase } from '$lib/api';
 	import { highlightedRow } from '$lib/highlight';
-	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
-	import { prefersReducedMotion } from '$lib/reducedMotion';
 	import { playerColorByID } from '$lib/playerColor';
 	import { PLAN_SHORT } from '$lib/components/plans/shared';
 	import { parseMakeIntroductionsData } from '$lib/plans/resolutionData/make_introductions';
@@ -46,7 +36,7 @@
 		playerNames: Map<number, string>;
 		/** Used to tint plan chips with each plan preparer's color. */
 		players: Player[];
-		/** Tapping a row pill in the expanded view → jump chat to that row's anchor. */
+		/** Tapping a row pill → jump chat to that row's anchor. */
 		onRowJump?: (rowNumber: number) => void;
 		/** Tapping a plan chip → jump chat to that plan's anchor. The status
 		 *  decides which post that is (a chip sits at the plan's *resolution*
@@ -112,403 +102,117 @@
 	const authorName = (id: number) => playerNames.get(id) ?? '?';
 
 	// Index incoming rows by row_number so we can render a complete 1–13
-	// rail even before the backend has populated every row.
+	// list even before the backend has populated every row.
 	const rowMap = $derived(new Map(rows.map(r => [r.row_number, r])));
 	const rowAt = (n: number): RecordRow | undefined => rowMap.get(n);
-	const planCount = (n: number): number => rowAt(n)?.plans.length ?? 0;
 	const rowState = (n: number): 'past' | 'current' | 'future' =>
 		n < currentRow ? 'past' : n === currentRow ? 'current' : 'future';
 
-	// ── Expand / collapse ─────────────────────────────────────────────────────
-	// At the record dock (1040px, lib/breakpoints.ts) the panel is a
-	// permanent column (no rail, no toggle). Below that, the rail collapses
-	// and the panel overlays on tap.
-	let userExpanded = $state(false);
-	// Initialize synchronously (not in onMount) so the first paint already
-	// reflects the right mode — otherwise wide-desktop loads briefly with
-	// neither rail (hidden by CSS at the dock) nor panel (would-be-rendered
-	// only after onMount flips isWide).
-	let isWide = $state(
-		typeof window !== 'undefined' && window.matchMedia(recordDockQuery).matches
-	);
-	onMount(() => {
-		const mq = window.matchMedia(recordDockQuery);
-		const sync = () => { isWide = mq.matches; };
-		mq.addEventListener('change', sync);
-		return () => mq.removeEventListener('change', sync);
-	});
-	const expanded = $derived(isWide || userExpanded);
-	const toggle = () => { userExpanded = !userExpanded; };
-
-	// ── Scroll the current row into view when the panel opens ─────────────────
+	// ── Scroll the current row into view ──────────────────────────────────────
 	// Without this the list opens at row 1 and the focus player has to scroll
-	// every time. Re-runs whenever expanded flips true.
+	// every time. It runs when the list first renders, and the page mounts the
+	// list again each time Events is chosen, so it lands on the current row
+	// each time.
 	let rowListEl = $state<HTMLOListElement | null>(null);
 	$effect(() => {
-		if (!expanded) return;
+		if (!rowListEl) return;
 		void tick().then(() => {
 			const el = rowListEl?.querySelector('[data-state="current"]') as HTMLElement | null;
 			el?.scrollIntoView({ block: 'center' });
 		});
 	});
-
-	// ── Escape closes the overlay ──────────────────────────────────────────
-	// The scrim's own onkeydown only fires if the scrim has DOM focus, which
-	// never happens in practice (tabindex="-1", never programmatically
-	// focused). A window-level listener is the only reliable way to catch
-	// Escape from keyboard users. Only wired in overlay mode — past the
-	// record dock the panel is a permanent column with nothing to collapse.
-	$effect(() => {
-		if (!expanded || isWide) return;
-		const onKeydown = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') toggle();
-		};
-		window.addEventListener('keydown', onKeydown);
-		return () => window.removeEventListener('keydown', onKeydown);
-	});
-
-	// ── Phone Back closes the overlay ─────────────────────────────────────────
-	// Same scope as the Escape handler above, and for the same reason: past the
-	// record dock this is a permanent column, so Back keeps its ordinary
-	// meaning of leaving the page.
-	dismissOnBack(() => userExpanded, () => { userExpanded = false; }, () => !isWide);
 </script>
 
-<!--
-  The rail is always rendered (it's the layout anchor for the grid column
-  on desktop and the visible strip on mobile). The expanded panel is added
-  on top when expanded:
-    - below the record dock: as a fixed RECORD_WIDTH_PX overlay with a tappable scrim
-    - at the dock: as an in-flow sibling filling its own grid column of that width.
--->
-<button
-	class="rail"
-	onclick={toggle}
-	aria-label="Expand public record"
-	aria-expanded={expanded}
->
-	{#each Array(TOTAL_ROWS) as _, i}
-		{@const n = i + 1}
-		{@const count = planCount(n)}
-		<span
-			class="rail-row"
-			data-state={rowState(n)}
-			class:highlighted={$highlightedRow === n}
-			aria-label="Row {n}"
-		>
-			<span class="rail-num">{n}</span>
-			{#if count > 0}
-				<span class="rail-bubble" aria-label="{count} plan{count === 1 ? '' : 's'}">{count}</span>
-			{/if}
-		</span>
-		{#if ENGRAILED_AFTER.has(n)}
-			<span class="rail-rank" aria-hidden="true"><LogMark family="ranking" /></span>
-		{/if}
-	{/each}
-	<span class="rail-shakeup" data-state={shakeUpRowState} aria-label="The Shake-Up">
-		<span class="rail-shakeup-glyph" aria-hidden="true">✶</span>
-	</span>
-</button>
-
-{#if expanded}
-	<!-- Scrim: only rendered when overlay is in play (i.e. NOT past the
-	     record dock where the panel is a permanent column). Tap to collapse. -->
-	{#if !isWide}
-		<button
-			class="scrim"
-			tabindex="-1"
-			aria-label="Close public record"
-			onclick={toggle}
-		></button>
-	{/if}
-
-	<!-- The overlay flies in from the rail it grew out of. Past the record dock
-	     the panel is a permanent column, so there is nothing to fly — duration 0.
-	     Reduced motion takes the same exit (docs/STYLE_GUIDE.md "Motion & the
-	     deck"): the panel still opens and closes, it just doesn't travel. A
-	     Svelte transition is JS, so the guard can't be a media query; the params
-	     are re-read each time the transition starts, which is what makes asking
-	     at that moment correct. -->
-	<aside
-		class="expanded"
-		class:permanent={isWide}
-		transition:fly={{
-			x: -RECORD_WIDTH_PX,
-			duration: isWide || prefersReducedMotion() ? 0 : 180
-		}}
-	>
-		<header class="exp-header">
-			<h3>Public Record</h3>
-			{#if !isWide}
-				<button class="collapse-btn" onclick={toggle} aria-label="Collapse public record">‹</button>
-			{/if}
-		</header>
-
-		<ol class="row-list" bind:this={rowListEl}>
-			{#each Array(TOTAL_ROWS) as _, i}
-				{@const n = i + 1}
-				{@const row = rowAt(n)}
-				<li
-					class="record-row"
-					data-state={rowState(n)}
+<div class="record">
+	<ol class="row-list" bind:this={rowListEl}>
+		{#each Array(TOTAL_ROWS) as _, i}
+			{@const n = i + 1}
+			{@const row = rowAt(n)}
+			<li
+				class="record-row"
+				data-state={rowState(n)}
+				class:highlighted={$highlightedRow === n}
+			>
+				<button
+					class="row-num-pill"
 					class:highlighted={$highlightedRow === n}
+					onclick={() => onRowJump?.(n)}
+					aria-label="Jump to row {n}"
 				>
-					<button
-						class="row-num-pill"
-						class:highlighted={$highlightedRow === n}
-						onclick={() => onRowJump?.(n)}
-						aria-label="Jump to row {n}"
-					>
-						{n}
-					</button>
-					<div class="row-content">
-						{#if row}
-							{#each row.plans as plan (plan.id)}
-								{@const tint = playerColorByID(plan.preparer_id, players)}
-								<button
-									class="plan-chip {planStatusClass(plan.status)}"
-									style:--player-color={tint}
-									onclick={() => onPlanJump?.(plan.id, plan.status)}
-									aria-label="Jump to {planLabel(plan)} by {authorName(plan.preparer_id)}"
-								>
-									<span class="plan-name">{planLabel(plan)}</span>
-									{#if plan.status !== 'resolved'}
-										<span class="plan-status">{plan.status}</span>
-									{/if}
-								</button>
-							{/each}
-							{#each row.entries as entry (entry.id)}
-								{@const authorColor = playerColorByID(entry.author_id, players)}
-								<button
-									class="entry-line"
-									onclick={() => onSceneJump?.(entry.row_number)}
-									aria-label="Jump to scene on row {entry.row_number}"
-								>
-									{#if entry.body.startsWith('Scene:')}
-										<span class="entry-scene-label" style:color={authorColor}>Scene:</span>{entry.body.slice('Scene:'.length)}
-									{:else}
-										{entry.body}
-									{/if}
-								</button>
-							{/each}
-							{#if row.plans.length === 0 && row.entries.length === 0}
-								<span class="row-empty">—</span>
-							{/if}
-						{:else}
+					{n}
+				</button>
+				<div class="row-content">
+					{#if row}
+						{#each row.plans as plan (plan.id)}
+							{@const tint = playerColorByID(plan.preparer_id, players)}
+							<button
+								class="plan-chip {planStatusClass(plan.status)}"
+								style:--player-color={tint}
+								onclick={() => onPlanJump?.(plan.id, plan.status)}
+								aria-label="Jump to {planLabel(plan)} by {authorName(plan.preparer_id)}"
+							>
+								<span class="plan-name">{planLabel(plan)}</span>
+								{#if plan.status !== 'resolved'}
+									<span class="plan-status">{plan.status}</span>
+								{/if}
+							</button>
+						{/each}
+						{#each row.entries as entry (entry.id)}
+							{@const authorColor = playerColorByID(entry.author_id, players)}
+							<button
+								class="entry-line"
+								onclick={() => onSceneJump?.(entry.row_number)}
+								aria-label="Jump to scene on row {entry.row_number}"
+							>
+								{#if entry.body.startsWith('Scene:')}
+									<span class="entry-scene-label" style:color={authorColor}>Scene:</span>{entry.body.slice('Scene:'.length)}
+								{:else}
+									{entry.body}
+								{/if}
+							</button>
+						{/each}
+						{#if row.plans.length === 0 && row.entries.length === 0}
 							<span class="row-empty">—</span>
 						{/if}
-					</div>
-				</li>
-
-				{#if ENGRAILED_AFTER.has(n)}
-					<li class="engrailed" aria-label="Ranking update">
-						<span class="engrailed-line"></span>
-						<span class="engrailed-rank"><LogMark family="ranking" /></span>
-						<span class="engrailed-line"></span>
-					</li>
-				{/if}
-			{/each}
-
-			<li class="record-row shakeup-row" data-state={shakeUpRowState}>
-				<span class="row-star-pill" aria-hidden="true">✶</span>
-				<div class="row-content">
-					<span class="shakeup-label">The Shake-Up</span>
-					<div class="shakeup-pips" aria-label="Esteem, Knowledge, Power">
-						{#each SHAKEUP_CATEGORIES as cat (cat)}
-							<span class="pip" data-state={shakeUpPipState(cat)} aria-label={cat}>{SHAKEUP_INITIALS[cat]}</span>
-						{/each}
-					</div>
+					{:else}
+						<span class="row-empty">—</span>
+					{/if}
 				</div>
 			</li>
-		</ol>
-	</aside>
-{/if}
+
+			{#if ENGRAILED_AFTER.has(n)}
+				<li class="engrailed" aria-label="Ranking update">
+					<span class="engrailed-line"></span>
+					<span class="engrailed-rank"><LogMark family="ranking" /></span>
+					<span class="engrailed-line"></span>
+				</li>
+			{/if}
+		{/each}
+
+		<li class="record-row shakeup-row" data-state={shakeUpRowState}>
+			<span class="row-star-pill" aria-hidden="true">✶</span>
+			<div class="row-content">
+				<span class="shakeup-label">The Shake-Up</span>
+				<div class="shakeup-pips" aria-label="Esteem, Knowledge, Power">
+					{#each SHAKEUP_CATEGORIES as cat (cat)}
+						<span class="pip" data-state={shakeUpPipState(cat)} aria-label={cat}>{SHAKEUP_INITIALS[cat]}</span>
+					{/each}
+				</div>
+			</div>
+		</li>
+	</ol>
+</div>
 
 <style>
-	/* ── Rail (collapsed) ──────────────────────────────────────────────────── */
+	/* ── The pane ──────────────────────────────────────────────────────────── */
 
-	.rail {
+	/* Fills its column and scrolls inside it. */
+	.record {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		gap: 2px;
-		width: 44px;
-		/* Never below the touch minimum — the phase column takes the squeeze
-		   (it is designed down to 300; docs/STYLE_GUIDE.md "Layout widths"). */
-		flex-shrink: 0;
-		height: 100%;
-		padding: 6px 0;
-		background: none;
-		border: none;
-		border-right: 1px solid var(--color-surface-2);
-		cursor: pointer;
-	}
-
-	/* At the record dock the rail goes away entirely — the permanent panel
-	   takes its place. (The rail is 44px — the touch minimum — at every
-	   viewport; docs/STYLE_GUIDE.md "Layout widths".) */
-	@media (min-width: 1070px) {
-		.rail { display: none; }
-	}
-
-	.rail-row {
-		position: relative;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		font-size: 0.78rem;
-		font-weight: 600;
-		flex-shrink: 0;
-	}
-
-	.rail-row[data-state="past"]    { color: var(--color-text-faint); background: transparent; }
-	.rail-row[data-state="current"] { color: var(--color-bg); background: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent-hover); }
-	.rail-row[data-state="future"]  { color: var(--color-text-muted); background: transparent; border: 1px solid var(--color-border-strong); }
-
-	/* Cross-component highlight: e.g. when a plan card in PlanPanel is
-	 * hovered/selected, draw the eye to that plan's target row here. */
-	.rail-row.highlighted { box-shadow: 0 0 0 2px var(--color-highlight); color: var(--color-text); }
-	.rail-row[data-state="future"].highlighted { border-color: var(--color-highlight); }
-
-	.rail-num { line-height: 1; }
-
-	.rail-bubble {
-		position: absolute;
-		top: -3px;
-		right: -4px;
-		min-width: 14px;
-		height: 14px;
-		padding: 0 3px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 0.6rem;
-		font-weight: 600;
-		color: var(--color-bg);
-		background: var(--color-highlight);
-		border-radius: 7px;
-		line-height: 1;
-	}
-
-	/* The ranking-update marker between rows 4|5, 8|9, 12|13 (the engrailed
-	   lines). The podium is the app's one ranking symbol — the same
-	   `<LogMark family="ranking">` the chat feed's ranking card carries, so the
-	   two surfaces can't drift. It replaced a ★, which now means only Main
-	   Character. 14px reads its three tiers cleanly at rail scale (measured);
-	   `color` feeds the mark's `currentColor` stroke. */
-	.rail-rank {
-		display: flex;
-		width: 14px;
-		height: 14px;
-		color: var(--color-accent);
-		opacity: 0.8;
-		margin: 1px 0;
-	}
-
-	/* The Shake-Up's rail glyph — heavier than the engrailed podium dividers above
-	   (bigger, full opacity, no dimming) since it marks the finale, not just
-	   a ranking checkpoint. */
-	.rail-shakeup {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 32px;
-		height: 32px;
-		flex-shrink: 0;
-		margin-top: 2px;
-	}
-	.rail-shakeup-glyph { font-size: 1.2rem; line-height: 1; }
-	.rail-shakeup[data-state="future"]  .rail-shakeup-glyph { color: var(--color-text-muted); opacity: 0.7; }
-	.rail-shakeup[data-state="current"] .rail-shakeup-glyph { color: var(--color-accent); text-shadow: 0 0 6px var(--color-accent-hover); }
-	.rail-shakeup[data-state="past"]    .rail-shakeup-glyph { color: var(--color-text-faint); opacity: 0.8; }
-
-	/* The rail-hidden class is only used in overlay mode (the rail is in the
-	   DOM but we don't visually need it under the overlay). At the record
-	   dock the rail is gone entirely via the rule above. */
-
-	/* ── Scrim (overlay mode only) ──────────────────────────────────────────
-	   Used everywhere below the record dock (including the 790–1039 docked-
-	   chat range), where the panel still opens as a fixed overlay. The scrim
-	   element is only *rendered* when !isWide, so no media query here. */
-
-	.scrim {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: rgba(0, 0, 0, 0.4);
-		border: none;
-		padding: 0;
-		z-index: 90;
-		cursor: pointer;
-	}
-
-	/* ── Expanded view ─────────────────────────────────────────────────────── */
-
-	.expanded {
-		display: flex;
-		flex-direction: column;
+		min-height: 0;
 		background: var(--color-bg);
-		border-right: 1px solid var(--color-surface-2);
-		overflow: hidden;
-		/* Default (overlay mode, below the record dock): fixed slide-in from
-		   the left at the record width token — the same 316 the docked panel
-		   gets, so the record renders identically everywhere. The uncovered
-		   remainder ("peek") doubles as the scrim's tap-to-close target: at
-		   the 360 viewport floor it is exactly the 44px touch minimum, and
-		   below that (344 fold covers) the max-width clamp shrinks the panel
-		   instead so the peek never drops under 44. */
-		position: fixed;
-		top: 0;
-		left: 0;
-		width: 316px;
-		max-width: calc(100vw - 44px);
-		height: 100vh;
-		z-index: 100;
-	}
-
-	/* Permanent column mode at the record dock: in-flow, sits in its own
-	   page-grid column. The .permanent class is applied when isWide. */
-	.expanded.permanent {
-		position: relative;
-		top: auto;
-		left: auto;
-		width: 100%;
-		height: 100%;
-		z-index: auto;
-	}
-
-	.exp-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.5rem 0.6rem;
-		border-bottom: 1px solid var(--color-surface-2);
-		flex-shrink: 0;
-	}
-
-	.exp-header h3 {
-		margin: 0;
-		font-size: 0.8rem;
-		color: var(--color-accent);
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-	}
-
-	.collapse-btn {
-		background: none;
-		border: none;
-		color: var(--color-text-muted);
-		font-size: 1.2rem;
-		cursor: pointer;
-		padding: 0.2rem 0.5rem;
-		min-width: 44px;
-		min-height: 44px;
-		line-height: 1;
 	}
 
 	.row-list {
@@ -532,8 +236,7 @@
 
 	/* Past rows hold real content (earlier plans + scenes), so they stay at
 	   full contrast. Timeline position is already conveyed by the current
-	   row's warm fill + accent border and by the rail, so we don't need to
-	   dim past content. Future rows are nearly always empty (—), so a light
+	   row's warm fill + accent border, so we don't need to dim past content. Future rows are nearly always empty (—), so a light
 	   dim is enough to read as "not yet" without greying out anything real. */
 	.record-row[data-state="past"]    { opacity: 1; }
 	.record-row[data-state="current"] { background: var(--color-surface-gold-dim); border-left: 2px solid var(--color-accent); padding-left: 0.3rem; }
@@ -598,7 +301,7 @@
 
 	/* A delayed-arrival chip carries a player-written name, so the label has no
 	   fixed length the way the plan short-names do; truncate rather than let a
-	   long one push the rail wider than its column. */
+	   long one push the row wider than its column. */
 	.plan-name {
 		color: var(--player-color, var(--color-text));
 		min-width: 0;
@@ -639,7 +342,7 @@
 		color: var(--color-border-strong);
 	}
 
-	/* ── Engrailed divider in expanded view ────────────────────────────────── */
+	/* ── Engrailed divider ──────────────────────────────────────────────────── */
 
 	.engrailed {
 		display: flex;
@@ -654,9 +357,9 @@
 		background: linear-gradient(to right, transparent, var(--color-border-warm-antique), transparent);
 	}
 
-	/* Same podium as the collapsed rail, one size up for the roomier expanded
-	   divider. Its own base bar sits on the flanking hairlines, so it reads as
-	   standing on the engrailed line rather than floating over it. */
+	/* The podium: the app's one ranking symbol. Its own base bar sits on the
+	   flanking hairlines, so it reads as standing on the engrailed line rather
+	   than floating over it. */
 	.engrailed-rank {
 		display: flex;
 		width: 16px;
