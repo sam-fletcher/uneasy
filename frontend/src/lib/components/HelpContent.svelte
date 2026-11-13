@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- HelpContent.svelte
   Shared "how to play" reference, rendered both in the header ? panel and
   front-and-centre in the lobby. One source of truth so the two never drift.
@@ -12,11 +11,15 @@
   visible from every tab.
 -->
 <script lang="ts">
+	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/rankStrip.css';
 	import '$lib/components/shared/chip.css';
 	import '$lib/components/shared/cornerBadge.css';
 	import '$lib/components/shared/marginaliaTile.css';
 	import { PLAN_SHORT, TRACK_ORDER } from './plans/shared';
+	import Chip from './shared/Chip.svelte';
+	import LogMark from './LogMark.svelte';
 	import CrownGlyph from './CrownGlyph.svelte';
 	import ClockMark from './shared/ClockMark.svelte';
 	import PlayerShape from './shared/PlayerShape.svelte';
@@ -47,9 +50,22 @@
 	// mechanics. Anyone past that point is one tap from where they were.
 	let active = $state<TabId>('goal');
 
+	// The Public Record diagram is drawn at its real size, so its labels can use
+	// the same text sizes as the rest of the screen. An SVG's font size counts in
+	// the drawing's own units, so a drawing scaled down from a larger design would
+	// need literal pixel sizes for its labels. Drawing it 1:1 here avoids that.
+	// The rows were laid out on an 80-unit-wide design, shown at RECORD_WIDTH.
+	const RECORD_WIDTH = 150;
+	const RECORD_SCALE = RECORD_WIDTH / 80;
+	const RECORD_HEIGHT = 168 * RECORD_SCALE;
+	const recX = (u: number) => (u - 4) * RECORD_SCALE;
+	const recY = (u: number) => u * RECORD_SCALE;
+
 	// y-coordinate of the Shake-Up pseudo-row in the record diagram, one row
 	// pitch (11 units) below row 13's line (y = 7 + 12 * 11 = 139).
 	const SHAKEUP_ROW_Y = 7 + 13 * 11;
+	// The Shake-Up's house mark, drawn at the size the diagram gives a row mark.
+	const SHAKEUP_MARK = 16;
 
 	// Worked Mar example for the Dice tab. The pool is 2 starting dice + 1 help
 	// die; a single interference die cancels the matching 4. The survivors (a 1
@@ -104,8 +120,8 @@
 
 	// The four asset types for the Assets-tab reference grid. The glyph comes
 	// from the real AssetTypeIcon so the help can never teach an icon the app
-	// no longer draws; the badge is the .ex-asset-type replica of RetinueView's
-	// .asset-type chip (restyle the two together).
+	// no longer draws; the label is the status word the Retinue uses for a type,
+	// so the two read alike.
 	const assetTypes: { id: Asset['asset_type']; label: string; desc: string }[] = [
 		{ id: 'holding', label: 'Holding', desc: 'Land and buildings.' },
 		{ id: 'peer', label: 'Peer', desc: 'The people of the court.' },
@@ -132,21 +148,13 @@
 <div class="help" class:panel>
 	<nav class="tabs" aria-label="Help topics">
 		{#each tabs as tab}
-			<button
-				type="button"
-				class="tab"
-				class:active={active === tab.id}
-				aria-pressed={active === tab.id}
-				onclick={() => (active = tab.id)}
-			>
-				{tab.label}
-			</button>
+			<Chip compact selected={active === tab.id} onclick={() => (active = tab.id)}>{tab.label}</Chip>
 		{/each}
 	</nav>
 
 	<div class="body">
 		{#if active === 'goal'}
-			<p><em>Uneasy Lies the Head</em> is a story game for 2-5 players in a royal court. 
+			<p><em>Uneasy Lies the Head</em> is a story game for 2-5 players in a royal court.
 				You each play a noble and the retinue around them, scheming for Power, Knowledge, and Esteem.</p>
 			<p>There's no winner, but the game works best if everyone embraces the competitive, political nature of the game.</p>
 
@@ -162,7 +170,7 @@
 			</div>
 
 			<p>Either pace works — the game will always wait for you.</p>
-			<p>The <em>chat</em> serves both styles: table conversation and a running log of everything the court has done, 
+			<p>The <em>chat</em> serves both styles: table conversation and a running log of everything the court has done,
 				so it's the quickest way to catch up.</p>
 			<p><em>Profile → Notifications</em> sets how often the game reminds you it's your move.</p>
 		{/if}
@@ -170,27 +178,30 @@
 		{#if active === 'record'}
 			<div class="record-intro">
 				<figure class="diagram diagram-record">
-					<svg viewBox="4 0 80 168" role="img" aria-label="The 13-row Public Record timeline, played top to bottom, with the Shake-Up marked after the last row.">
+					<svg viewBox="0 0 {RECORD_WIDTH} {RECORD_HEIGHT}" role="img" aria-label="The 13-row Public Record timeline, played top to bottom, with the Shake-Up marked after the last row.">
 						{#each Array(13) as _, i}
-							{@const y = 7 + i * 11}
+							{@const y = recY(7 + i * 11)}
 							{@const engrailed = i === 3 || i === 7 || i === 11}
-							<text x="16" y={y + 3} text-anchor="end" class="d-num">{i + 1}</text>
+							<text x={recX(16)} y={y + recY(3)} text-anchor="end" class="d-num">{i + 1}</text>
 							<!-- The engrailed rows (4/8/12, where rankings update) read as a
 							     heavier accent line, NOT the podium the Public Record and
 							     chat carry: at this diagram's scale the 4-bar podium didn't
 							     read (owner ruling), and the thicker gold line already says
 							     "something happens here". -->
-							<line x1="24" y1={y} x2="79" y2={y}
+							<line x1={recX(24)} y1={y} x2={recX(79)} y2={y}
 								stroke={engrailed ? 'var(--color-accent)' : 'var(--color-border-strong)'}
-								stroke-width={engrailed ? 2 : 1} />
+								stroke-width={engrailed ? 3.75 : 1.875} />
 						{/each}
-						<!-- The Shake-Up pseudo-row — a heavier ✶ glyph and dashed
-						     tie-line, mirroring the Public Record sidebar's row-14
-						     treatment (PublicRecord.svelte). -->
-						<text x="17" y={SHAKEUP_ROW_Y + 4} text-anchor="end" class="d-shakeup-star">✶</text>
-						<line x1="24" y1={SHAKEUP_ROW_Y} x2="79" y2={SHAKEUP_ROW_Y}
-							stroke="var(--color-accent)" stroke-width="1.5" stroke-dasharray="2,2" />
-						<text x="79" y={SHAKEUP_ROW_Y + 14} text-anchor="end" class="d-cap">The Shake-Up</text>
+						<!-- The Shake-Up pseudo-row: the house burst mark, drawn by LogMark
+						     so Help shows the same mark as the log and the Public Record,
+						     and a dashed tie-line (PublicRecord.svelte's row-14 treatment). -->
+						<foreignObject x={recX(17) - SHAKEUP_MARK} y={recY(SHAKEUP_ROW_Y) - SHAKEUP_MARK / 2}
+							width={SHAKEUP_MARK} height={SHAKEUP_MARK}>
+							<div class="shakeup-mark"><LogMark family="shake_up" /></div>
+						</foreignObject>
+						<line x1={recX(24)} y1={recY(SHAKEUP_ROW_Y)} x2={recX(79)} y2={recY(SHAKEUP_ROW_Y)}
+							stroke="var(--color-accent)" stroke-width="2.8" stroke-dasharray="3.75 3.75" />
+						<text x={recX(79)} y={recY(SHAKEUP_ROW_Y + 14)} text-anchor="end" class="d-cap">The Shake-Up</text>
 					</svg>
 				</figure>
 				<div class="record-text">
@@ -270,7 +281,7 @@
 						</div>
 					{/each}
 				</div>
-				<figcaption>At the top of each Retinue, every track shows your <em>Rank</em> (how hard your own actions are) 
+				<figcaption>At the top of each Retinue, every track shows your <em>Rank</em> (how hard your own actions are)
 					and <em>Status</em> (how hard others find you to target). Rank and Status always mirror each other.</figcaption>
 			</figure>
 		{/if}
@@ -326,7 +337,7 @@
 					<span class="dice-count">{marResult}</span> distinct faces ·
 					<span class="dice-count">{marDifficulty}</span> needed
 				</div>
-				<div class="dice-mar-wrap"><span class="dice-mar">MAR</span></div>
+				<div class="dice-mar-wrap"><span class="status-word danger dice-mar">MAR</span></div>
 				<figcaption>You leveraged no assets, so you rolled your two starting dice. One player
 					<span class="w-aid">helped</span>, another <span class="w-int">interfered</span> — their 4
 					cancels your 4, leaving a 1 and a 6. Two distinct faces, one short of the difficulty.</figcaption>
@@ -341,7 +352,7 @@
 					<div class="type-item">
 						<span class="type-head">
 							<AssetTypeIcon type={t.id} size={20} />
-							<span class="ex-asset-type">{t.label}</span>
+							<span class="status-word">{t.label}</span>
 						</span>
 						<span class="type-desc">{t.desc}</span>
 					</div>
@@ -358,7 +369,7 @@
 			</p>
 			<p>
 				Adding and removing marginalia fundamentally changes the asset in the fiction.
-				If a flaw gets torn off, that might represent character growth. 
+				If a flaw gets torn off, that might represent character growth.
 				If a belief or a utility is broken, it might be a tragedy.
 			</p>
 
@@ -366,14 +377,14 @@
 				<div class="ex-asset main" aria-hidden="true">
 					<div class="ex-asset-head">
 						<span class="ex-asset-name">Lady Mirabel</span>
-						<!-- Status glyphs + type chip in one right-aligned cluster, mirroring
+						<!-- Status glyphs + type word in one right-aligned cluster, mirroring
 						     the real asset card's .tile-head-meta. -->
 						<span class="ex-meta">
 							<span class="ex-star" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg></span>
 							<span class="ex-lev" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /></svg></span>
 							<span class="ex-eye known" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg><span class="corner-badge known">1</span></span>
 							<span class="ex-eye hidden" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg><span class="corner-badge hidden">2</span></span>
-							<span class="ex-asset-type">Peer</span>
+							<span class="status-word">Peer</span>
 						</span>
 					</div>
 					<div class="ex-mgrid">
@@ -417,7 +428,7 @@
 
 	<footer class="help-footer">
 		<span>Something confusing or broken?</span>
-		<button type="button" class="feedback" onclick={onFeedback}>Send feedback</button>
+		<button type="button" class="action-btn secondary" onclick={onFeedback}>Send feedback</button>
 	</footer>
 </div>
 
@@ -425,9 +436,9 @@
 	.help {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: var(--space-3);
 		font-family: var(--font-serif);
-		font-size: 0.95rem;
+		font-size: var(--text-body);
 		/* Own query container for the tab row below. It has to be THIS element
 		   rather than the phase column's named `column`: the help mounts both
 		   inline in the lobby (inside that column) and in the "?" sheet (a
@@ -447,8 +458,8 @@
 	.tabs {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		gap: 0.3rem 0.25rem;
-		padding-bottom: 0.25rem;
+		gap: var(--space-1);
+		padding-bottom: var(--space-1);
 	}
 
 	/* One row once the column can hold all six at their natural widths (~388px
@@ -464,29 +475,8 @@
 			justify-content: center;
 		}
 	}
-
-	.tab {
-		flex-shrink: 0;
-		min-height: 44px;
-		padding: 0.4rem 0.5rem;
-		font-family: var(--font-serif);
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border-strong);
-		border-radius: 999px;
-		cursor: pointer;
-		/* No nowrap: in the narrow grid below, an equal third of a 344px column
-		   leaves "Public Record" under 2px of slack. Letting it take two lines
-		   at the very bottom of the range beats overflowing the pill. */
-	}
-	.tab:hover { background: var(--color-border); color: var(--color-text); }
-	.tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-	.tab.active {
-		color: var(--color-bg);
-		background: var(--color-accent);
-		border-color: var(--color-accent);
-	}
+	/* Each topic is a chip (chip.css); in the row, none may shrink below its label. */
+	.tabs > :global(.chip) { flex-shrink: 0; }
 
 	.body { color: var(--color-text); line-height: 1.55; }
 
@@ -509,81 +499,71 @@
 	/* No list rules here on purpose: every tab now teaches with a grid or a
 	   diagram rather than a bulleted list. Add them back alongside the markup
 	   if a list ever returns. */
-	.body :global(p) { margin: 0 0 0.6rem; }
+	.body :global(p) { margin: 0 0 var(--space-2); }
 
+	/* A figure is drawn rather than touched, so it takes no box: its space and
+	   its caption set it apart from the prose. */
 	.diagram {
-		margin: 0.75rem 0 0.5rem;
-		padding: 0.75rem;
-		background: var(--color-surface-sunken, var(--color-surface-2));
-		border: 1px solid var(--color-border);
-		border-radius: 6px;
+		margin: var(--space-3) 0 var(--space-2);
 	}
 	.diagram svg { display: block; width: 100%; height: auto; }
 
 	/* Record tab: the timeline sits to the LEFT of the prose, mirroring where the
 	   Public Record rail lives during play, and closing the dead space that a
-	   stacked short-and-wide timeline left underneath it. The row lines are also
-	   ~half their old length so the diagram reads as a narrow left rail. */
-	.record-intro { display: flex; gap: 0.9rem; align-items: flex-start; }
+	   stacked short-and-wide timeline left underneath it. */
+	.record-intro { display: flex; gap: var(--space-4); align-items: flex-start; }
 	.record-intro .diagram-record { flex: 0 0 auto; width: 150px; margin: 0; }
 	.diagram-record svg { max-width: 100%; }
 	.record-text { flex: 1 1 auto; min-width: 0; }
 	.record-text :global(p):first-child { margin-top: 0; }
-	/* Figure heading — same uppercase gold small-label as .pace-head/.plan-cat,
-	   so a worked example announces itself before the reader has to infer it
-	   from the caption underneath. */
+	/* Figure heading — the same uppercase deep-gold label as .pace-head and
+	   .plan-cat, so a worked example announces itself before the reader has to
+	   infer it from the caption underneath. */
 	.fig-head {
-		margin: 0 0 0.55rem;
-		font-size: 0.72rem;
+		margin: 0 0 var(--space-2);
+		font-size: var(--text-label);
 		text-transform: uppercase;
 		letter-spacing: 0.12em;
 		color: var(--color-accent);
 	}
 	.diagram figcaption {
-		margin-top: 0.6rem;
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
+		margin-top: var(--space-2);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 		line-height: 1.45;
 	}
-	.d-num { font-family: var(--font-serif); font-size: 7px; fill: var(--color-text-muted); }
-	.d-cap { font-family: var(--font-serif); font-size: 8px; fill: var(--color-accent); }
-	/* Heavier than .d-num — mirrors the Public Record sidebar's rail glyph,
-	   which is likewise bigger and bolder than the engrailed podium dividers. */
-	.d-shakeup-star { font-size: 11px; fill: var(--color-accent); }
+	.d-num { font-family: var(--font-serif); font-size: var(--text-label); fill: var(--color-text-secondary); }
+	.d-cap { font-family: var(--font-serif); font-size: var(--text-small); fill: var(--color-accent); }
+	/* The burst fills its foreignObject box and takes the deep gold, the colour the
+	   game's own marks use in the Public Record. */
+	.shakeup-mark { width: 100%; height: 100%; color: var(--color-accent); }
 
 	/* ── Dice example (Dice tab) ─────────────────────────────────────────── */
 	/* Labels and the result line are HTML so they share the prose size; only
-	   the dice (and the MAR stamp) are graphical. */
-	/* Group gap comfortably wider than the 6px between dice inside a set —
-	   at 0.6rem the second Start die and the Help die read as one row of three. */
-	.dice-board { display: flex; justify-content: center; align-items: flex-end; gap: 0.9rem; }
-	.dice-group { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+	   the dice are graphical. */
+	/* Group gap comfortably wider than the gap between dice inside a set —
+	   at a single step the second Start die and the Help die read as one row of three. */
+	.dice-board { display: flex; justify-content: center; align-items: flex-end; gap: var(--space-4); }
+	.dice-group { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
 	/* Full-contrast labels, not muted: they're the figure's legend, and the two
 	   coloured ones are the same green/red the prose above marks "help" and
 	   "interfere" with. A grey "Start" beside them read as the odd one out. */
-	.dice-label { font-size: 0.85rem; color: var(--color-text); }
+	.dice-label { font-size: var(--text-small); color: var(--color-text); }
 	.dice-label.aid { color: var(--color-success); }
 	.dice-label.int { color: var(--color-danger); }
-	.dice-set { display: flex; gap: 6px; }
+	.dice-set { display: flex; gap: var(--space-1); }
 	.diagram .die { width: 30px; height: 30px; flex-shrink: 0; }
 	/* Faded, but its face must stay countable — the caption says "their 4
-	   cancels your 4", and at 0.4 the pips were too dim to check that. */
+	   cancels your 4", and at a lighter fade the pips were too dim to check that. */
 	.die.canceled { opacity: 0.62; }
-	.dice-sep { align-self: stretch; width: 0; border-left: 1px dashed var(--color-border); margin: 0 0.15rem; }
-	.dice-result { margin: 0.65rem 0 0.45rem; text-align: center; font-size: 0.85rem; color: var(--color-text-muted); }
+	.dice-sep { align-self: stretch; width: 0; border-left: 1px dashed var(--color-border); margin: 0 var(--space-1); }
+	.dice-result { margin: var(--space-3) 0 var(--space-2); text-align: center; font-size: var(--text-small); color: var(--color-text-secondary); }
 	/* Standalone numeric counters — the one place bold is allowed. */
 	.dice-count { font-weight: 700; color: var(--color-text); }
 	.dice-mar-wrap { text-align: center; }
-	.dice-mar {
-		display: inline-block;
-		border: 2px solid var(--color-danger);
-		border-radius: 6px;
-		padding: 0.05rem 0.7rem;
-		background: var(--color-chip-red-bg);
-		color: var(--color-danger);
-		font-size: 1rem;
-		letter-spacing: 0.12em;
-	}
+	/* A Mar is a result, so it is the danger word in capitals, beside no box
+	   (the status-word recipe), a size up from its usual label. */
+	.dice-mar.status-word { font-size: var(--text-body); letter-spacing: 0.12em; }
 
 	/* The two mechanics, marked in prose and caption with the same green/red the
 	   figure's labels and the live roll panel (aid vs interference) use. Colour
@@ -593,52 +573,51 @@
 	.w-int { color: var(--color-danger); }
 
 	/* ── Pace pair (Goal tab) ────────────────────────────────────────────── */
-	/* Two cards rather than a sentence each: the whole point is that the two
-	   styles are equals, and side-by-side says that faster than prose can. */
+	/* Two columns rather than a sentence each: the whole point is that the two
+	   styles are equals, and side-by-side says that faster than prose can. A
+	   thin rule over each column keeps them apart without a box. */
 	.pace-pair {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
-		gap: 0.4rem;
-		margin: 0.5rem 0 0.7rem;
+		gap: var(--space-2);
+		margin: var(--space-2) 0 var(--space-3);
 	}
 	.pace-item {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		padding: 0.5rem 0.55rem;
-		background: var(--color-surface-sunken, var(--color-surface-2));
-		border: 1px solid var(--color-border);
-		border-radius: 4px;
+		gap: var(--space-1);
+		padding-top: var(--space-2);
+		border-top: 1px solid var(--color-border);
 	}
 	.pace-head {
 		margin: 0;
-		font-size: clamp(0.7rem, 2.2vw, 0.85rem);
+		font-size: var(--text-label);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--color-accent);
 	}
 	.pace-text {
-		font-size: clamp(0.68rem, 2.2vw, 0.88rem);
+		font-size: var(--text-small);
 		line-height: 1.35;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 	}
 
 	/* ── Plans reference grid ────────────────────────────────────────────── */
-	/* Always three columns (one per category). Type shrinks on narrow widths
-	   rather than dropping columns — cramped is acceptable, hidden is not.
-	   `repeat(4, 1fr)` on the plan rows gives every row the height of the
+	/* Always three columns (one per category). Type stays the same size at
+	   every width rather than dropping columns — cramped is acceptable, hidden is
+	   not. `repeat(4, 1fr)` on the plan rows gives every row the height of the
 	   tallest cell, so a two-line name never knocks its neighbours out of
 	   line; the header row stays auto. */
 	.plan-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
 		grid-template-rows: auto repeat(4, 1fr);
-		gap: 0.4rem;
-		margin-top: 0.4rem;
+		gap: var(--space-2);
+		margin-top: var(--space-2);
 	}
 	.plan-cat {
-		margin: 0 0 0.1rem;
-		font-size: clamp(0.68rem, 2vw, 0.85rem);
+		margin: 0 0 var(--space-1);
+		font-size: var(--text-label);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		text-align: center;
@@ -646,20 +625,18 @@
 	}
 	/* Names only (owner ruling): the one-line descriptions turned the tab into
 	   a wall of text new players skipped, and PlanPanel already shows each
-	   description on the card at the moment of choosing. Centred in a
-	   fixed-height cell so the twelve read as a grid, not twelve paragraphs. */
+	   description on the card at the moment of choosing. Each name sits on a
+	   thin rule, so the twelve read as a grid, not twelve paragraphs. */
 	.plan-item {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		min-height: 48px;
-		padding: 0.5rem 0.4rem;
+		padding: var(--space-2) var(--space-1);
 		text-align: center;
 		text-wrap: balance;
-		background: var(--color-surface-sunken, var(--color-surface-2));
-		border: 1px solid var(--color-border);
-		border-radius: 4px;
-		font-size: clamp(0.78rem, 2.9vw, 1rem);
+		border-bottom: 1px solid var(--color-border);
+		font-size: var(--text-small);
 		line-height: 1.25;
 		color: var(--color-text);
 	}
@@ -669,72 +646,79 @@
 	   their layout lives here. They are pictures, not controls. */
 	.ex-chip-row {
 		display: flex; flex-wrap: wrap; justify-content: center;
-		gap: 0.6rem;
+		gap: var(--space-2);
 	}
 	.ex-chip { pointer-events: none; cursor: default; color: var(--color-text); }
 	.ex-risk { flex: none; color: var(--color-danger); }
 	.ex-rankstrip { width: 100%; max-width: 340px; margin: 0 auto; }
 
 	/* ── Asset-type reference grid (Assets tab) ──────────────────────────── */
-	/* Two columns at every width, same call as .plan-grid: type shrinks rather
-	   than columns collapsing, so the four types always read as one set. */
+	/* Two columns at every width, same call as .plan-grid: type stays the same
+	   size rather than columns collapsing, so the four types always read as one set. */
 	.type-grid {
 		display: grid;
 		grid-template-columns: repeat(2, 1fr);
-		gap: 0.4rem;
-		margin: 0.25rem 0 0.6rem;
+		gap: var(--space-2);
+		margin: var(--space-1) 0 var(--space-2);
 	}
 	.type-item {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
-		padding: 0.45rem 0.5rem;
-		background: var(--color-surface-sunken, var(--color-surface-2));
-		border: 1px solid var(--color-border);
-		border-radius: 4px;
+		gap: var(--space-1);
+		padding: var(--space-2) 0;
+		border-bottom: 1px solid var(--color-border);
 	}
-	/* Glyph and badge sit side by side so the two forms are learned as one
+	/* Glyph and type word sit side by side so the two forms are learned as one
 	   pair. The glyph keeps AssetTypeIcon's own --color-text ink — that is how
 	   it renders in the picker rows this is teaching. */
-	.type-head { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+	.type-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 	.type-desc {
-		font-size: clamp(0.68rem, 2.2vw, 0.88rem);
+		font-size: var(--text-small);
 		line-height: 1.3;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 	}
-	.type-note { font-size: 0.85rem; color: var(--color-text-muted); }
 
 	/* ── Example asset card (Assets tab) ─────────────────────────────────── */
+	/* An asset is a game piece: the warm piece border, the piece corner and the
+	   raised surface. The main character's card takes the deep gold. */
 	.ex-asset {
-		background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 8px;
-		padding: 0.6rem 0.7rem; display: flex; flex-direction: column; gap: 0.5rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border-piece);
+		border-radius: var(--radius-piece);
+		padding: var(--space-2) var(--space-3);
+		display: flex; flex-direction: column; gap: var(--space-2);
 		width: 100%; max-width: 340px; margin: 0 auto;
 	}
 	.ex-asset.main { border-color: var(--color-accent); }
-	/* Name on the left; status glyphs + type chip in one right-aligned cluster. */
-	.ex-asset-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-	.ex-asset-name { font-size: 0.95rem; color: var(--color-text); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-	.ex-meta { display: inline-flex; align-items: center; gap: 0.7rem; flex-shrink: 0; padding-left: 0.75rem; }
+	/* Name on the left; status glyphs + type word in one right-aligned cluster. */
+	.ex-asset-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+	.ex-asset-name { font-size: var(--text-body); color: var(--color-text); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+	.ex-meta { display: inline-flex; align-items: center; gap: var(--space-3); flex-shrink: 0; padding-left: var(--space-3); }
 	.ex-star { color: var(--color-accent); display: inline-flex; align-items: center; }
 	.ex-eye { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
 	.ex-eye.known { color: var(--color-accent); }
-	.ex-eye.hidden { color: var(--color-text-muted); }
-	/* Replica of RetinueView's .asset-type chip — used by the example card here
-	   AND by the type grid above, so restyle all three together. */
-	.ex-asset-type { flex-shrink: 0; font-size: 0.7rem; background: var(--color-border-warm); color: var(--color-accent); padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
-	.ex-mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
+	.ex-eye.hidden { color: var(--color-text-secondary); }
+	.ex-mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1); }
 	/* Base look (background/border/color/torn/titled/empty) comes from
 	   shared/marginaliaTile.css via the .m-tile class alongside .ex-mtile;
 	   this is just the static replica's own sizing and "+" glyph. */
 	.ex-mtile { min-height: 38px; }
-	.ex-mtile.empty { justify-content: center; color: var(--color-text-faint-warm); font-size: 1.2rem; }
+	.ex-mtile.empty { justify-content: center; color: var(--color-text-faint); font-size: var(--text-heading); }
 
 	/* Legend under the example card */
-	.ex-legend { display: flex; flex-direction: column; gap: 0.5rem; }
-	.ex-leg-row { display: flex; align-items: flex-start; gap: 0.5rem; }
-	.ex-leg-row > :first-child { flex-shrink: 0; margin-top: 0.05rem; }
+	.ex-legend { display: flex; flex-direction: column; gap: var(--space-2); }
+	.ex-leg-row { display: flex; align-items: flex-start; gap: var(--space-2); }
+	.ex-leg-row > :first-child { flex-shrink: 0; }
 	.ex-eye.sm { flex-shrink: 0; }
-	.ex-strike { flex-shrink: 0; text-decoration: line-through; opacity: 0.6; color: var(--color-text-secondary); font-size: 0.78rem; }
+	/* A torn marginalia, drawn as the piece draws it: faint words with a red line
+	   through them. The words go faint rather than the whole entry fading. */
+	.ex-strike {
+		flex-shrink: 0;
+		text-decoration: line-through;
+		text-decoration-color: var(--color-danger-muted);
+		color: var(--color-text-faint);
+		font-size: var(--text-label);
+	}
 	/* Leveraged die — inline after the name in the example card, and in the legend. */
 	.ex-lev { color: var(--color-leveraged); display: inline-flex; align-items: center; }
 	.ex-lev svg { vertical-align: -0.18em; }
@@ -744,24 +728,10 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.5rem;
-		padding-top: 0.75rem;
+		gap: var(--space-2);
+		padding-top: var(--space-3);
 		border-top: 1px solid var(--color-border);
-		font-size: 0.9rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
-	.feedback {
-		min-height: 44px;
-		display: inline-flex;
-		align-items: center;
-		padding: 0 0.9rem;
-		font-family: var(--font-serif);
-		font-size: 0.85rem;
-		color: var(--color-bg);
-		background: var(--color-accent);
-		border-radius: 999px;
-		text-decoration: none;
-	}
-	.feedback:hover { background: var(--color-accent-hover); }
-	.feedback:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 </style>
