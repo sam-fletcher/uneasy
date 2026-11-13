@@ -1,11 +1,10 @@
-<!-- tokens: not migrated -->
 <!-- LobbyView.svelte
   Lobby phase: the two questions a player arrives with — *what am I supposed
   to do* and *who else is here* — answered in that order.
 
   Rebuilt from adr/LOBBY_AND_CHECKLIST_PLAN.md D5 after a playtester joined a
   table and could not tell what was expected of them. The answer is *nothing*,
-  so the page now says so out loud (the verdict panel), shows the table, and
+  so the page now says so out loud (the verdict), shows the table, and
   offers three optional things to do while waiting. Order matters: the old
   page led with the Join Code — a heading-weight invite tool aimed at someone
   who by definition had already used the code — and buried the primer below
@@ -14,6 +13,11 @@
   The facilitator gets the same top slot, filled with the one thing that IS
   theirs to do: start the game. There is never both a verdict and a start
   block.
+
+  Nothing here is framed. Each section is set apart by its heading and the gap
+  around it, the seats are plain lines and the checklist rows are the house
+  tappable row. Only what can be pressed has an outline: the main button, and the
+  invite chair, a button that copies the join code.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -27,6 +31,7 @@
 	import HelpContent from '../HelpContent.svelte';
 	import HelpGlyph from '../HelpGlyph.svelte';
 	import FlagGlyph from '../FlagGlyph.svelte';
+	import BellGlyph from '../BellGlyph.svelte';
 	import { onMount } from 'svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
@@ -182,13 +187,10 @@
 	});
 </script>
 
-<!-- House icon idiom (AssetTypeIcon/CrownGlyph/HelpGlyph): 24×24 viewBox,
-     stroke=currentColor, width 2, round caps. Colour comes from the row. -->
+<!-- The bell is the house mark the profile's table rows use, drawn once in
+     BellGlyph. Colour comes from the row. -->
 {#snippet bellGlyph()}
-	<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-		<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-		<path d="M13.7 21a2 2 0 0 1-3.4 0" />
-	</svg>
+	<BellGlyph size={16} />
 {/snippet}
 <!-- The flag is a component, not a path drawn here, because the prologue's
      closing stage offers the same item and the two must not drift. -->
@@ -202,10 +204,10 @@
 	{/if}
 
 	<!-- ── Verdict, or the facilitator's start block (D4) ─────────────────── -->
-	<section class="verdict" class:yours={isFacilitator}>
+	<section class="verdict">
 		{#if isFacilitator}
 			<h2>Is everyone here?</h2>
-			<p class="muted-text">
+			<p class="verdict-text">
 				The table is waiting on you. 
 				Once you start the Prologue, no one else can join, so make sure everyone is here.
 			</p>
@@ -215,11 +217,11 @@
 				{advancing ? '…' : 'Start Prologue'}
 			</button>
 			{#if !canStart}
-				<p class="muted-text small">One more player and you can begin.</p>
+				<p class="muted-text">One more player and you can begin.</p>
 			{/if}
 		{:else}
 			<h2>You're seated. Nothing to do yet.</h2>
-			<p class="muted-text">
+			<p class="verdict-text">
 				{facilitatorName} will start the game once everyone has arrived. 
 				No one can join after that, so chase up anyone missing.
 			</p>
@@ -236,9 +238,9 @@
 				<!-- The join code is an empty chair, not a heading: it is addressed
 				     to whoever ISN'T here yet. Gone once the table is full.
 				     The whole chair is the copy control, so the label and the code
-				     are one object rather than a stray word beside a button — and
-				     the row lines up with the seats above it: dashed dot where
-				     their colour dot sits, code pill where `trailing` would. -->
+				     are one object rather than a stray word beside a button. It is
+				     a control, so it is the one thing in the list with an outline,
+				     and the dashed edge is the house "not filled in yet" line. -->
 				{#if seatsLeft > 0}
 					<button
 						type="button"
@@ -247,7 +249,6 @@
 						onclick={copyJoinCode}
 						aria-label={`Invite a friend — copy the join code, ${game.join_code.split('').join(' ')}`}
 					>
-						<span class="invite-dot" aria-hidden="true"></span>
 						<span class="invite-text">Invite a friend</span>
 						<span class="code-badge">
 							{game.join_code}
@@ -267,7 +268,7 @@
 		     defaultOpen: the primer's body is a whole tabbed sub-panel, and
 		     open it pushed the two rows below it a screen and a half down —
 		     burying the notifications row, which is the one item here that
-		     makes asynchronous play work. The gold frame is what marks it as
+		     makes asynchronous play work. Its gold title is what marks it as
 		     the invitation now. No persistence either way. -->
 		<ChecklistRow
 			title="Read the two-minute primer"
@@ -295,26 +296,26 @@
 				state={pushChip}
 			>
 				{#if pushState === 'on'}
-					<p class="muted-text small">
+					<p class="muted-text">
 						We'll tell you when the table is waiting on you. Change this any time
 						in your Profile.
 					</p>
 				{:else if pushState === 'ios-needs-install'}
-					<p class="muted-text small">
+					<p class="muted-text">
 						iPhone and iPad only deliver notifications to installed apps: tap the
 						Share icon, then "Add to Home Screen". Open Uneasy from there and turn
 						them on.
 					</p>
 				{:else if pushState === 'denied'}
 					<div role="status">
-						<p class="muted-text small">
+						<p class="muted-text">
 							Your browser has notifications blocked for this site. That's a browser
 							setting, so we can't ask again from here — but you can undo it:
 						</p>
 						<PushBlockedHelp />
 					</div>
 				{:else}
-					<p class="muted-text small">
+					<p class="muted-text">
 						Turn them on for this device and we'll tell you when it's your turn, so
 						you don't have to keep checking back. You can change this any time in
 						your Profile.
@@ -322,12 +323,12 @@
 					{#if pushError}
 						<ErrorText message={pushError} />
 					{:else if pushAttempted}
-						<p class="muted-text small" role="status">
+						<p class="muted-text" role="status">
 							Nothing changed — the browser prompt was closed without an answer. You can try again.
 						</p>
 					{/if}
 					<div class="row-actions">
-						<button class="action-btn primary" onclick={enablePushFromLobby} disabled={pushBusy}>
+						<button class="action-btn secondary" onclick={enablePushFromLobby} disabled={pushBusy}>
 							{pushBusy ? '…' : 'Enable notifications'}
 						</button>
 					</div>
@@ -354,122 +355,118 @@
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		padding: 1rem 0.75rem;
-		gap: 1rem;
+		padding: var(--space-4) var(--space-3);
+		gap: var(--space-5);
 		overflow-y: auto;
 		min-height: 0;
 	}
 
 	/* ── Verdict ──────────────────────────────────────────────────────────── */
+	/* The step's heading, its words and, for the facilitator, its one main
+	   button, standing on the page where a framed card used to hold them. The
+	   facilitator's copy is the one thing here someone has to act on, and what
+	   says so is that it comes first and carries the only filled button on the
+	   screen. */
 	.verdict {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: var(--space-2);
 		align-items: flex-start;
-		padding: 0.85rem 0.8rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 12px;
 	}
-	/* The facilitator's copy is the one thing on this screen someone has to
-	   act on, so it gets the warm frame. Gold as the frame and the label,
-	   never as a fill (chat-bar ruling, 2026-07-25). */
-	.verdict.yours { border-color: var(--color-border-warm-antique); }
 	.verdict h2 {
 		margin: 0;
 		color: var(--color-accent);
-		font-size: 1.05rem;
+		font-size: var(--text-heading);
 		line-height: 1.3;
 	}
-	.verdict .muted-text { line-height: 1.45; }
-	.verdict .action-btn { margin-top: 0.15rem; }
+	.verdict-text {
+		margin: 0;
+		font-size: var(--text-body);
+		line-height: 1.45;
+	}
+	.verdict .action-btn { margin-top: var(--space-1); }
 
 	/* ── Sections ─────────────────────────────────────────────────────────── */
 	.lobby-table,
 	.while-you-wait {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: var(--space-2);
 	}
 	.section-heading {
 		display: flex;
 		align-items: baseline;
 		flex-wrap: wrap;
-		gap: 0.4rem;
+		gap: var(--space-2);
 		margin: 0;
 		color: var(--color-accent);
-		font-size: 1rem;
+		font-size: var(--text-heading);
 	}
 	.capacity {
-		color: var(--color-text-muted);
-		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
 	}
 
 	/* ── Invite chair ─────────────────────────────────────────────────────── */
-	/* A dashed seat: same height, padding and rhythm as the occupied rows above
-	   it, but unmistakably empty. The dash is the house "not filled in yet"
-	   mark (StandingStrip's dummy slots, DifficultyMeter's next segment). */
+	/* A dashed seat: unmistakably empty, and a button, so it is a control (the
+	   neutral control border and the control corner) and stays 44px. The dash is
+	   the house "not filled in yet" mark (StandingStrip's dummy slots,
+	   DifficultyMeter's next segment). Set a gap below the last seat's rule so
+	   the box doesn't hug it. */
 	.invite-chair {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: var(--space-2);
 		width: 100%;
-		min-height: 44px;
-		padding: 0.35rem 0.6rem;
+		min-height: var(--size-tap);
+		margin-top: var(--space-2);
+		padding: var(--space-1) var(--space-3);
 		background: none;
-		border: 1px dashed var(--color-border-strong);
-		border-radius: 999px;
+		border: 1px dashed var(--color-border-control);
+		border-radius: var(--radius-control);
 		color: inherit;
 		font: inherit;
 		text-align: left;
 		cursor: pointer;
 	}
-	.invite-chair:hover { border-color: var(--color-accent-dim); }
+	.invite-chair:hover { border-color: var(--color-border-control-hover); }
 	.invite-chair:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
-	}
-	/* Sits in the seat dot's slot, same 8px, hollow — the seat has no one in
-	   it yet, so it has no colour yet either. */
-	.invite-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		border: 1px dashed var(--color-border-strong);
-		flex-shrink: 0;
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
 	}
 	.invite-text {
-		color: var(--color-text-muted);
-		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
 	}
 	/* Pushed to the trailing edge, where an occupied seat's `trailing` content
-	   would sit. The gap between label and code is then the width of the row,
-	   which reads as layout rather than as an odd space. */
+	   would sit. The code is plain text: a fill behind it would be a badge on
+	   something that can't be pressed on its own, and the whole chair is the
+	   thing that is pressed. */
 	.code-badge {
 		margin-left: auto;
-		font-family: var(--font-mono);
-		font-size: 0.9rem;
-		background: var(--color-border);
-		color: var(--color-text);
-		padding: 0.25rem 0.6rem;
-		border-radius: 4px;
-		letter-spacing: 0.1em;
 		display: inline-flex;
-		gap: 0.4rem;
+		gap: var(--space-2);
 		align-items: center;
+		font-family: var(--font-mono);
+		font-size: var(--text-body);
+		letter-spacing: 0.1em;
+		color: var(--color-text);
 	}
 	.copy-hint {
-		font-size: 0.7rem;
-		color: var(--color-text-muted);
+		font-family: var(--font-serif);
+		font-size: var(--text-label);
+		letter-spacing: normal;
+		color: var(--color-text-secondary);
 	}
-	.invite-chair.copied .copy-hint { color: var(--color-accent); }
+	/* The result of pressing it, so it takes the success colour, beside its word. */
+	.invite-chair.copied .copy-hint { color: var(--color-success); }
 
 	/* ── Row bodies ───────────────────────────────────────────────────────── */
-	.row-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+	.row-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 	.primer-cue {
 		margin: 0;
-		color: var(--color-text-muted);
-		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
 	}
 	/* Mid-sentence stand-in for the header's help control: same glyph, same
 	   gold, sized a touch over 1em so the circle reads at caption size and

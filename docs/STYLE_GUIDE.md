@@ -810,6 +810,55 @@ rule here applies the recipes above to a screen that has no game in it.
 - **The update banner keeps its tint,** the one tinted strip in the app. Its
   token is the sunken surface, pending the question in `docs/work/questions/`.
 
+### The lobby, the Shake-Up and the end of the game
+
+Four files (`phases/LobbyView`, `phases/ShakeUpView`, `phases/EndedView` and
+`EndgameVotePanel`) were migrated by building them from the pieces above, so
+they hold almost no recipes of their own. What they do decide:
+
+- **Steps are set out by their headings and gaps.** The lobby's verdict, the open
+  spend, the announce form, the ending vote and the standings have no outline and
+  no fill. Sections sit 24px apart and a section's own parts 8–12px, so the
+  spacing alone says what belongs together. An outline appears only on what can be
+  pressed (buttons, chips, the invite chair, an input) and on game pieces (asset
+  cards, a note to tear).
+- **A vote is chips.** The ending's two endings and the Shake-Up's options and
+  titles are `<Chip>`s; the one picked is the bright gold border and nothing
+  else. A choice that needs a paragraph keeps the chip short and puts the
+  paragraph under it as plain text, tied to the chip with `aria-describedby`
+  (the ending vote), because a chip with three lines in it stops being a pill.
+- **A note to tear is a piece you pick.** Choosing a marginalia to break is the
+  game-piece selected state on an `.m-tile` button: the bright gold border (the
+  second pixel an inset shadow, so picking never moves it) and the success tick
+  in bright gold.
+- **Buttons that act on the spot have no main one.** Raise, lower and let it
+  stand each do their work when pressed, so all three are secondary buttons.
+  The main button is for the step's committing action (Announce, Commit, Pay, or
+  Abandon when it is the only way on). The lower button at the cost floor is
+  `aria-disabled`, which greys it and leaves it pressable to say why.
+- **A cost to weigh is a notice.** A raised cost is a warning `Notice`, a forced
+  abandonment a danger one, and the floor's reason a live warning one: a mark and
+  coloured words, never a tinted strip.
+- **The token pools are `TableRoster`.** One line per player in turn order, the
+  count as `trailing`, and the clock on whoever the game is waiting on (the same
+  set the player row marks), so there are no player-coloured pills with a count.
+- **The acts are a track, not three boxes.** Esteem, Knowledge and Power sit on a
+  line; the one in play is deep gold with a 2px gold line under it, and its step
+  ("Rolling", "Spending") is a status word beneath. Finished acts go faint. The
+  step's name is the signal that doesn't rely on colour.
+- **The invite chair is a control in a list of plain lines.** A dashed 44px box
+  (neutral control border, control corner) holding the label, the code as plain
+  mono text and "copy", which turns to "Copied!" in the success colour. The dash
+  is the house "not filled in yet" line; a seat shape would be a lie.
+- **Standings are stacked lists.** Each track is a small label with a rule and a
+  row per player: rank, the player's shape, their name in their colour. They are
+  not set in three columns because a third of a phone has room for about eight
+  letters of a name.
+
+`lobbyShakeupEnd.test.ts` checks what these emit and that none of them draws a
+box; `tests/e2e/shake_up.spec.ts`, `ending_vote.spec.ts` and `lobby_invite.spec.ts`
+read the painted result.
+
 ## Motion & the deck
 
 **Reduced motion.** Every animation and transition needs a

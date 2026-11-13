@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- EndgameVotePanel.svelte
   Takeover panel for RowStateAwaitEndgameVote: row 7 is over, the public record
   is running out of rows, and the whole table votes on how the game ends before
@@ -12,8 +11,13 @@
   intended (adr/FACILITATOR_POWERS_AUDIT.md); the pressure comes from the
   Waiting On bar and the notification system, not from a button.
 
-  Violet family throughout — procedural, "the machinery of resolution is in
-  motion" (docs/STYLE_GUIDE.md, adr/009-design-tokens.md). Gold stays a label.
+  Plain on purpose: no frame, no tint, and no colour that carries a meaning.
+  The panel is one step, set out by its heading and the gaps between its parts.
+  Each ending is a choice, so each is the house chip (shared/Chip.svelte) and
+  the one you picked has the bright gold border; the endings are told apart by
+  their words, because a colour on one would lean on the vote. What each ending
+  does sits under its chip as plain text, because a chip is a short label and
+  these descriptions are paragraphs.
 
   This is the first and only time a player sees this screen, so it explains
   itself in full: what is happening and why now, both modes in plain language
@@ -32,6 +36,7 @@
 		endingModeLabel,
 		summariseEndingVote,
 	} from '$lib/endgameVote';
+	import Chip from '$lib/components/shared/Chip.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import { onMount } from 'svelte';
 
@@ -133,162 +138,128 @@
 	<div class="modes" role="group" aria-label="Ending modes">
 		{#each ENDING_MODES as mode}
 			{@const mine = summary.myMode === mode}
-			<button
-				type="button"
-				class="mode"
-				class:mine
-				aria-pressed={mine}
-				disabled={busy}
-				onclick={() => vote(mode)}
-			>
-				<span class="mode-head">
-					<span class="mode-name">{endingModeLabel(mode)}</span>
-					<span class="mode-count" aria-label="{summary.counts[mode]} votes">
-						{summary.counts[mode]}
-					</span>
-				</span>
-				<span class="mode-blurb">{MODE_COPY[mode].blurb}</span>
-				<span class="mode-cost">{MODE_COPY[mode].cost}</span>
-				{#if mine}<span class="mode-mine">Your vote</span>{/if}
-			</button>
+			{@const count = summary.counts[mode]}
+			<div class="mode">
+				<div class="mode-head">
+					<Chip
+						selected={mine}
+						disabled={busy}
+						aria-describedby="mode-text-{mode}"
+						onclick={() => vote(mode)}
+					>{endingModeLabel(mode)}</Chip>
+					<span class="mode-count">{count} {count === 1 ? 'vote' : 'votes'}</span>
+					{#if mine}<span class="status-word">Your vote</span>{/if}
+				</div>
+				<div class="mode-text" id="mode-text-{mode}">
+					<p class="mode-blurb">{MODE_COPY[mode].blurb}</p>
+					<p class="mode-cost">{MODE_COPY[mode].cost}</p>
+				</div>
+			</div>
 		{/each}
 	</div>
 
 	{#if actionError}<ErrorText message={actionError} />{/if}
 	{#if loadError}<ErrorText message={loadError} />{/if}
 
-	<p class="tally" role="status">
-		{summary.votedCount} of {summary.seatedCount} votes in.
-		{#if summary.iOwe}
-			Yours is one of the ones missing — pick one.
-		{:else if summary.myMode}
-			You may change your vote until the last one lands.
-		{/if}
-	</p>
-
-	{#if summary.pendingNames.length > 0}
-		<p class="muted-text small">
-			Still waiting on {summary.pendingNames.join(', ')}.
+	<!-- Where the vote stands, apart from the two endings above it. -->
+	<div class="standing">
+		<p class="tally" role="status">
+			{summary.votedCount} of {summary.seatedCount} votes in.
+			{#if summary.iOwe}
+				Yours is one of the ones missing — pick one.
+			{:else if summary.myMode}
+				You may change your vote until the last one lands.
+			{/if}
 		</p>
-	{/if}
 
-	<p class="muted-text small tiebreak">{tieBreak}</p>
+		{#if summary.pendingNames.length > 0}
+			<p class="muted-text">
+				Still waiting on {summary.pendingNames.join(', ')}.
+			</p>
+		{/if}
+
+		<p class="muted-text">{tieBreak}</p>
+	</div>
 </div>
 
 <style>
-	/* Procedural violet — the resolution machinery is in motion. The frame
-	   carries it; the fill stays on the surface ladder, like .plan-panel
-	   .resolving. */
+	/* Set out by its heading and the gaps, with no frame. The side padding is the
+	   panel's own because the play column gives its content none. */
 	.endgame-vote {
-		border: 1px solid var(--color-chip-violet-border);
-		border-radius: 8px;
-		padding: 1rem;
-		background: var(--color-surface, var(--color-bg));
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: var(--space-4);
+		padding: var(--space-4) var(--space-3);
 	}
 	h3 {
 		margin: 0;
 		font-family: var(--font-serif);
+		font-size: var(--text-heading);
 		color: var(--color-accent);
 	}
 	.lede {
 		margin: 0;
-		font-size: 0.9rem;
+		font-size: var(--text-body);
 		line-height: 1.4;
 	}
 
 	/* Always one column. The phase column is phone-width at every viewport
-	   (300–380; docs/STYLE_GUIDE.md "Layout widths"), so two cards side by side
-	   would be cramped everywhere rather than roomy anywhere — there is no
-	   width at which the flip pays. Stacked full-width cards it is. */
+	   (docs/STYLE_GUIDE.md "Layout widths"), so two endings side by side would be
+	   cramped everywhere rather than roomy anywhere. Each ending is its chip and
+	   its two paragraphs; the gap between endings is wider than the gap inside
+	   one, so the spacing shows which words belong to which chip. */
 	.modes {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: var(--space-5);
 	}
-
-	/* The whole card is the vote button: the biggest tap target the column
-	   affords, and tapping the other card is how you change your mind. */
 	.mode {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		width: 100%;
-		min-height: 44px;
-		padding: 0.6rem 0.7rem;
-		text-align: left;
-		font-family: var(--font-serif);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border-strong);
-		border-radius: 6px;
-		cursor: pointer;
-	}
-	.mode:hover:not(:disabled) {
-		border-color: color-mix(in srgb, var(--color-border-strong) 75%, white);
-	}
-	.mode:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
-	}
-	.mode:disabled { cursor: not-allowed; opacity: 0.6; }
-
-	/* The viewer's own choice — the chip trio, brightened on the border the way
-	   an interactive selected state may (STYLE_GUIDE, "Chip trios"). */
-	.mode.mine {
-		background: var(--color-chip-violet-bg);
-		border-color: var(--color-chip-violet-text);
+		gap: var(--space-2);
 	}
 
+	/* The chip, then its running tally and, on the one you picked, the words
+	   that say so (the gold border alone isn't a signal for everyone). */
 	.mode-head {
 		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.5rem;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-3);
 	}
-	.mode-name {
-		font-size: 0.95rem;
-		color: var(--color-text);
-	}
-	.mode.mine .mode-name { color: var(--color-chip-violet-text); }
-
-	/* A standalone numeric counter — the one place bold is reserved for. */
 	.mode-count {
-		flex-shrink: 0;
-		font-weight: 700;
-		font-size: 1rem;
+		font-size: var(--text-small);
 		font-variant-numeric: tabular-nums;
-		color: var(--color-text-muted);
-	}
-	.mode.mine .mode-count { color: var(--color-chip-violet-text); }
-
-	.mode-blurb {
-		font-size: 0.85rem;
-		line-height: 1.35;
-		color: var(--color-text);
-	}
-	.mode-cost {
-		font-size: 0.8rem;
-		line-height: 1.35;
-		color: var(--color-text-muted);
-	}
-	.mode-mine {
-		margin-top: 0.15rem;
-		font-size: 0.68rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-chip-violet-text);
-	}
-
-	.tally {
-		margin: 0;
-		font-size: 0.85rem;
-		line-height: 1.4;
 		color: var(--color-text-secondary);
 	}
-	.tiebreak {
-		padding-top: 0.4rem;
-		border-top: 1px solid var(--color-border);
+
+	.mode-text {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.mode-blurb,
+	.mode-cost {
+		margin: 0;
+		line-height: 1.4;
+	}
+	.mode-blurb { font-size: var(--text-body); }
+	.mode-cost {
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+
+	/* A wider gap above than inside, so the tally reads as its own block and not
+	   as the last ending's third paragraph. */
+	.standing {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		margin-top: var(--space-2);
+	}
+	.tally {
+		margin: 0;
+		font-size: var(--text-body);
+		line-height: 1.4;
 	}
 </style>
