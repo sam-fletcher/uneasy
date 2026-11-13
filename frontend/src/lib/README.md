@@ -13,7 +13,7 @@ comment at the top explaining the *why*; this is just the map.
 
 - **`components/`** — Svelte components, split by scope:
   - top level — shared, cross-phase UI: `ChatPanel`, `RetinueView`,
-    `PublicRecord`, `WaitingOnBar`, form/modal primitives, etc.
+    `PublicRecord`, `StepHeading`, form/modal primitives, etc.
   - `phases/` — one view per game phase (`PrologueView`, `MainEventView`,
     `ShakeUpView`), plus `phases/prologue/` for Prologue-only sub-widgets
     (hand strip, set-aside placer, track board).

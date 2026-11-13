@@ -71,7 +71,9 @@
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import HelpButton from '$lib/components/HelpButton.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
-	import WaitingOnBar, { type WaitingOnState } from '$lib/components/WaitingOnBar.svelte';
+	import type { WaitingOnState } from '$lib/waitingOn';
+	import { stepHeading } from '$lib/stepHeading';
+	import StepHeading from '$lib/components/shared/StepHeading.svelte';
 	import { tableTitle } from '$lib/tableTitle';
 	import { tableLayout, watchTableLayout } from '$lib/tableLayout.svelte';
 	import { provideSheetHost } from '$lib/sheetHost';
@@ -249,12 +251,15 @@
 		else if (game?.phase === 'ended') waitingOn = { waitees: [] };
 	});
 
+	// The open step's heading for the phases that don't draw it themselves.
+	const phaseHeading = $derived(stepHeading(waitingOn, currentPlayerID, players));
+
 	// Every player the game is currently waiting on — drives the clock on the
 	// player row's chips, and whether Play's mark is lit. Derived from
 	// `waitingOn`, NOT blockingPlayerID: the latter is phase-specific and
 	// single-player, while a row can be waiting on several people at once (see
 	// waitingOn.ts / ResolvingWaitees). Sharing the bar's source is the point —
-	// the clock and the "Waiting On:" list can never disagree.
+	// the clock and the open step's heading can never disagree.
 	//   'everyone' marks everyone: going dark there would read as "not you".
 	//   'label' waitees (e.g. "facilitator to start") name no player → mark none.
 	const waitingPlayerIDs = $derived.by<Set<number>>(() => {
@@ -1015,8 +1020,8 @@
 		</ShellColumn>
 
 		<!-- Play ────────────────────────────────────────────────────────────────
-		     The Waiting On bar and the way into wars sit at the top, unchanged,
-		     until the Play and war pieces replace them. -->
+		     The way into wars sits at the top, unchanged, until the war piece
+		     replaces it. The open step's heading is drawn by the phase view. -->
 		<ShellColumn
 			pane="play"
 			label="Play"
@@ -1027,7 +1032,12 @@
 		>
 			<div class="phase-column">
 				{#if !loading && game}
-					<WaitingOnBar state={waitingOn} {currentPlayerID} {players} />
+					<!-- The main event draws the open step's heading itself, at the top of
+					     the step. The other phases haven't moved onto steps yet, so until
+					     each does the page states the same ask above it. -->
+					{#if game.phase !== 'main_event' && phaseHeading}
+						<div class="phase-heading"><StepHeading heading={phaseHeading} /></div>
+					{/if}
 					<WarEntry />
 				{/if}
 
@@ -1037,7 +1047,7 @@
 					asset.taken payload that had to be merged rather than replaced, and the
 					optimistic-append/WS duplicate key) both presented as "the UI froze"
 					rather than as an error. Scoped to the phase views only — the title bar,
-					player row, Waiting On bar, Public Record and chat stay alive, so the
+					player row, Public Record and chat stay alive, so the
 					player can still read the table and reach the reload. `reset` re-renders:
 					worth offering first, since a bad payload is usually repaired by the next
 					resync.
@@ -1322,8 +1332,8 @@
 		pointer-events: none;
 	}
 
-	/* The play column's content. WaitingOnBar and WarEntry sit above the phase
-	   view in it, so they share the column's width and not the other panes'.
+	/* The play column's content. The open step's heading (outside the main
+	   event) and WarEntry sit above the phase view in it, so they share the column's width and not the other panes'.
 	   A named query container: components inside adapt to the COLUMN's width via
 	   @container column (…), never to the viewport (docs/STYLE_GUIDE.md "Layout
 	   widths"). */
@@ -1334,6 +1344,12 @@
 		min-width: 0;
 		min-height: 0;
 		container: column / inline-size;
+	}
+
+	/* The open step's heading above a phase that hasn't been moved onto steps. */
+	.phase-heading {
+		flex: none;
+		padding: var(--space-2) var(--space-2) 0;
 	}
 
 	/* Laws and Rumors: plain lists that scroll inside the column. */

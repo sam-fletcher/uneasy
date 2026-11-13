@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cleanupGameAfterEach, openRecordTab } from './helpers';
+import { cleanupGameAfterEach, openRecordTab, expectWaitingOn } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedPD, prepareDecree, resolveDecree, resolvingDecree, openAll, act, actOK, forceRoll, decreeState,
@@ -39,9 +39,6 @@ const track = cleanupGameAfterEach();
 closeContextsAfterEach();
 
 const LAW = 'No private armies within the capital.';
-
-/** The Waiting On bar's text, as one player sees it. */
-const waitingBar = (page: Page) => page.locator('p', { hasText: 'Waiting On:' }).first();
 
 /** The proposed text under debate, as the panel shows it (not the prep note above it). */
 const debated = (page: Page) =>
@@ -123,7 +120,7 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	await expect(bob.getByText('Proposed decree being debated:')).toHaveCount(0);
 	await expect(bob.getByRole('button', { name: 'Open the debate' })).toHaveCount(0);
 	for (const who of ['bob', 'carol']) {
-		await expect(waitingBar({ bob, carol }[who as 'bob' | 'carol'])).toContainText('alice');
+		await expectWaitingOn({ bob, carol }[who as 'bob' | 'carol'], ['alice'], who, 'including');
 	}
 
 	// Nobody but the preparer opens the debate; a blank text is refused.
@@ -144,10 +141,9 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	// Only the signatory may call it at all.
 	expect((await act(g, 'bob', planID, 'call-roll')).status()).toBe(403);
 
-	// The Waiting On bar names the undecided joiners, not the signatory (who can't act yet).
-	await expect(waitingBar(bob)).toContainText('carol');
-	await expect(waitingBar(alice)).toContainText('bob');
-	await expect(waitingBar(alice)).not.toContainText('You');
+	// The wait names the undecided joiners, not the signatory (who can't act yet).
+	await expectWaitingOn(bob, ['bob', 'carol'], 'bob');
+	await expectWaitingOn(alice, ['bob', 'carol'], 'alice');
 
 	// bob joins by leveraging one asset, through the picker.
 	const spare = await spareAsset(g, 'bob');
@@ -161,8 +157,7 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 		.toBe(true);
 	// ...and the asset becomes one die to help or interfere on the decree's roll.
 	expect((await bankedDice(g, 'bob')).map(d => d.source)).toEqual(['decree']);
-	await expect(waitingBar(alice)).not.toContainText('bob');
-	await expect(waitingBar(alice)).toContainText('carol');
+	await expectWaitingOn(alice, ['carol'], 'alice');
 
 	// carol declines: it buys nothing, but it unblocks the table and is shown.
 	await carol.getByRole('button', { name: 'Decline' }).click();
@@ -220,7 +215,7 @@ test('make: the signatory\'s addendum, then the preparer names the resource; the
 	await expect(carol.getByText('Waiting for alice to place the addendum…')).toBeVisible();
 	await expect(bob.getByText('The decree passed — writing the law.')).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Place addendum' })).toHaveCount(0);
-	await expect(waitingBar(bob)).toContainText('alice');
+	await expectWaitingOn(bob, ['alice'], 'bob');
 
 	// The steps are ordered, and only the right person may take each.
 	expect((await act(g, 'alice', planID, 'enact-law', { resource_name: 'Salt Tax', resource_marginalia: ['Hated by the guilds'] })).status()).toBe(409);
@@ -324,7 +319,7 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 	await expect(alice.getByText('The council is amending the law (2 to go). Next: carol.')).toBeVisible();
 	await expect(bob.getByText('The council is amending the law (2 to go). Next: carol.')).toBeVisible();
 	await expect(alice.getByText('The decree passed — writing the law (being amended).')).toBeVisible();
-	await expect(waitingBar(alice)).toContainText('carol');
+	await expectWaitingOn(alice, ['carol'], 'alice');
 	await expect(bob.getByRole('button', { name: 'Submit amendment' })).toHaveCount(0);
 
 	// Out of turn, and from the preparer: refused.

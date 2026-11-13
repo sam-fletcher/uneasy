@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, expectWaitingOn } from './helpers';
 import { E2E } from './baseUrl';
 
 // Regression specs for what the 12-plan UX audit fixed in Make Introductions:
@@ -159,9 +159,6 @@ async function forceRoll(f: Fixture, outcome: 'make' | 'mar') {
 	await api(f.ctx.alice, 'post', '/api/dev/force-roll', { roll_id: roll.id, outcome });
 }
 
-/** The Waiting On bar's text ("Waiting On: You,carol"), as one player sees it. */
-const waitingBar = (page: Page) => page.locator('p', { hasText: 'Waiting On:' }).first();
-
 /** The click-to-agree gates the audit removed must not come back. */
 async function expectNoGates(page: Page) {
 	for (const name of ['Apply choices', 'Begin resolving', 'Complete plan']) {
@@ -212,12 +209,11 @@ test('pre-roll: everyone sees the difficulty meter and the buffet; only the prep
 	const fin = await f.ctx.bob.post(`/api/plans/${f.planID}/finalize-peers`);
 	expect(fin.status()).toBe(403);
 
-	// The Waiting On bar names the preparer while the peers are being named.
-	await expect(waitingBar(alice)).toContainText('You');
-	for (const p of [bob, carol]) {
-		await expect(waitingBar(p)).toContainText('alice');
-		await expect(waitingBar(p)).not.toContainText('You');
-	}
+	// The wait names the preparer while the peers are being named: it is alice's move,
+	// and the others are told whose it is.
+	await expectWaitingOn(alice, ['alice'], 'alice');
+	await expectWaitingOn(bob, ['alice'], 'bob');
+	await expectWaitingOn(carol, ['alice'], 'carol');
 	await expectNoGates(alice);
 
 	await nameAndRoll(alice, ['Lady Ashby', 'Sir Oswin']);
@@ -314,10 +310,8 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 	await alice.locator('.player-chip', { hasText: 'carol' }).click();
 	await alice.getByRole('button', { name: 'Resolve peer' }).click();
 
-	// The bar moves from the preparer to the two authors (alice no longer owes a step).
-	await expect(waitingBar(alice)).toContainText('bob');
-	await expect(waitingBar(alice)).toContainText('carol');
-	await expect(waitingBar(alice)).not.toContainText('You');
+	// The wait moves from the preparer to the two authors (alice no longer owes a step).
+	await expectWaitingOn(alice, ['bob', 'carol'], 'alice');
 	await expectNoGates(alice);
 
 	// Bob and carol are each asked for the marginalia they owe; alice is not.
@@ -362,7 +356,7 @@ test('perform_steps winner drives the post-roll steps; the preparer still names 
 	const winners = JSON.parse(Buffer.from(demand.demand_option_winners, 'base64').toString());
 	expect(winners.perform_steps).toBe(f.ids.bob);
 	expect(winners.keep_assets).toBe(f.ids.bob);
-	await expect(waitingBar(bob)).toContainText('alice');
+	await expectWaitingOn(bob, ['alice'], 'bob');
 
 	await nameAndRoll(alice, ['Lady Ashby']);
 	await forceRoll(f, 'make');
@@ -373,8 +367,7 @@ test('perform_steps winner drives the post-roll steps; the preparer still names 
 	await expect(alice.getByText('arrives at court', { exact: false })).toHaveCount(0);
 
 	await bob.locator('.acf textarea').first().fill('Bob vouches for them.');
-	await expect(waitingBar(alice)).toContainText('bob');
-	await expect(waitingBar(alice)).not.toContainText('You');
+	await expectWaitingOn(alice, ['bob'], 'alice');
 	await bob.getByRole('button', { name: 'They arrive — the plan resolves' }).click();
 	await expect.poll(() => planStatus(f), { timeout: 10_000 }).toBe('resolved');
 	// keep_assets: the arrived peer is bob's, with the text bob wrote.
@@ -430,7 +423,7 @@ test('make: the arrival form appears live when the dice land, without a reload',
 });
 
 // The same on the mar side: introductions-mar saves the fate and moves the
-// Waiting On bar to the people who owe marginalia; their form arrives live.
+// wait to the people who owe marginalia; their form arrives live.
 test('mar: a named marginalia author sees their form live, without a reload', async ({ browser }) => {
 	const f = await setup(1);
 	const pages = await openPages(browser, f);

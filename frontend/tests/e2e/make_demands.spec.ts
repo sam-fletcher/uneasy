@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { expectWaitingOn, stepHeading, waitingOnNames } from './helpers';
 import * as H from './helpers/make_demands';
 
 // Regression specs for what the 12-plan UX audit and the Make Demands audit
@@ -32,7 +33,6 @@ import * as H from './helpers/make_demands';
 
 H.cleanupAfterEach();
 
-const waiting = (page: Page) => H.waitingBar(page);
 const card = (page: Page, label: string) => page.locator('.choice-card', { hasText: label });
 
 test('attaching: bob picks alices pending plan, gives a motivation, and the demand lands right before it', async ({ browser }) => {
@@ -76,9 +76,8 @@ test('the demands roll: the actor may skip the vote, everyone else waits on them
 	await expect(pages.bob.getByRole('button', { name: 'Skip vote' })).toBeVisible();
 	await expect(pages.bob.getByRole('button', { name: 'Call difficulty vote' })).toBeVisible();
 	for (const n of ['alice', 'carol'] as const) {
-		await expect(pages[n].getByText('Waiting for bob to decide about a difficulty vote…')).toBeVisible();
 		await expect(pages[n].getByRole('button', { name: 'Skip vote' })).toHaveCount(0);
-		await expect(waiting(pages[n])).toContainText('bob');
+		await expectWaitingOn(pages[n], ['bob'], n);
 	}
 
 	await pages.bob.getByRole('button', { name: 'Skip vote' }).click();
@@ -271,11 +270,12 @@ test('control leverage against a plan with no roll of the preparer\'s own is a d
 	const res = await f.api.bob.post(`/api/plans/${f.targetID}/demand-leverage`, { data: { asset_ids: [] } });
 	expect(res.status()).toBe(409);
 	expect(await res.text()).toContain('leverage control is inert');
-	// And nobody is kept waiting on bob for it: the bar names alice, the duelist.
-	await expect(waiting(alice)).toContainText('You');
-	await expect(waiting(carol)).toContainText('alice');
-	for (const p of [alice, carol]) await expect(waiting(p)).not.toContainText('control leverage');
-	await expect(waiting(alice)).not.toContainText('bob');
+	// And nobody is kept waiting on bob for it: the wait names alice, the duelist.
+	// (alice and carol are the duellists, so both are asked something; bob is not.)
+	await expectWaitingOn(alice, ['alice'], 'alice', 'including');
+	await expectWaitingOn(carol, ['alice'], 'carol', 'including');
+	for (const p of [alice, carol]) await expect.poll(() => waitingOnNames(p)).not.toContain('bob');
+	for (const p of [alice, carol]) await expect(stepHeading(p)).not.toContainText('leverage on the roll');
 });
 
 /**
@@ -383,11 +383,11 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 	for (const p of [alice, bob, carol]) await expect(p.getByText('Demand in effect from bob')).toBeVisible();
 	// The winner is told they act in the preparer's place; the others, who.
 	await expect(bob.getByText("You will submit this plan's make/mar choices in alice's place.")).toBeVisible();
-	for (const p of [alice, carol]) {
+	for (const [p, who] of [[alice, 'alice'], [carol, 'carol']] as const) {
 		await expect(p.getByText("bob will submit this plan's make/mar choices in alice's place.")).toBeVisible();
-		await expect(waiting(p)).toContainText('bob');
+		await expectWaitingOn(p, ['bob'], who);
 	}
-	await expect(waiting(bob)).toContainText('You');
+	await expectWaitingOn(bob, ['bob'], 'bob');
 	await expect(carol.getByText('bob is choosing make/mar options…')).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 
