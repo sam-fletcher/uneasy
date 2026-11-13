@@ -1,252 +1,132 @@
-/* tokens: not migrated */
-/* Shared styles for PlanPanel and all per-plan components. */
+/* Shared styles for PlanPanel and all per-plan components.
+
+   A plan is a run of steps that nobody presses as a whole, so none of it is
+   boxed or tinted: finished steps are one line each (plans/shared/FinishedStep.svelte),
+   the open step has a heading and the space around it, and the only boxes left
+   are the things a player presses (buttons, chips, inputs, option cards) and
+   the game pieces. The look is the redesign's: the type, gap and corner
+   scales; the neutral control border; selected as a 2px bright gold border
+   with no fill; a notice as a mark and coloured text.
+
+   Twelve panels use these class names, and most of their own files have not
+   moved onto the recipes yet. So the names stay, and each is drawn here the way
+   its recipe says; a panel that migrates swaps the class for the shared piece
+   (Chip, Notice, FinishedStep) and the rule goes. Every rule that exists only
+   for that interim says so. */
 
 @import '../shared/actionButton.css';
+@import '../shared/chip.css';
+@import '../shared/statusText.css';
 
+/* ── The plan's steps ─────────────────────────────────────────────────────── */
+
+/* The card around a plan: finished lines, the heading, the plan's own body.
+   One gap, between all of them. */
 .plan-panel {
-	border-radius: 6px;
-	padding: 0.6rem 0.75rem;
-	margin-bottom: 0.4rem;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
 	flex-shrink: 0;
 }
 
-/* Resolving = procedural (violet), not a warning — COLOR_ROLES_PLAN ruling 2. */
-.plan-panel.resolving {
-	background: var(--color-surface-active);
-	border: 1px solid var(--color-chip-violet-border);
+/* The finished steps, one line each, stacked with their rules between. The
+   extra gap below makes the step gap (16px) between them and the open step. */
+.done-steps {
+	display: flex;
+	flex-direction: column;
+	margin-bottom: var(--space-1);
 }
 
+/* A long note, opened beneath its line. Quoted words, not italic: italic is for
+   asset names. */
+.step-quote {
+	margin: 0;
+	color: var(--color-text-secondary);
+}
+
+/* The old plan header. Only MakeWarPanel still draws one (its own piece moves
+   it); a status word is plain text, so the "badge" is too. */
 .plan-header {
 	display: flex;
 	align-items: center;
-	gap: 0.5rem;
+	gap: var(--space-2);
 	flex-wrap: wrap;
-	margin-bottom: 0.4rem;
 }
-
 .plan-badge {
-	font-size: 0.65rem;
+	font-size: var(--text-label);
 	text-transform: uppercase;
 	letter-spacing: 0.06em;
-	padding: 0.1rem 0.4rem;
-	border-radius: 4px;
+	color: var(--color-text-secondary);
 }
-
-.resolving-badge { background: var(--color-chip-violet-bg); color: var(--color-chip-violet-text); border: 1px solid var(--color-chip-violet-border); }
-
-.plan-title {
-	font-size: 0.9rem;
-	color: var(--color-text);
-}
-
-.plan-preparer {
-	font-size: 0.78rem;
-	color: var(--color-text-muted);
-}
+.plan-title { font-size: var(--text-body); color: var(--color-text); }
+.plan-preparer { font-size: var(--text-small); color: var(--color-text-secondary); }
 
 .plan-notes {
-	font-size: 0.82rem;
-	color: var(--color-text-muted);
-	font-style: italic;
-	margin: 0 0 0.4rem;
+	font-size: var(--text-small);
+	color: var(--color-text-secondary);
+	margin: 0;
 }
 
+/* ── Messages ─────────────────────────────────────────────────────────────── */
+
+/* ErrorText's panel variant. */
 .res-error {
 	color: var(--color-danger);
-	font-size: 0.82rem;
-	margin: 0.25rem 0;
+	font-size: var(--text-small);
+	margin: 0;
 }
 
+/* A warning inside a step: coloured words, no box. (The panels move these onto
+   <Notice>, which adds the mark; until then the words carry it.) */
 .res-warning {
-	margin: 0.4rem 0;
-	padding: 0.4rem 0.6rem;
-	border-radius: 4px;
-	background: var(--parchment-50);
-	color: var(--color-warning-ink);
-	font-size: 0.85rem;
+	margin: 0;
+	color: var(--color-warning);
+	font-size: var(--text-small);
 }
 
-.muted { color: var(--color-text-faint); font-size: 0.82rem; font-style: italic; }
+/* Quiet lines: "Dice roll in progress…", "otto is resolving…". Secondary, not
+   faint, and not italic: they say what the game is waiting for. */
+.muted {
+	color: var(--color-text-secondary);
+	font-size: var(--text-small);
+}
+.ft-prompt.muted { font-size: var(--text-small); }
+
+/* The footnote of the finale warning: its first line is the point. */
+.finale-warning-head { display: block; }
+
+/* ── Groups inside a step ─────────────────────────────────────────────────── */
 
 .ft-section, .choices-section, .complete-section {
 	display: flex;
 	flex-direction: column;
-	gap: 0.6rem;
-}
-
-/* Breathing room between stacked sections inside a plan panel, and between
-   a nested reveal/picker section and the surrounding note text. */
-.plan-panel > * + * {
-	margin-top: 0.9rem;
+	gap: var(--space-3);
 }
 .choices-section .choices-section {
-	margin-top: 0.4rem;
+	margin-top: var(--space-1);
 }
 
+/* Step text. */
 .ft-prompt {
-	font-size: 0.85rem;
-	line-height: 1.45;
+	font-size: var(--text-body);
+	line-height: 1.5;
 	margin: 0;
 }
 
+/* The label over a field or a row of pickers. Secondary, since a label names
+   the field and the game's colour is for the step's heading. */
 .ft-label, .form-label {
 	display: flex;
 	flex-direction: column;
-	gap: 0.25rem;
-	font-size: 0.82rem;
-	color: var(--color-accent);
-}
-
-.form-label-text { color: var(--color-accent); }
-
-.player-chips {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.35rem;
-}
-
-.player-chip {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.4rem;
-	min-height: 44px;
-	padding: 0.35rem 0.7rem;
-	border-radius: 999px;
-	border: 1px solid var(--color-border);
-	background: var(--color-surface-sunken);
-	color: var(--color-text-secondary);
-	font-size: 0.85rem;
-	cursor: pointer;
-}
-
-.player-chip:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-
-.player-chip .dot {
-	width: 10px;
-	height: 10px;
-	border-radius: 50%;
-	background: var(--owner-color, var(--color-neutral));
-	flex-shrink: 0;
-}
-
-.player-chip.active {
-	border-color: var(--owner-color, var(--color-accent));
-	background: var(--color-surface-active);
-	color: var(--color-text);
-}
-
-.player-chip:focus-visible {
-	outline: 2px solid var(--owner-color, var(--color-accent));
-	outline-offset: 1px;
-}
-
-.peer-cards {
-	display: flex;
-	flex-direction: column;
-	gap: 0.4rem;
-}
-
-/* Generic non-coloured chip row — for numeric picks (Make Introductions
-   peer count) and small enum choices (Propose Duel arms/wits). Same
-   visual weight as .player-chip but without the owner accent. */
-.chip-row {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.35rem;
-}
-
-.chip-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-height: 44px;
-	min-width: 44px;
-	padding: 0.35rem 0.9rem;
-	border-radius: 999px;
-	border: 1px solid var(--color-border);
-	background: var(--color-surface-sunken);
-	color: var(--color-text-secondary);
-	font-size: 0.9rem;
-	cursor: pointer;
-}
-
-.chip-btn.active {
-	border-color: var(--color-accent);
-	background: var(--color-surface-active);
-	color: var(--color-text);
-}
-
-/* An option already handed out (Make Introductions: one outcome per peer). Stays
-   tappable — aria-disabled, not disabled — so a tap can say why. */
-.chip-btn.used {
-	opacity: 0.4;
-	text-decoration: line-through;
-	cursor: not-allowed;
-}
-
-/* An option that can't be picked right now (Chronicle break with nothing to
-   break). aria-disabled, not disabled, so a tap can say why via the hint. */
-.chip-btn.unavailable {
-	opacity: 0.4;
-	cursor: not-allowed;
-}
-
-.chip-btn:focus-visible {
-	outline: 2px solid var(--color-accent);
-	outline-offset: 1px;
-}
-
-/* Square-ish variant for die-face icon chips — the pip icon already
-   carries the meaning, so trim the horizontal padding. */
-.chip-btn.face-chip {
-	padding: 0.25rem 0.4rem;
+	gap: var(--space-1);
+	font-size: var(--text-small);
 	color: var(--color-text-secondary);
 }
-.chip-btn.face-chip.active { color: var(--color-accent-bright); }
+.form-label-text { color: var(--color-text-secondary); }
 
-/* Centered single submit button, or a row of related action buttons.
-   Replaces the inline style="text-align:center;" / style="display:flex"
-   patterns sprinkled across plan forms. */
-.form-actions {
-	display: flex;
-	gap: 0.5rem;
-	justify-content: center;
-	flex-wrap: wrap;
-	margin-top: 0.5rem;
-}
-/* Left-aligned variant — for sub-form buttons that should sit at the
-   start of the row rather than centered. */
-.form-actions.start { justify-content: flex-start; }
-
-/* Generic in-form row of inline children (chips, buttons, small inputs)
-   with consistent spacing — replaces inline `display:flex;gap:…` blocks. */
-.form-row {
-	display: flex;
-	gap: 0.5rem;
-	flex-wrap: wrap;
-	align-items: center;
-}
-
-.ft-select, .form-select {
-	background: var(--color-surface-2);
-	border: 1px solid var(--color-neutral);
-	border-radius: 4px;
-	color: inherit;
-	font-size: 0.85rem;
-	padding: 0.25rem 0.4rem;
-}
-
-.ft-actions {
-	display: flex;
-	gap: 0.5rem;
-	flex-wrap: wrap;
-}
-
+/* A sub-step's own lead line ("What have you learned?", "Result: Make"). */
 .choices-header {
-	font-size: 0.88rem;
+	font-size: var(--text-body);
 	margin: 0;
 }
 
@@ -254,314 +134,47 @@
 .outcome-mar  { color: var(--color-danger); }
 
 .choices-note {
-	font-size: 0.82rem;
-	color: var(--color-text-muted);
-	margin: 0;
-}
-
-.choices-note li {
-	margin-left: 2rem;
-}
-
-/* Tappable option cards (make/mar picker). Mirror .chip-btn's active gold
-   treatment but laid out as a full-width row with a badge + title + desc. */
-.choice-list {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-}
-
-.choice-card {
-	display: flex;
-	align-items: center;
-	gap: 12px;
-	width: 100%;
-	min-height: 56px;
-	padding: 0.6rem 0.75rem;
-	border-radius: 8px;
-	border: 1px solid var(--color-border);
-	background: var(--color-surface-sunken);
+	font-size: var(--text-small);
 	color: var(--color-text-secondary);
-	font: inherit;
-	text-align: left;
-	cursor: pointer;
-}
-.choice-card.active {
-	border-color: var(--color-accent);
-	background: var(--color-surface-active);
-	color: var(--color-text);
-}
-.choice-card:focus-visible {
-	outline: 2px solid var(--color-accent);
-	outline-offset: 1px;
-}
-.choice-card.locked {
-	border-style: dashed;
-	background: var(--color-bg);
-	color: var(--color-text-faint);
-	cursor: not-allowed;
-}
-
-.choice-badge {
-	flex-shrink: 0;
-	width: 34px;
-	height: 34px;
-	border-radius: 8px;
-	background: var(--color-surface-2);
-	border: 0.5px solid var(--color-border-strong);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 0.95rem;
-	color: var(--color-accent);
-}
-.choice-card.active .choice-badge {
-	background: var(--color-border-warm);
-	border-color: var(--color-accent);
-	color: var(--color-accent-hover);
-}
-.choice-card.locked .choice-badge {
-	background: var(--color-surface-sunken);
-	border-color: var(--color-border);
-	color: var(--color-text-faint);
-}
-
-.choice-text {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	min-width: 0;
-}
-.choice-title { font-size: 0.9rem; }
-.choice-tick { color: var(--color-accent); }
-.choice-desc {
-	font-size: 0.78rem;
-	color: var(--color-text-muted);
-	line-height: 1.4;
-}
-.choice-lock {
-	margin-left: auto;
-	flex-shrink: 0;
-	font-size: 0.72rem;
-	color: var(--color-text-faint);
-}
-
-.choices-applied {
-	font-size: 0.8rem;
-	color: var(--color-text-muted);
 	margin: 0;
 }
+.choices-note li {
+	margin-left: var(--space-5);
+}
 
+.choices-applied,
 .complete-note {
-	font-size: 0.82rem;
-	color: var(--color-text-muted);
+	font-size: var(--text-small);
+	color: var(--color-text-secondary);
 	margin: 0;
-}
-
-.messy-break-section {
-	display: flex;
-	flex-direction: column;
-	gap: 0.4rem;
-	padding: 0.5rem;
-	background: var(--color-chip-red-bg);
-	border: 1px solid var(--color-chip-red-border);
-	border-radius: 5px;
-}
-
-.prep-section {
-	display: flex;
-	flex-direction: column;
-	gap: 0.4rem;
 }
 
 .picker-label {
-	font-size: 0.8rem;
-	color: var(--color-accent);
-	font-style: italic;
-	margin: 0 0 0.35rem;
-}
-
-/* Three-column grid of plan cards grouped by track. Three columns at all
- * widths — on narrow mobile the type sizes step down so cards still fit.
- * Flat layout: row 1 holds the 3 track headings, rows 2-5 hold 12 cards in
- * row-major order so cards in the same visual row are equal width AND a
- * shared min-height keeps the 4×3 grid visually balanced. */
-.plan-grid {
-	display: grid;
-	grid-template-columns: repeat(3, 1fr);
-	gap: 0.35rem;
-	row-gap: 0.3rem;
-}
-
-.track-heading {
-	font-size: 0.8rem;
-	font-weight: 400;
-	text-transform: uppercase;
-	letter-spacing: 0.08em;
-	color: var(--color-accent);
-	margin: 0 0 0.1rem;
-	padding-bottom: 0.2rem;
-	border-bottom: 1px solid var(--color-border-warm);
-	text-align: center;
-}
-
-.plan-card {
-	display: flex;
-	flex-direction: column;
-	gap: 0.2rem;
-	/* Standardized card size: tall enough to fit the longest description
-	 * (4 lines at narrow widths) without needing a per-row fit step. */
-	min-height: 5.5rem;
-	padding: 0.35rem 0.4rem;
-	background: var(--color-surface-2);
-	border: 1px solid var(--color-neutral);
-	border-radius: 5px;
+	font-size: var(--text-small);
 	color: var(--color-text-secondary);
-	text-align: left;
-	cursor: pointer;
-	transition: border-color 0.12s, background 0.12s;
-	font-family: inherit;
-}
-
-.plan-card:not(:disabled):not(.ineligible):hover { border-color: var(--color-accent); }
-
-/* Preparing this plan would spend the player's one Explosive Finale plan: it
-   lands on row 13 instead of its own row (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md
-   §7). The warning trio — orange is the one warning family, and the same family
-   as `leveraged`, the nearest existing "one-shot commitment" semantic. Gold is
-   deliberately not used: gold is a label, never a fill. */
-.plan-card.finale-bonus {
-	background: var(--color-warning-bg);
-	border-color: var(--color-warning-border);
-}
-
-.plan-card.finale-bonus:not(:disabled):hover { border-color: var(--color-warning); }
-
-.plan-card.selected {
-	background: var(--color-surface-gold-dim);
-	border-color: var(--color-accent);
-	color: var(--color-text);
-}
-
-/* Selection still reads as selection on a bonus tile: the gold border marks the
-   pick, the orange fill stays to say what the pick costs. */
-.plan-card.finale-bonus.selected { background: var(--color-warning-bg); }
-
-/* Dim only the textual body when disabled (read-only) or ineligible, so the
-   token pips below stay full-opacity and legible for every viewer. CSS opacity
-   can't be un-inherited by children, hence the pips are a sibling of .card-body
-   rather than nested inside it. Ineligible cards are aria-disabled rather than
-   disabled so a tap can surface the reason (see PlanPanel.svelte). */
-.plan-card:disabled,
-.plan-card.ineligible {
-	cursor: not-allowed;
-}
-
-.plan-card:disabled .card-body,
-.plan-card.ineligible .card-body {
-	opacity: 0.4;
-}
-
-/* Tap-accessible ineligibility reason below the grid — title tooltips never
-   fire on touch devices, so tapping a greyed-out card shows its reason here. */
-.ineligible-reason {
-	font-size: 0.78rem;
-	line-height: 1.4;
-	color: var(--color-text-muted);
-	margin: 0.4rem 0 0;
-}
-
-/* The selection-moment warning for the one Explosive Finale plan, sitting
-   between the grid and the prep form. Selecting a card commits nothing, so this
-   is the pre-decision beat: it names the clamp AND the cost, and there is no
-   confirmation dialog (the warning is the whole ruling). */
-.finale-warning {
-	margin: 0.2rem 0 0;
-	padding: 0.45rem 0.55rem;
-	font-size: 0.78rem;
-	line-height: 1.45;
-	background: var(--color-warning-bg);
-	border: 1px solid var(--color-warning-border);
-	border-radius: 5px;
-	color: var(--color-text-secondary);
-}
-
-.finale-warning-head {
-	display: block;
-	color: var(--color-warning);
-}
-
-/* Holds the title/pill row + description; flex-grows so the pip strip is
-   pushed to the bottom of the card. */
-.card-body {
-	display: flex;
-	flex-direction: column;
-	gap: 0.2rem;
-	flex: 1;
-}
-
-/* Token pips: who currently holds a token on this plan's shield. Centred along
-   the bottom of the card; the ring keeps dark custom colours visible on the
-   dark surface. The schema caps holders at the table size (≤5). */
-.prep-pips {
-	display: flex;
-	justify-content: center;
-	flex-wrap: wrap;
-	gap: 0.25rem;
-}
-
-.prep-pip {
-	width: 9px;
-	height: 9px;
-	border-radius: 50%;
-	background: var(--pip-color);
-	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
-	flex-shrink: 0;
-}
-
-.card-head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.25rem;
-}
-
-.card-title {
-	font-size: 0.72rem;
-	line-height: 1.2;
-}
-
-/* Used in lieu of a RowPill for plans whose delay is not a fixed target row
-   (make_demands targets another plan; make_war / clandestinely_liaise roll
-   for delay). Kept intentionally low-contrast so it does not draw the eye
-   away from real row pills. */
-.plan-icon {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 20px;
-	height: 20px;
-	color: var(--color-text-faint);
-	flex-shrink: 0;
-}
-
-.card-desc {
-	font-size: 0.65rem;
-	line-height: 1.3;
-	color: var(--color-text-muted);
 	margin: 0;
 }
 
-.plan-card.selected .card-desc { color: var(--color-text-tertiary-warm); }
+/* A group, not a box: it was a red tinted panel. The words and the danger
+   colour inside it carry what it means. */
+.messy-break-section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
 
+.form-hint {
+	font-size: var(--text-small);
+	color: var(--color-text-secondary);
+	margin: 0;
+}
+
+/* The prep form under the plan grid, and any form a panel groups: a column of
+   fields with the step gap, no frame. */
 .plan-form {
 	display: flex;
 	flex-direction: column;
-	gap: 0.4rem;
-	padding: 0.5rem;
-	background: var(--color-surface-active);
-	border: 1px solid var(--color-border-warm-strong);
-	border-radius: 5px;
+	gap: var(--space-3);
 }
 
 /* Transparent fieldset used to wrap prep forms so non-focus viewers see
@@ -575,29 +188,30 @@
 	min-width: 0;
 }
 .plan-form-fieldset[disabled] {
-	/* Keep contents readable for the mirroring viewer; the browser's
-	   default greying-out reads as a styling bug here. */
+	/* Keep contents readable for the mirroring viewer. */
 	opacity: 1;
 }
 
 /* Transparent fieldset wrapping a RESOLVE phase, so players waiting on the
-   actor see the same UI greyed out instead of a bare "X is resolving…" line
-   (Tier-1 read-only mirroring, ADR-006). The prep-phase analogue above stays at
-   full opacity because the viewer is following a live draft; here the point is
-   to read as inert. disabled blocks every descendant control for free;
-   CardPicker / PlayerChips take readOnly separately (their cards are
-   role=checkbox, not form controls).
+   actor see the same UI, inert, instead of a bare "X is resolving…" line
+   (Tier-1 read-only mirroring, ADR-006). `disabled` blocks every descendant
+   control for free, and each control's own disabled look (raised-twice
+   surface, faint text) is what says "not yours": the whole block is NOT
+   faded, since a fade takes text under the contrast floor. CardPicker /
+   PlayerChips take readOnly separately (their cards aren't form controls).
 
-   Committed state — the "Resolved so far" lists — belongs OUTSIDE this wrapper,
-   at full opacity: it is what happened, not what someone else is doing. */
+   Committed state — the "Resolved so far" lists — belongs OUTSIDE this wrapper:
+   it is what happened, not what someone else is doing. */
 .resolve-mirror-wrap {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
 	border: none;
 	padding: 0;
 	margin: 0;
 	min-width: 0;
 }
 .resolve-mirror-wrap.resolve-mirror {
-	opacity: 0.55;
 	pointer-events: none;
 }
 
@@ -606,46 +220,421 @@
 .resolved-so-far { margin: 0; }
 .resolved-so-far-label {
 	margin: 0;
-	font-size: 0.82rem;
-	color: var(--color-text-muted);
+	font-size: var(--text-small);
+	color: var(--color-text-secondary);
 }
 .resolved-so-far-list {
-	margin: 0.25rem 0 0 1.1rem;
+	margin: var(--space-1) 0 0 var(--space-4);
 	padding: 0;
 	list-style: disc;
-	font-size: 0.85rem;
+	font-size: var(--text-small);
 }
-.resolved-so-far-list li { margin: 0.2rem 0; }
+.resolved-so-far-list li { margin: var(--space-1) 0; }
 .resolved-so-far-list em { font-style: italic; }
 /* The chronicler's / actor's own words, quoted inside a resolved line. */
 .resolved-so-far-list .resolved-note {
-	color: var(--color-text-muted);
+	color: var(--color-text-secondary);
 }
 
-.form-hint {
-	font-size: 0.78rem;
-	color: var(--color-text-muted);
+/* ── Controls ─────────────────────────────────────────────────────────────── */
+
+.form-actions {
+	display: flex;
+	gap: var(--space-2);
+	flex-wrap: wrap;
+}
+/* Left-aligned variant — for sub-form buttons that should sit at the
+   start of the row rather than centered. */
+.form-actions.start { justify-content: flex-start; }
+
+/* Generic in-form row of inline children (chips, buttons, small inputs)
+   with consistent spacing. */
+.form-row {
+	display: flex;
+	gap: var(--space-2);
+	flex-wrap: wrap;
+	align-items: center;
+}
+
+.ft-actions {
+	display: flex;
+	gap: var(--space-2);
+	flex-wrap: wrap;
+}
+
+/* Inputs: 16px, so iOS doesn't zoom; the raised-twice surface for a control on
+   the page's raised ground; the control border and corner. */
+.ft-select, .form-select,
+.form-num,
+.form-textarea {
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border-control);
+	border-radius: var(--radius-control);
+	color: inherit;
+	font-family: inherit;
+	font-size: var(--text-body);
+	padding: var(--space-2) var(--space-3);
+}
+.ft-select, .form-select { min-height: var(--size-tap); }
+.form-num { width: 5rem; min-height: var(--size-tap); }
+.form-textarea {
+	resize: none;
+	width: 100%;
+	box-sizing: border-box;
+}
+.ft-select:focus-visible, .form-select:focus-visible,
+.form-num:focus-visible,
+.form-textarea:focus-visible {
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
+}
+.form-textarea:disabled, .form-num:disabled, .form-select:disabled {
+	color: var(--color-text-faint);
+	border-color: var(--color-border);
+}
+
+/* ── Chip rows ────────────────────────────────────────────────────────────── */
+/* The panels draw their chips with these class names; each is the house chip
+   (chip.css) under an older name, so it is built from the same tokens and
+   marked by the same state: a neutral border and a raised fill, and a pick is
+   the 2px bright gold border and gold text with no fill. A panel that moves to
+   <Chip> drops its name from here. chipRecipe.test.ts holds them to agreeing. */
+
+.player-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+
+.player-chip,
+.chip-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-height: var(--size-tap);
+	padding: 0 var(--space-4);
+	border: 1px solid var(--color-border-control);
+	border-radius: var(--radius-chip);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font: inherit;
+	font-size: var(--text-body);
+	line-height: 1.2;
+	cursor: pointer;
+}
+.player-chip:hover:not(:disabled):not(.active),
+.chip-btn:hover:not(:disabled):not([aria-disabled='true']):not(.active) {
+	border-color: var(--color-border-control-hover);
+}
+.player-chip.active,
+.chip-btn.active {
+	border-color: var(--color-you);
+	box-shadow: inset 0 0 0 1px var(--color-you);
+	color: var(--color-you);
+}
+.player-chip:focus-visible,
+.chip-btn:focus-visible {
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
+}
+/* A chip that can't be pressed: a hairline and faint words. A chosen one still
+   shows which it was (the gold border stays), as chip.css does. */
+.player-chip:disabled,
+.chip-btn[aria-disabled='true'] {
+	border-color: var(--color-border);
+	color: var(--color-text-faint);
+	cursor: not-allowed;
+}
+.player-chip.active:disabled {
+	border-color: var(--color-you);
+}
+
+/* A player's chip: their shape, then their name in their colour (the chip's own
+   text stays neutral; the child wears the colour). */
+.player-chip .name { color: var(--owner-color, var(--color-text)); }
+
+.peer-cards {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+/* Generic non-coloured chip row — for numeric picks (Make Introductions peer
+   count) and small enum choices (Propose Duel arms/wits). */
+.chip-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+
+.chip-btn { min-width: var(--size-tap); }
+
+/* An option already handed out (Make Introductions: one outcome per peer). Stays
+   tappable — aria-disabled, not disabled — so a tap can say why. Struck through
+   and faint, never faded. */
+.chip-btn.used {
+	border-color: var(--color-border);
+	color: var(--color-text-faint);
+	text-decoration: line-through;
+	cursor: not-allowed;
+}
+
+/* An option that can't be picked right now (Chronicle break with nothing to
+   break). aria-disabled, not disabled, so a tap can say why via the hint. */
+.chip-btn.unavailable {
+	border-color: var(--color-border);
+	color: var(--color-text-faint);
+	cursor: not-allowed;
+}
+
+/* Die-face icon chips: the pips already carry the meaning, so trim the padding. */
+.chip-btn.face-chip {
+	padding: 0 var(--space-2);
+}
+
+/* ── Option cards (make / mar, demand options) ────────────────────────────── */
+/* A tappable option laid out as a full-width row: a level, a title, a line of
+   description. It is a control, so it has the neutral border; a pick is the
+   bright gold border with a tick (ToneMark), no fill. The choice wears no
+   meaning colour. */
+
+.choice-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.choice-card {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	width: 100%;
+	min-height: var(--size-tap);
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-control);
+	border: 1px solid var(--color-border-control);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.choice-card:hover:not(:disabled):not(.active):not(.locked) {
+	border-color: var(--color-border-control-hover);
+}
+.choice-card.active {
+	border-color: var(--color-you);
+	box-shadow: inset 0 0 0 1px var(--color-you);
+}
+.choice-card:focus-visible {
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
+}
+/* Locked: it can't be picked now, and the card says why in words. A hairline and
+   faint text, never faded. */
+.choice-card.locked {
+	border-color: var(--color-border);
+	color: var(--color-text-faint);
+	cursor: not-allowed;
+}
+
+/* The level ("+1", "−2") is a number, not a badge: it is inert, so it gets no box. */
+.choice-badge {
+	flex-shrink: 0;
+	min-width: 2ch;
+	text-align: center;
+	font-size: var(--text-body);
+	font-weight: 600;
+	color: var(--color-text-secondary);
+}
+.choice-card.active .choice-badge { color: var(--color-you); }
+.choice-card.locked .choice-badge { color: var(--color-text-faint); }
+
+.choice-text {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	min-width: 0;
+}
+.choice-title { font-size: var(--text-body); }
+.choice-tick { color: var(--color-you); }
+.choice-desc {
+	font-size: var(--text-small);
+	color: var(--color-text-secondary);
+	line-height: 1.4;
+}
+.choice-card.locked .choice-desc { color: var(--color-text-faint); }
+.choice-lock {
+	margin-left: auto;
+	flex-shrink: 0;
+	font-size: var(--text-label);
+	color: var(--color-text-faint);
+}
+/* The tick on a picked card (the success tone's tick, painted bright gold). */
+.choice-card .choice-picked {
+	margin-left: auto;
+	flex-shrink: 0;
+	display: inline-flex;
+	color: var(--color-you);
+}
+
+/* ── Preparing: the plan grid ─────────────────────────────────────────────── */
+
+.prep-section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+}
+
+/* Three columns of plan cards grouped by track: row 1 holds the 3 track
+ * headings, rows 2-5 hold 12 cards in row-major order, so cards in the same
+ * visual row are equal width and a shared min-height keeps the 4×3 grid
+ * balanced. Three columns at every width, as on the sheet. */
+.plan-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: var(--space-2);
+}
+
+.track-heading {
+	font-size: var(--text-label);
+	font-weight: 400;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--color-accent);
+	margin: 0;
+	padding-bottom: var(--space-1);
+	border-bottom: 1px solid var(--color-border);
+	text-align: center;
+}
+
+/* A plan card is a control you press to pick a plan, so it has the neutral
+   border and the raised surface. Pick = the bright gold border and a tick. */
+.plan-card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	min-width: 0;
+	padding: var(--space-2);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border-control);
+	border-radius: var(--radius-control);
+	color: var(--color-text);
+	text-align: left;
+	cursor: pointer;
+	font-family: inherit;
+}
+
+.plan-card:not(:disabled):not(.ineligible):not(.selected):hover {
+	border-color: var(--color-border-control-hover);
+}
+.plan-card:focus-visible {
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
+}
+
+.plan-card.selected {
+	border-color: var(--color-you);
+	box-shadow: inset 0 0 0 1px var(--color-you);
+}
+/* Someone else's pick, mirrored: bright gold means YOURS, so a watcher sees it
+   marked by the same border in the neutral text colour. */
+.plan-card.selected.mirrored {
+	border-color: var(--color-text-secondary);
+	box-shadow: inset 0 0 0 1px var(--color-text-secondary);
+}
+.plan-card.selected.mirrored .card-tick { color: var(--color-text-secondary); }
+
+/* Preparing this plan would spend the player's one Explosive Finale plan: it
+   lands on row 13 instead of its own row (adr/ENDGAME_VOTE_AND_FINALE_PLAN.md
+   §7). Orange is the one warning colour; the card says "Finale" beside its
+   mark, so the colour is never the only signal. The border stays the control's
+   so a pick still reads as a pick. */
+.card-bonus {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	font-size: var(--text-label);
+	color: var(--color-warning);
+}
+
+/* Can't be picked (ineligible, or the watcher's skeleton): a hairline and faint
+   words. Not faded: a fade would take the words under the contrast floor. */
+.plan-card:disabled,
+.plan-card.ineligible {
+	border-color: var(--color-border);
+	cursor: not-allowed;
+}
+.plan-card:disabled .card-title,
+.plan-card.ineligible .card-title,
+.plan-card:disabled .card-desc,
+.plan-card.ineligible .card-desc {
+	color: var(--color-text-faint);
+}
+
+/* Tap-accessible ineligibility reason below the grid — title tooltips never
+   fire on touch devices, so tapping a greyed-out card shows its reason here. */
+.ineligible-reason {
+	font-size: var(--text-small);
+	line-height: 1.4;
+	color: var(--color-text-secondary);
 	margin: 0;
 }
 
-.form-num {
-	width: 60px;
-	padding: 0.2rem 0.4rem;
-	background: var(--color-surface-2);
-	border: 1px solid var(--color-neutral);
-	border-radius: 4px;
-	color: inherit;
-	font-size: 0.85rem;
+.card-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--space-1);
+}
+.card-title {
+	font-size: var(--text-small);
+	line-height: 1.2;
+	overflow-wrap: anywhere;
+}
+.card-tick {
+	display: inline-flex;
+	flex: none;
+	color: var(--color-you);
 }
 
-.form-textarea {
-	background: var(--color-surface-2);
-	border: 1px solid var(--color-neutral);
-	border-radius: 4px;
-	color: inherit;
-	font-family: inherit;
-	font-size: 0.85rem;
-	padding: 0.3rem 0.5rem;
-	resize: none;
+.card-desc {
+	display: block;
+	font-size: var(--text-label);
+	line-height: 1.3;
+	color: var(--color-text-secondary);
+	flex: 1;
 }
 
+/* The foot of a card: when it resolves, and the Finale mark. */
+.card-foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-1);
+}
+/* Plans whose delay is not a fixed number of rows (Make Demands targets another
+   plan; Make War and Clandestinely Liaise roll for it): a mark and words. */
+.card-delay {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	font-size: var(--text-label);
+	color: var(--color-text-faint);
+}
+.card-delay-mark {
+	display: inline-flex;
+	width: 16px;
+	height: 16px;
+}
+.card-delay-mark svg { width: 100%; height: 100%; display: block; }
+
+/* Who holds a token on this plan's shield: each holder's shape in their colour,
+   along the bottom of the card. The schema caps holders at the table size (≤5). */
+.prep-pips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1);
+}

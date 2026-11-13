@@ -11,9 +11,14 @@
   directly from MainEventView for every player via the row_state kind
   'await_delay_reveal' — they don't dispatch through here.
 
-  The parent is responsible for showing DiceRollPanel when activeRoll != null.
-  This component signals "a roll was created" by calling onRollCreated so the
-  parent can set activeRoll.
+  The parent owns the DiceRollPanel. While a plan is resolving, the roll is one
+  of the plan's steps, so the parent hands it down as the `roll` snippet and
+  this component passes it (with the open step's heading) to the plan's card by
+  context (plans/shared/stepFrame), which draws it between the finished steps
+  and the plan's own body. `rollClaimed` tells the parent a card did, so the
+  parent draws the roll itself only when no plan is on screen. This component
+  signals "a roll was created" by calling onRollCreated so the parent can set
+  activeRoll.
 -->
 <script lang="ts">
 	import {
@@ -23,13 +28,22 @@
 		type RankingCategory, type PreparePlanDraft,
 	} from '$lib/api';
 
+	import type { Snippet } from 'svelte';
 	import './plans/planPanel.css';
-	import { PLAN_SHORT, PLAN_DESCRIPTION, PLAN_DELAY, TRACK_ORDER, playerName } from './plans/shared';
-	import { playerColor } from '$lib/playerColor';
+	import { PLAN_SHORT, PLAN_DESCRIPTION, PLAN_DELAY, TRACK_ORDER } from './plans/shared';
 	import { REGISTRY } from './plans/registry';
 	import { activeResolvingPlan } from '$lib/plans/resolutionData/host_festivity';
 	import LazyPlanPanel from './plans/LazyPlanPanel.svelte';
 	import RowPill from './plans/RowPill.svelte';
+	import ResolvingCard from './plans/ResolvingCard.svelte';
+	import { provideStepFrame } from './plans/shared/stepFrame';
+	import type { StepHeading as StepHeadingData } from '$lib/stepHeading';
+	import StepHeading from '$lib/components/shared/StepHeading.svelte';
+	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
+	import DieMark from '$lib/components/shared/DieMark.svelte';
+	import LogMark from './LogMark.svelte';
 	import { highlightedRow } from '$lib/highlight';
 	import type { PlanContext } from './plans/types';
 	import { provideActiveRoll } from './plans/demand/activeRollContext';
@@ -92,6 +106,14 @@
 		 * non-focus viewers. Null until the focus player's first selection.
 		 */
 		preparePlanDraft?: PreparePlanDraft | null;
+		/** The open step's heading ("Your move — …"): the current ask. */
+		heading?: StepHeadingData | null;
+		/** The dice roll, as a step. Drawn by the plan's card, in order. */
+		roll?: Snippet | null;
+		/** The roll is still open (so it carries the heading itself). */
+		rollOpen?: boolean;
+		/** Set while a plan's card is drawing the roll, so the parent doesn't. */
+		rollClaimed?: boolean;
 	}
 
 	let {
@@ -100,6 +122,8 @@
 		rollActive, rollOutcome, activeRoll = null,
 		onRollCreated, onPlansChanged, onPlanPrepared,
 		preparePlanDraft = null,
+		heading = null, roll = null, rollOpen = false,
+		rollClaimed = $bindable(false),
 	}: Props = $props();
 
 	// ── Shared context handed to every panel ─────────────────────────────────
@@ -283,6 +307,16 @@
 
 	provideActiveRoll(() => activeRoll);
 
+	provideStepFrame(() => ({
+		roll,
+		rollOpen,
+		heading,
+		claimRoll: () => {
+			rollClaimed = true;
+			return () => { rollClaimed = false; };
+		},
+	}));
+
 	const ctx = $derived<PlanContext>({
 		gameID, currentRow, endingMode, plans, assets, players, rankings,
 		currentPlayerID, isFocusPlayer,
@@ -318,19 +352,11 @@
 		<LazyPlanPanel planType={resolvingPlan.plan_type} {ctx} plan={resolvingPlan} mode="resolve" />
 	{:else}
 		<!-- Fallback for plan types whose resolution UI is not yet implemented. -->
-		<div class="plan-panel resolving">
-			<div class="plan-header">
-				<span class="plan-badge resolving-badge">Resolving</span>
-				<span class="plan-title">{PLAN_SHORT[resolvingPlan.plan_type] ?? resolvingPlan.plan_type}</span>
-				<span class="plan-preparer">by {playerName(players, resolvingPlan.preparer_id)}</span>
-			</div>
-			{#if resolvingPlan.preparation_notes}
-				<p class="plan-notes">"{resolvingPlan.preparation_notes}"</p>
-			{/if}
+		<ResolvingCard plan={resolvingPlan} {players}>
 			<p class="ft-prompt muted">
 				Resolution UI for this plan is not yet implemented.
 			</p>
-		</div>
+		</ResolvingCard>
 	{/if}
 
 {/if}
@@ -338,6 +364,10 @@
 <!-- ── Preparation dispatch ─────────────────────────────────────────────── -->
 {#if prepEnabled && !needsResolution && !suppressPrep}
 	<div class="prep-section">
+		<!-- Preparing is the open step: its heading is the current ask, for the
+		     focus player ("Your move — prepare a plan, or refresh 2 assets") and for
+		     everyone watching them ("Waiting on otto — …"). -->
+		<StepHeading {heading} />
 		{#if isFocusPlayer && !eligibilityLoaded}
 			<p class="muted">Checking eligibility…</p>
 		{:else if isFocusPlayer && eligibilityError}
@@ -350,33 +380,34 @@
 			     equal min-height on every card guarantees uniform sizing
 			     across all 12 plans. For non-focus players the grid renders
 			     as a disabled skeleton — eligibility is per-player on the
-			     server, so we don't fetch it for them; the focus player's
-			     selection isn't synced yet either. -->
+			     server, so we don't fetch it for them — mirroring the focus
+			     player's highlighted card from the broadcast draft. -->
 			<div class="plan-grid">
 				{#each TRACKS as track}
-					<h4 class="track-heading">{TRACK_LABEL[track]}</h4>
+					<h3 class="track-heading">{TRACK_LABEL[track]}</h3>
 				{/each}
 				{#each [0, 1, 2, 3] as rowIdx}
 					{#each TRACKS as track}
 						{@const pt = TRACK_ORDER[track][rowIdx]}
 						{@const cell = isFocusPlayer ? planCells.get(pt) : undefined}
 						{@const holders = tokenHoldersByType.get(pt) ?? []}
+						{@const picked = displaySelectedPlanType === pt}
+						{@const bonus = !!cell && cell.eligible && cell.finaleBonus}
 						<!-- Ineligible cards stay enabled (aria-disabled + .ineligible
 						     styling) so a tap can surface the reason below the grid;
 						     native disabled would swallow the click. The non-focus
-						     skeleton stays truly disabled. -->
-						<!-- Orange marks the tiles whose preparation would spend the
-						     one Explosive Finale plan — the warning family, and the
-						     same family as `leveraged`, the closest existing
-						     "one-shot commitment" semantic. Not gold: gold is a
-						     label, never a fill. -->
+						     skeleton stays truly disabled. A card is a game piece, so
+						     a pick is the bright border and a tick, never a fill, and
+						     a card that can't be picked goes faint, never translucent. -->
 						<button
 							type="button"
 							class="plan-card"
-							class:selected={displaySelectedPlanType === pt}
-							class:finale-bonus={!!cell && cell.eligible && cell.finaleBonus}
+							class:selected={picked}
+							class:mirrored={picked && !isFocusPlayer}
+							class:finale-bonus={bonus}
 							class:ineligible={!!cell && !cell.eligible}
 							disabled={!isFocusPlayer || !cell}
+							aria-pressed={picked}
 							aria-disabled={cell && !cell.eligible ? true : undefined}
 							title={cell && !cell.eligible ? cell.reason : undefined}
 							onclick={() => cell && onPlanClick(cell)}
@@ -385,50 +416,45 @@
 							onfocus={() => cell && onPlanHover(cell)}
 							onblur={onPlanLeave}
 						>
-							<div class="card-body">
-							<div class="card-head">
+							<span class="card-head">
 								<span class="card-title">{PLAN_SHORT[pt]}</span>
-								{#if cell?.eligible}
-									{#if pt === 'make_demands'}
-										<span class="plan-icon" aria-label="Targets another plan" title="Targets another plan">
-											<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-												<circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.2" />
-												<circle cx="10" cy="10" r="5"   fill="none" stroke="currentColor" stroke-width="1.2" />
-												<circle cx="10" cy="10" r="1.8" fill="currentColor" />
-											</svg>
-										</span>
-									{:else if pt === 'make_war' || pt === 'clandestinely_liaise'}
-										<span class="plan-icon" aria-label="Delay determined by dice roll" title="Delay determined by dice roll">
-											<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-												<rect x="2.5" y="2.5" width="15" height="15" rx="2.5" ry="2.5"
-													fill="none" stroke="currentColor" stroke-width="1.2" />
-												<circle cx="6.5"  cy="6.5"  r="1.2" fill="currentColor" />
-												<circle cx="13.5" cy="6.5"  r="1.2" fill="currentColor" />
-												<circle cx="10"   cy="10"   r="1.2" fill="currentColor" />
-												<circle cx="6.5"  cy="13.5" r="1.2" fill="currentColor" />
-												<circle cx="13.5" cy="13.5" r="1.2" fill="currentColor" />
-											</svg>
-										</span>
-									{:else}
-										<RowPill row={PLAN_DELAY[pt]} kind="delay" />
-									{/if}
+								{#if picked}
+									<span class="card-tick" aria-hidden="true"><ToneMark tone="success" /></span>
 								{/if}
-							</div>
-							<p class="card-desc">{PLAN_DESCRIPTION[pt]}</p>
-							</div>
+							</span>
+							<span class="card-desc">{PLAN_DESCRIPTION[pt]}</span>
+							<span class="card-foot">
+								{#if pt === 'make_demands'}
+									<span class="card-delay">
+										<span class="card-delay-mark"><LogMark family="demand" /></span>
+										Targets a plan
+									</span>
+								{:else if pt === 'make_war' || pt === 'clandestinely_liaise'}
+									<span class="card-delay">
+										<DieMark size={16} />
+										Delay by dice
+									</span>
+								{:else}
+									<RowPill row={PLAN_DELAY[pt]} kind="delay" />
+								{/if}
+								{#if bonus}
+									<!-- Spending the one Explosive Finale plan: a mark and words,
+									     so the colour is never the only signal. -->
+									<span class="card-bonus">
+										<ToneMark tone="warning" size={16} />
+										Finale
+									</span>
+								{/if}
+							</span>
 							{#if holders.length > 0}
-								<!-- Token pips. Kept a full-opacity sibling of .card-body
-								     so they stay legible even when the card is disabled
-								     (read-only / ineligible) — see planPanel.css. -->
-								<div class="prep-pips" aria-label="Prepared by {holders.map(h => h.display_name).join(', ')}">
+								<!-- Who holds a token on this plan's shield: each holder's shape
+								     in their colour. A sibling of the text, not inside a faded
+								     body, so it stays legible on every card. -->
+								<span class="prep-pips" role="img" aria-label="Prepared by {holders.map(h => h.display_name).join(', ')}">
 									{#each holders as h (h.id)}
-										<span
-											class="prep-pip"
-											style:--pip-color={playerColor(h)}
-											title={h.display_name}
-										></span>
+										<PlayerShape player={h} size={12} />
 									{/each}
-								</div>
+								</span>
 							{/if}
 						</button>
 					{/each}
@@ -445,12 +471,12 @@
 			{#if selectedBonusCell}
 				<!-- One place covers all 12 plans: it names the clamp and the cost,
 				     before anything is committed. -->
-				<p class="finale-warning" role="status">
+				<Notice tone="warning" live>
 					<span class="finale-warning-head">This will be your one Explosive Finale plan.</span>
 					<em>{PLAN_SHORT[displaySelectedPlanType]}</em> would normally land on row {bonusNaturalRow},
 					past the end of the record, but it will be placed on row 13 instead.
 					Each player only gets this benefit once.
-				</p>
+				</Notice>
 			{/if}
 			{@const entry = REGISTRY[displaySelectedPlanType]}
 			{#if entry}

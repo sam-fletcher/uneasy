@@ -1,9 +1,20 @@
-<!-- tokens: not migrated -->
 <!-- DiceRollPanel.svelte
-  Stage-driven dice roll panel. The server owns transitions
-  (decide_vote → voting → leverage → resolved); clients call action
-  endpoints and observe stage_changed / ready_changed / intent_set /
-  vote_resolved / resolved over WS.
+  The dice roll, as one of a plan's steps. The server owns the stages
+  (decide_vote → voting → leverage → resolved); clients call action endpoints
+  and observe stage_changed / ready_changed / intent_set / vote_resolved /
+  resolved over WS.
+
+  OPEN, it is the open step: the heading (the current ask), one sentence on
+  what is being rolled, the dice split into "For" and "Against", then the
+  controls for the stage. No box and no wash: the heading and the space around
+  it make it a step.
+  RESOLVED, it is a finished step: one line (the result) that opens in place
+  to show the dice. It sits in its place among the plan's steps, above the
+  step that acts on the result.
+
+  MainEventView draws it either inside the plan's card (so it lands between the
+  finished steps and the open one) or alone when no plan is on screen (a
+  scene's roll). Shake-Up draws it too, with no heading.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -16,10 +27,18 @@
 		leverageRoll, useBankedDie, callVote, skipVote, voteOnRoll,
 		setRollIntent, setRollReady,
 	} from '$lib/api';
+	import type { StepHeading as StepHeadingData } from '$lib/stepHeading';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { useSecretCounts } from '$lib/secretCountsContext';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Chip from '$lib/components/shared/Chip.svelte';
+	import DieMark from '$lib/components/shared/DieMark.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
+	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import StepHeading from '$lib/components/shared/StepHeading.svelte';
+	import DieTile from './plans/shared/DieTile.svelte';
+	import FinishedStep from './plans/shared/FinishedStep.svelte';
 
 	interface Props {
 		roll: DiceRoll;
@@ -34,6 +53,9 @@
 		/** True when the actor cannot leverage their own assets (Make Demands
 		 *  control_leverage winner has authority). */
 		actorLeverageBlocked?: boolean;
+		/** The open step's heading ("Your move — aid or interfere"). Null where
+		 *  the surrounding screen already says it (Shake-Up). */
+		heading?: StepHeadingData | null;
 	}
 
 	let {
@@ -47,6 +69,7 @@
 		players,
 		playerNameMap,
 		actorLeverageBlocked = false,
+		heading = null,
 	}: Props = $props();
 
 	// Per-viewer known-secret counts (undefined outside a provider → no eyes).
@@ -130,7 +153,7 @@
 		myUnspentBanked.filter(b => !draftBankedIds.has(b.id)).length
 	);
 
-	// Split dice into pools by side.
+	// Split dice into the two sides: the dice for the roll, and the dice against it.
 	const actorPool = $derived(dice.filter(d => !d.is_interference));
 	const intPool = $derived(dice.filter(d => d.is_interference));
 
@@ -154,24 +177,18 @@
 		return dups;
 	});
 
-	// Title text for a die, annotated with why it isn't counting (titles are a
-	// desktop-only affordance — the visible caption below covers touch).
-	function dieTitle(d: DiceRollDie): string {
+	// What a die is, in words: whose it is and why it isn't counting. The tile's
+	// accessible name and its tooltip (the visible cue is its edge and face).
+	function dieLabel(d: DiceRollDie): string {
 		const who = playerNameMap.get(d.player_id) ?? '?';
+		if (d.is_interference) return `${who}'s die, interfering${d.is_cancelled ? ', cancelled' : ''}`;
 		const src = d.leveraged_asset_id
 			? assets.find(a => a.id === d.leveraged_asset_id)?.name ?? 'asset'
-			: 'base/banked die';
-		if (d.is_cancelled) return `${who} · ${src} · cancelled by interference`;
-		if (duplicateDieIds.has(d.id)) return `${who} · ${src} · duplicate face (doesn't add to the score)`;
-		return `${who} · ${src}`;
+			: 'base or banked die';
+		if (d.is_cancelled) return `${who}'s die (${src}), cancelled by interference`;
+		if (duplicateDieIds.has(d.id)) return `${who}'s die (${src}), repeats a face already counted`;
+		return `${who}'s die (${src})`;
 	}
-
-	const stageLabel = $derived({
-		decide_vote: 'Vote?',
-		voting: 'Voting',
-		leverage: 'Leverage',
-		resolved: 'Resolved',
-	}[stage]);
 
 	// ── Shake-Up mode ─────────────────────────────────────────────────────────
 	// Derived entirely from roll.is_shake_up — shake-up rolls are actor-only
@@ -184,6 +201,26 @@
 			: 'their category'
 	);
 	const actorName = $derived(playerNameMap.get(roll.actor_id) ?? '?');
+
+	// One sentence on what is being rolled, so the dice below it have a subject.
+	// Numbers of dice are words, as a person would say them.
+	const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+	const word = (n: number) => NUMBER_WORDS[n] ?? String(n);
+	const dieNoun = (n: number) => (n === 1 ? 'die' : 'dice');
+	const brief = $derived.by(() => {
+		// Shake-Up says this itself, in the screen around the roll.
+		if (isShakeUp) return '';
+		let text = `${actorName} rolls ${word(actorPool.length)} ${dieNoun(actorPool.length)} against difficulty ${effectiveDifficulty}`;
+		if (roll.adjusted_difficulty != null && roll.adjusted_difficulty !== roll.difficulty) {
+			text += `, ${roll.adjusted_difficulty > roll.difficulty ? 'up' : 'down'} from ${roll.difficulty} by the vote`;
+		}
+		if (intPool.length > 0) {
+			text += `, with ${word(intPool.length)} ${dieNoun(intPool.length)} rolled against them. Each interfering die cancels one matching die.`;
+		} else {
+			text += '.';
+		}
+		return text;
+	});
 
 	let busy = $state(false);
 	let error = $state('');
@@ -238,12 +275,14 @@
 	// Commit the draft (one API call per leverage — preserves one chat-log
 	// entry per asset), then ready. Each leverageRoll/useBankedDie reveals a
 	// die publicly; this burst is the player's reveal-on-Ready.
-	const onReadySubmit = () => run(async () => {
-		if (needsIntent) return;
+	// `commit = false` is a pass: ready without the draft (nothing is committed,
+	// and the draft is dropped).
+	const submit = (commit: boolean) => run(async () => {
+		if (commit && needsIntent) return;
 		// Snapshot everything reactive up front — the assets/bankedDice props
 		// mutate via WS as commits land, so capture the plan before any await.
-		const assetIds = [...draftAssetIds];
-		const bankedIds = [...draftBankedIds];
+		const assetIds = commit ? [...draftAssetIds] : [];
+		const bankedIds = commit ? [...draftBankedIds] : [];
 		const intentToSet = !isActor && !intentLocked ? (draftIntent ?? me?.intent ?? null) : null;
 		const committingAny = assetIds.length > 0 || bankedIds.length > 0;
 		// If this submit empties my hand, the server auto-readies me on the
@@ -276,29 +315,45 @@
 			await setRollReady(roll.id, true);
 		}
 	});
+	const onReadySubmit = () => submit(true);
+	const onPass = () => submit(false);
 	const onUnready = () => run(() => setRollReady(roll.id, false));
 
-	// ── Player roster (for participants chips) ───────────────────────────────
+	// The main button names what it commits. It is the one filled thing in the
+	// step; with nothing drafted it is the pass (or, for the roller, the roll).
+	const mainLabel = $derived.by(() => {
+		if (isShakeUp) return hasDraft ? `Commit ${draftCount} and roll` : 'Roll the dice';
+		if (isActor) return hasDraft ? 'Commit and roll' : 'Roll';
+		if (!hasDraft) return 'Pass';
+		return effectiveIntent === 'interfere' ? 'Commit interference'
+			: effectiveIntent === 'aid' ? 'Commit aid' : 'Commit';
+	});
+
+	// What the draft will spend, in a notice: leveraging an asset is a cost.
+	const draftedAssetNames = $derived(
+		visibleAssets.filter(a => draftAssetIds.has(a.id)).map(a => a.name)
+	);
+	const joinNames = (names: string[]) =>
+		names.length <= 1 ? (names[0] ?? '')
+			: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+	// ── Player roster ────────────────────────────────────────────────────────
 	// A locked-ready participant (no dice to add) is called out explicitly so
 	// the actor can see at a glance who's been auto-readied vs. who's still
 	// thinking. The actor's "Ready" click can resolve the roll the instant
 	// every other participant is ready; surfacing locked-ready prevents
 	// surprise resolutions.
-	function chipLabel(p: RollParticipant): string {
-		const name = playerNameMap.get(p.player_id) ?? '?';
-		if (p.player_id === roll.actor_id) {
-			return `${name} · actor · ${p.is_ready ? 'ready' : 'not ready'}`;
-		}
-		const intent = p.intent ?? 'choosing…';
-		if (p.is_ready && p.intent == null) {
-			return `${name} · 🔒 no dice · ready`;
-		}
-		return `${name} · ${intent} · ${p.is_ready ? 'ready' : 'not ready'}`;
+	function rosterStatus(p: RollParticipant): string {
+		const ready = p.is_ready ? 'ready' : 'not ready';
+		if (p.player_id === roll.actor_id) return `actor · ${ready}`;
+		if (p.is_ready && p.intent == null) return 'no dice · ready';
+		return `${p.intent ?? 'choosing…'} · ${ready}`;
 	}
+	const playerFor = (id: number) => players.find(p => p.id === id);
 
 	// ── Footer tally ─────────────────────────────────────────────────────────
 	// Counts PLAYERS by side, in the same unit as "N of M ready" beside it and
-	// the roster chips above. It used to count dice in each pool, so the
+	// the roster above. It used to count dice in each pool, so the
 	// actor's two base dice read as "2 aid" and a player who had picked
 	// interfere but not yet committed a die read as "0 interfere". The dice
 	// themselves are already shown in the pools. The actor always aids; a
@@ -326,7 +381,7 @@
 					? assets.find(a => a.id === d.leveraged_asset_id) : undefined;
 				return {
 					id: d.id,
-					playerID: d.player_id,
+					player: playerFor(d.player_id),
 					playerName: playerNameMap.get(d.player_id) ?? '?',
 					source: asset ? asset.name : 'banked die',
 					isInterference: d.is_interference,
@@ -335,449 +390,357 @@
 	);
 </script>
 
-<div class="roll-panel">
-	<div class="roll-header">
-		<span class="roll-title">Dice Roll</span>
-		<span class="roll-meta">
-			{#if isShakeUp}
-				Each distinct face = 1 token.
-			{:else}
-				Difficulty <strong>{roll.difficulty}</strong>
-				{#if roll.adjusted_difficulty != null && roll.adjusted_difficulty !== roll.difficulty}
-					→ <strong class="adjusted">{roll.adjusted_difficulty}</strong>
-				{/if}
-			{/if}
-		</span>
-		<span class="roll-actor">Actor: {playerNameMap.get(roll.actor_id) ?? '?'}</span>
-		<span class="stage-chip" data-stage={stage}>{stageLabel}</span>
-	</div>
-
-	{#if error}
-		<ErrorText message={error} />
-	{/if}
-
-	<!-- Dice pools (always visible) -->
-	<div class="dice-section">
-		<div class="dice-group">
-			<span class="dice-label">Actor pool</span>
-			<div class="dice-row">
-				{#each actorPool as die (die.id)}
-					<div
-						class="die"
-						class:cancelled={die.is_cancelled}
-						class:duplicate={duplicateDieIds.has(die.id)}
-						class:unrolled={die.face == null}
-						style:border-color={playerColorByID(die.player_id, players)}
-						title={dieTitle(die)}
-					>{die.face ?? '🎲'}</div>
-				{/each}
-			</div>
+{#snippet dieGroup(label: string | null, group: DiceRollDie[])}
+	<div class="dice-group">
+		{#if label}<span class="dice-label">{label}</span>{/if}
+		<div class="dice-row">
+			{#each group as die (die.id)}
+				<DieTile
+					face={die.face}
+					color={playerColorByID(die.player_id, players)}
+					label={dieLabel(die)}
+					cancelled={die.is_cancelled}
+					duplicate={duplicateDieIds.has(die.id)}
+				/>
+			{/each}
 		</div>
+	</div>
+{/snippet}
+
+{#snippet diceGroups()}
+	<div class="dice-groups">
+		<!-- Labelled only when there is a second group to tell it from. -->
+		{@render dieGroup(intPool.length > 0 ? 'For' : null, actorPool)}
 		{#if intPool.length > 0}
-			<div class="dice-group interference">
-				<span class="dice-label">Interference</span>
-				<div class="dice-row">
-					{#each intPool as die (die.id)}
-						<div
-							class="die int"
-							class:unrolled={die.face == null}
-							style:border-color={playerColorByID(die.player_id, players)}
-							title={playerNameMap.get(die.player_id) ?? '?'}
-						>{die.face ?? '🎲'}</div>
-					{/each}
-				</div>
-			</div>
+			{@render dieGroup('Against', intPool)}
 		{/if}
-		<!-- {#if duplicateDieIds.size > 0}
-			<p class="dupe-hint">Greyed dice repeat a face already counted — only distinct faces add to the score.</p>
-		{/if} -->
 	</div>
+{/snippet}
 
-	<!-- ── Stage: decide_vote ──────────────────────────────────────────────── -->
-	{#if stage === 'decide_vote'}
-		{#if isActor}
-			<div class="stage-actions">
-				<button class="action-btn primary" onclick={onCallVote} disabled={busy}>
-					Call difficulty vote
-				</button>
-				<button class="action-btn secondary" onclick={onSkipVote} disabled={busy}>
-					Skip vote
-				</button>
-			</div>
+{#if stage === 'resolved'}
+	<!-- A finished step: one line, and the dice a tap away. -->
+	<FinishedStep>
+		{#snippet mark()}<DieMark size={16} />{/snippet}
+		{#if isShakeUp}
+			Rolled <span class="status-word">+{roll.result ?? 0} token{(roll.result ?? 0) === 1 ? '' : 's'}</span>
+			· {roll.result ?? 0} distinct face{(roll.result ?? 0) === 1 ? '' : 's'}
 		{:else}
-			<p class="stage-hint">Waiting for {playerNameMap.get(roll.actor_id) ?? 'the actor'} to decide about a difficulty vote…</p>
+			Rolled
+			<span class="status-word" class:success={roll.outcome === 'make'} class:danger={roll.outcome === 'mar'}>{roll.outcome === 'make' ? 'Make' : 'Mar'}</span>
+			· {roll.result} distinct face{roll.result === 1 ? '' : 's'}, difficulty {effectiveDifficulty}
 		{/if}
-	{/if}
+		{#snippet detail()}{@render diceGroups()}{/snippet}
+	</FinishedStep>
+{:else}
+	<section class="roll-step" aria-label="Dice roll">
+		<StepHeading {heading} />
+		{#if brief}<p class="roll-brief">{brief}</p>{/if}
 
-	<!-- ── Stage: voting ───────────────────────────────────────────────────── -->
-	{#if stage === 'voting'}
-		<div class="stage-actions">
-			<p class="stage-hint">
-				Each vote shifts difficulty by 1.
-			</p>
-			<p class="stage-hint">
-				 {voteCount} of {players.length} have voted.
-			</p>
-			{#if myVote}
-				<p class="stage-hint">
-					You voted {myVote.vote === 1 ? '+1 (harder)' : '−1 (easier)'}.
-					Waiting on others…
-				</p>
-			{:else}
-				<div class="vote-buttons">
-					<button class="vote-btn easier" onclick={() => onVote(-1)} disabled={busy}>
-						−1 (easier)
+		{#if error}
+			<ErrorText message={error} />
+		{/if}
+
+		<!-- Dice (always visible): the dice for the roll, and the dice against it. -->
+		{@render diceGroups()}
+
+		<!-- ── Stage: decide_vote ──────────────────────────────────────────────── -->
+		{#if stage === 'decide_vote'}
+			{#if isActor}
+				<div class="step-actions">
+					<button class="action-btn primary" onclick={onCallVote} disabled={busy}>
+						Call difficulty vote
 					</button>
-					<button class="vote-btn harder" onclick={() => onVote(1)} disabled={busy}>
-						+1 (harder)
+					<button class="action-btn secondary" onclick={onSkipVote} disabled={busy}>
+						Skip vote
 					</button>
 				</div>
 			{/if}
-		</div>
-	{/if}
+			<!-- Everyone else has nothing to do but wait: the heading already says on whom. -->
+		{/if}
 
-	<!-- ── Stage: leverage ─────────────────────────────────────────────────── -->
-	{#if stage === 'leverage'}
-		{#if isShakeUp && !isActor}
-			<!-- Shake-up rolls are actor-only; a non-roller has nothing to do but
-			     watch the pools fill in. -->
-			<p class="stage-hint">{actorName} is rolling for {shakeUpCategoryLabel}…</p>
-		{:else}
-			<!-- Intent + ready row. Picks stay in the local draft until Ready. -->
-			<div class="intent-row">
+		<!-- ── Stage: voting ───────────────────────────────────────────────────── -->
+		{#if stage === 'voting'}
+			<p class="muted-text">
+				Each vote moves the difficulty by one. {voteCount} of {players.length} have voted.
+			</p>
+			<!-- A vote is a choice, so it wears no meaning colour: the words and the
+			     order say which is which. Once cast it shows as picked and locked. -->
+			<div class="choice-row">
+				<Chip
+					selected={myVote?.vote === -1}
+					disabled={busy || myVote != null}
+					onclick={() => onVote(-1)}
+				>
+					Easier (−1)
+				</Chip>
+				<Chip
+					selected={myVote?.vote === 1}
+					disabled={busy || myVote != null}
+					onclick={() => onVote(1)}
+				>
+					Harder (+1)
+				</Chip>
+			</div>
+			{#if myVote}
+				<p class="muted-text">
+					You voted {myVote.vote === 1 ? '+1 (harder)' : '−1 (easier)'}. The votes reveal together.
+				</p>
+			{/if}
+		{/if}
+
+		<!-- ── Stage: leverage ─────────────────────────────────────────────────── -->
+		{#if stage === 'leverage'}
+			{#if isShakeUp && !isActor}
+				<!-- Shake-up rolls are actor-only; a non-roller has nothing to do but
+				     watch the dice fill in. -->
+				<p class="muted-text">{actorName} is rolling for {shakeUpCategoryLabel}…</p>
+			{:else}
+				{#if !isShakeUp && !myReady}
+					<p class="roll-brief">
+						{isActor
+							? 'Leverage assets to add dice for the roll, then roll.'
+							: 'Leverage an asset to add a die for the roll or against it, or pass.'}
+					</p>
+				{/if}
+
+				<!-- Aid or interfere. The actor always aids, so has no choice to make.
+				     Once a die is committed the side is locked: it stays shown as
+				     picked, and can't be pressed. -->
 				{#if !isActor}
-					{#if intentLocked}
-						<span class="intent-badge locked">
-							{effectiveIntent === 'aid' ? "You're aiding" : "You're interfering"}
-						</span>
-					{:else}
-						<button
-							class="intent-btn aid"
-							class:selected={effectiveIntent === 'aid'}
-							aria-pressed={effectiveIntent === 'aid'}
+					<div class="choice-row">
+						<Chip
+							selected={effectiveIntent === 'aid'}
+							disabled={busy || intentLocked}
 							onclick={() => setDraftIntent('aid')}
-							disabled={busy}
 						>
 							Aid
-						</button>
-						<button
-							class="intent-btn interfere"
-							class:selected={effectiveIntent === 'interfere'}
-							aria-pressed={effectiveIntent === 'interfere'}
+						</Chip>
+						<Chip
+							selected={effectiveIntent === 'interfere'}
+							disabled={busy || intentLocked}
 							onclick={() => setDraftIntent('interfere')}
-							disabled={busy}
 						>
 							Interfere
-						</button>
-					{/if}
+						</Chip>
+					</div>
 				{/if}
-				{#if myReady}
-					<button
-						class="ready-btn ready"
-						onclick={onUnready}
-						disabled={busy || !canCommit}
-						title={!canCommit ? 'You have no dice left to add — automatically ready.' : ''}
-					>
-						{canCommit ? 'Unready' : (isShakeUp ? 'Rolled' : 'Ready (maxed out)')}
-					</button>
-				{:else}
-					<button
-						class="ready-btn"
-						onclick={onReadySubmit}
-						disabled={busy || needsIntent}
-						title={needsIntent ? 'Pick aid or interfere first.' : ''}
-					>
-						{#if isShakeUp}
-							{hasDraft ? `Commit ${draftCount} & roll` : 'Roll the dice'}
-						{:else}
-							{hasDraft ? `Commit ${draftCount} & ready` : 'Ready'}
-						{/if}
-					</button>
-				{/if}
-			</div>
-			{#if !isShakeUp}
-				<p class="ready-note">Opposing leverages will unready you.</p>
-			{/if}
 
-			<!-- Banked dice (once a side is chosen, or I'm the actor). Rare and free,
-			     so they lead the leverage choices above the asset list. Not offered
-			     on shake-up rolls — banked dice aren't spendable there (ruling 3). -->
-			{#if !isShakeUp && (isActor || effectiveIntent != null) && myUnspentBanked.length > 0}
-				<div class="banked-section">
-					<span class="section-label">Banked dice ({myUnspentBanked.length})</span>
-					<div class="banked-list">
-						{#each myUnspentBanked as b (b.id)}
-							<button
-								class="banked-btn"
-								class:drafted={draftBankedIds.has(b.id)}
-								aria-pressed={draftBankedIds.has(b.id)}
-								onclick={() => toggleDraftBanked(b)}
-								disabled={busy || myReady}
-								title="Spend this banked die on Ready (random face at resolution)"
-							>
-								{draftBankedIds.has(b.id) ? '🎲 Selected' : '🎲 Spend (+1 die)'}
-							</button>
+				<!-- Banked dice (once a side is chosen, or I'm the actor). Rare and free,
+				     so they lead the leverage choices above the asset list. Not offered
+				     on shake-up rolls — banked dice aren't spendable there (ruling 3). -->
+				{#if !isShakeUp && (isActor || effectiveIntent != null) && myUnspentBanked.length > 0}
+					<div class="leverage-group">
+						<span class="section-label">Banked dice ({myUnspentBanked.length})</span>
+						<div class="choice-row">
+							{#each myUnspentBanked as b (b.id)}
+								<Chip
+									selected={draftBankedIds.has(b.id)}
+									disabled={busy || myReady}
+									title="Spend this banked die on Ready (random face at resolution)"
+									onclick={() => toggleDraftBanked(b)}
+								>
+									<DieMark size={16} />
+									{draftBankedIds.has(b.id) ? 'Selected' : 'Spend a banked die'}
+								</Chip>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- My assets (once a side is chosen, or I'm the actor). Assets leveraged
+				     on a prior roll are filtered out; current-roll commits stay visible. -->
+				{#if (isActor || effectiveIntent != null) && visibleAssets.length > 0}
+					<div class="leverage-group">
+						<span class="section-label">Leverage from your retinue</span>
+						{#each visibleAssets as asset (asset.id)}
+							<AssetCardSelectable
+								{asset}
+								ownerColor={myColor}
+								knownSecretCount={secretCounts?.known(asset.id)}
+								leverageMode
+								leverageDrafted={draftAssetIds.has(asset.id)}
+								leverageDisabled={myReady || (isActor && actorLeverageBlocked)}
+								onToggleLeverage={toggleDraftAsset}
+							/>
 						{/each}
 					</div>
-				</div>
-			{/if}
-
-			<!-- My assets (once a side is chosen, or I'm the actor). Assets leveraged
-			     on a prior roll are filtered out; current-roll commits stay visible. -->
-			{#if (isActor || effectiveIntent != null) && visibleAssets.length > 0}
-				<div class="my-assets">
-					<span class="section-label">Your assets</span>
-					{#each visibleAssets as asset (asset.id)}
-						<AssetCardSelectable
-							{asset}
-							ownerColor={myColor}
-							knownSecretCount={secretCounts?.known(asset.id)}
-							leverageMode
-							leverageDrafted={draftAssetIds.has(asset.id)}
-							leverageDisabled={myReady || (isActor && actorLeverageBlocked)}
-							onToggleLeverage={toggleDraftAsset}
-						/>
-					{/each}
-				</div>
-			{/if}
-
-			{#if !isShakeUp}
-				<!-- Public commit feed -->
-				{#if commitFeed.length > 0}
-					<div class="commit-feed">
-						<span class="section-label">Commits this roll</span>
-						<ul>
-							{#each commitFeed as c (c.id)}
-								<li>
-									<span class="dot" style:background={playerColorByID(c.playerID, players)}></span>
-									<span class="cf-name">{c.playerName}</span>
-									<span class="cf-source">· {c.source}</span>
-									<span class="cf-side" class:interfere={c.isInterference}>
-										· {c.isInterference ? 'interfere' : 'aid'}
-									</span>
-								</li>
-							{/each}
-						</ul>
-					</div>
 				{/if}
 
-				<!-- Player roster -->
-				<div class="roster">
-					{#each participants as p (p.player_id)}
-						<span class="chip" style:border-color={playerColorByID(p.player_id, players)}>
-							{chipLabel(p)}
-						</span>
-					{/each}
-				</div>
+				<!-- What the pick will cost. Leveraging an asset turns it, so it is
+				     said before the button that commits it. -->
+				{#if draftedAssetNames.length > 0}
+					<Notice tone="warning">{joinNames(draftedAssetNames)} will be leveraged.</Notice>
+				{/if}
+				{#if draftBankedIds.size > 0}
+					<Notice tone="warning">
+						{draftBankedIds.size === 1 ? 'A banked die' : `${draftBankedIds.size} banked dice`} will be spent.
+					</Notice>
+				{/if}
 
-				<!-- Footer summary -->
-				<p class="footer-summary">
-					{aidCount} aid · {interfereCount} interfere ·
-					{participants.filter(p => p.is_ready).length} of {participants.length} ready
-				</p>
+				<!-- The step's one main button names what it commits; the pass sits
+				     beside it. Already ready: just the way back. -->
+				{#if myReady}
+					<div class="step-actions">
+						<button
+							class="action-btn secondary"
+							onclick={onUnready}
+							disabled={busy || !canCommit}
+						>
+							{canCommit ? 'Unready' : (isShakeUp ? 'Rolled' : 'Ready (nothing left to add)')}
+						</button>
+					</div>
+					{#if !canCommit}
+						<p class="muted-text">You have no dice left to add, so you are ready automatically.</p>
+					{/if}
+				{:else}
+					<div class="step-actions">
+						<button
+							class="action-btn primary"
+							onclick={onReadySubmit}
+							disabled={busy || needsIntent}
+						>
+							{mainLabel}
+						</button>
+						{#if hasDraft && !isActor && !isShakeUp}
+							<button class="action-btn secondary" onclick={onPass} disabled={busy}>
+								Pass
+							</button>
+						{/if}
+					</div>
+					{#if needsIntent}
+						<p class="muted-text">Pick aid or interfere first.</p>
+					{/if}
+				{/if}
+				{#if !isShakeUp}
+					<p class="muted-text small">Opposing leverages will unready you.</p>
+				{/if}
+
+				{#if !isShakeUp}
+					<!-- Public commit feed -->
+					{#if commitFeed.length > 0}
+						<div class="leverage-group">
+							<span class="section-label">Commits this roll</span>
+							<ul class="plain-list">
+								{#each commitFeed as c (c.id)}
+									<li>
+										<PlayerShape player={c.player} size={12} />
+										<span>{c.playerName} · {c.source} · {c.isInterference ? 'interfere' : 'aid'}</span>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+
+					<!-- Where everyone stands: plain lines, not chips, since none of them
+					     can be pressed. -->
+					<ul class="plain-list roster">
+						{#each participants as p (p.player_id)}
+							<li>
+								<PlayerShape player={playerFor(p.player_id)} size={12} />
+								<span>{playerNameMap.get(p.player_id) ?? '?'} · {rosterStatus(p)}</span>
+							</li>
+						{/each}
+					</ul>
+
+					<!-- Footer summary -->
+					<p class="footer-summary">
+						{aidCount} aid · {interfereCount} interfere ·
+						{participants.filter(p => p.is_ready).length} of {participants.length} ready
+					</p>
+				{/if}
 			{/if}
 		{/if}
-	{/if}
-
-	<!-- ── Stage: resolved ─────────────────────────────────────────────────── -->
-	{#if stage === 'resolved'}
-		{#if isShakeUp}
-			<div class="result-banner shake-up">
-				<span class="result-label">+{roll.result ?? 0} token{(roll.result ?? 0) === 1 ? '' : 's'}</span>
-				<span class="result-score">{roll.result ?? 0} distinct face{(roll.result ?? 0) === 1 ? '' : 's'}</span>
-			</div>
-		{:else}
-			<div class="result-banner" class:make={roll.outcome === 'make'} class:mar={roll.outcome === 'mar'}>
-				<span class="result-label">{roll.outcome === 'make' ? 'Make' : 'Mar'}</span>
-				<span class="result-score">{roll.result} distinct face{roll.result === 1 ? '' : 's'} vs. difficulty {effectiveDifficulty}</span>
-			</div>
-		{/if}
-	{/if}
-</div>
+	</section>
+{/if}
 
 <style>
-	.roll-panel {
-		border: 1px solid var(--color-border-warm-strong);
-		border-radius: 6px;
-		padding: 0.75rem;
-		background: var(--color-surface-active);
+	/* The open roll is a step: a column with the steps' gaps, and nothing around it. */
+	.roll-step {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: var(--space-3);
 		flex-shrink: 0;
 	}
 
-	.roll-header {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		flex-wrap: wrap;
-	}
-
-	.roll-title { color: var(--color-accent); font-size: 0.9rem; }
-	.roll-meta { font-size: 0.85rem; color: var(--color-text-muted); }
-	.adjusted { color: var(--color-accent-hover); }
-	.roll-actor { font-size: 0.78rem; color: var(--color-text-muted); }
-
-	.stage-chip {
-		margin-left: auto;
-		font-size: 0.7rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		padding: 0.15rem 0.5rem;
-		border-radius: 3px;
-		background: var(--color-border-warm);
-		color: var(--color-accent);
-	}
-	.stage-chip[data-stage="resolved"] { background: var(--color-chip-green-bg); color: var(--color-success); }
-	.stage-chip[data-stage="voting"] { background: var(--color-chip-violet-bg); color: var(--color-chip-violet-text); }
-
-	/* Dice */
-	.dice-section { display: flex; flex-direction: column; gap: 0.4rem; }
-	.dice-group { display: flex; align-items: center; gap: 0.5rem; }
-	.dice-group.interference .dice-label { color: var(--color-danger); }
-	.dice-label { font-size: 0.75rem; color: var(--color-text-muted); min-width: 90px; flex-shrink: 0; }
-	.dice-row { display: flex; gap: 0.35rem; flex-wrap: wrap; }
-	.die {
-		width: 32px; height: 32px; border-radius: 5px;
-		border: 2px solid var(--color-accent); background: var(--color-surface-gold-dim);
-		color: var(--color-text); font-weight: 600; font-size: 1rem;
-		display: flex; align-items: center; justify-content: center;
-	}
-	.die.int { background: var(--color-chip-red-bg); color: var(--color-chip-red-text); }
-	.die.cancelled { opacity: 0.3; text-decoration: line-through; border-style: dashed; }
-	/* Duplicate (uncancelled but redundant) faces: greyed out and desaturated
-	   so they read as "doesn't count," yet stay distinct from the dashed,
-	   struck-through interference-cancelled dice. */
-	.die.duplicate { opacity: 0.45; filter: grayscale(1); color: var(--color-text-faint); }
-	.die.unrolled { color: var(--color-text-muted); border-style: dashed; font-size: 1.1rem; }
-
-	/* Stage hints / actions */
-	.stage-actions { display: flex; flex-direction: column; gap: 0.5rem; }
-	.stage-hint { font-size: 0.85rem; color: var(--color-text-muted); margin: 0; }
-
-
-	/* Vote buttons */
-	.vote-buttons { display: flex; gap: 0.5rem; }
-	.vote-btn {
-		flex: 1;
-		min-height: 44px;
-		padding: 0.5rem;
-		border-radius: 5px;
-		font-size: 0.9rem;
-		cursor: pointer;
-		border: 1px solid;
-	}
-	.vote-btn.easier { background: var(--color-chip-green-bg); border-color: var(--color-success); color: var(--color-success); }
-	.vote-btn.harder { background: var(--color-chip-red-bg); border-color: var(--color-danger); color: var(--color-danger); }
-	.vote-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	/* Intent + ready row */
-	.intent-row {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		flex-wrap: wrap;
-	}
-	.intent-btn {
-		flex: 1;
-		min-height: 44px;
-		padding: 0.5rem;
-		border-radius: 5px;
-		font-size: 0.9rem;
-		border: 1px solid;
-	}
-	.intent-btn.aid { background: transparent; border-color: var(--color-success); color: var(--color-success); }
-	.intent-btn.interfere { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
-	/* Draft picks are muted until selected, so the chosen side reads clearly. */
-	.intent-btn:not(.selected) { opacity: 0.55; }
-	.intent-btn.aid.selected { background: var(--color-chip-green-bg); }
-	.intent-btn.interfere.selected { background: var(--color-chip-red-bg); }
-	.intent-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-	.intent-badge {
-		font-size: 0.85rem;
-		color: var(--color-accent-hover);
-		padding: 0.35rem 0.6rem;
-		border: 1px solid var(--color-border-warm-strong);
-		border-radius: 4px;
-	}
-	.intent-badge.locked { opacity: 0.6; }
-	.ready-btn {
-		min-height: 44px;
-		padding: 0.5rem 0.8rem;
-		margin-left: auto;
-		border-radius: 5px;
-		font-size: 0.9rem;
-		background: var(--color-border);
-		color: var(--color-text);
-		border: 1px solid var(--color-neutral);
-		cursor: pointer;
-	}
-	.ready-btn.ready {
-		background: var(--color-chip-green-bg);
-		color: var(--color-success);
-		border-color: var(--color-success);
-	}
-	.ready-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-	.ready-note {
+	.roll-brief {
 		margin: 0;
-		font-size: 0.72rem;
-		color: var(--color-text-faint);
-		text-align: right;
-	}
-
-	/* Sections */
-	.section-label {
-		font-size: 0.78rem;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-	.my-assets { display: flex; flex-direction: column; gap: 0.4rem; }
-	.banked-section { display: flex; flex-direction: column; gap: 0.4rem; }
-	.banked-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-	.banked-btn {
-		min-height: 44px;
-		padding: 0.4rem 0.7rem;
-		border: 1px solid var(--color-accent);
-		border-radius: 4px;
-		background: var(--color-surface-gold-dim);
+		font-size: var(--text-body);
+		line-height: 1.5;
 		color: var(--color-text);
 	}
-	.banked-btn.drafted { background: var(--color-chip-gold-bg); border-color: var(--color-accent); color: var(--color-accent); }
-	.banked-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-	/* Commit feed */
-	.commit-feed { display: flex; flex-direction: column; gap: 0.3rem; }
-	.commit-feed ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
-	.commit-feed li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: var(--color-text-muted); }
-	.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-	.cf-source { color: var(--color-text-muted); }
-	.cf-side { color: var(--color-success); }
-	.cf-side.interfere { color: var(--color-danger); }
-
-	/* Roster + footer */
-	.roster { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-	.chip {
-		font-size: 0.75rem;
-		padding: 0.2rem 0.5rem;
-		border: 1px solid var(--color-neutral);
-		border-radius: 12px;
-		color: var(--color-text-muted);
+	/* Dice: two labelled groups side by side, wrapping on a narrow column. */
+	.dice-groups {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-3) var(--space-5);
 	}
-	.footer-summary { font-size: 0.82rem; color: var(--color-text-muted); margin: 0; }
-
-	/* Result */
-	.result-banner {
-		display: flex; align-items: center; gap: 0.75rem;
-		padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid;
+	.dice-group {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		min-width: 0;
 	}
-	.result-banner.make { border-color: var(--color-success); background: var(--color-chip-green-bg); }
-	.result-banner.mar  { border-color: var(--color-danger); background: var(--color-chip-red-bg); }
-	.result-label { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.06em; }
-	.result-banner.make .result-label { color: var(--color-success); }
-	.result-banner.mar  .result-label { color: var(--color-danger); }
-	.result-banner.shake-up { border-color: var(--color-accent); background: var(--color-surface-gold-dim); }
-	.result-banner.shake-up .result-label { color: var(--color-accent); }
-	.result-score { font-size: 0.82rem; color: var(--color-text-muted); }
+	.dice-label {
+		font-size: var(--text-label);
+		color: var(--color-text-faint);
+	}
+	.dice-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+
+	/* A row of choices: Aid / Interfere, easier / harder, a banked die. Two equal
+	   halves for the pair, and they wrap if a third arrives. */
+	.choice-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+	.choice-row > :global(.chip) { flex: 1 1 8rem; }
+
+	/* The step's buttons: the main one takes the room, the pass sits beside it. */
+	.step-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+	.step-actions > :global(.action-btn) { align-self: stretch; }
+	.step-actions > :global(.action-btn.primary) { flex: 2 1 10rem; }
+	.step-actions > :global(.action-btn.secondary) { flex: 1 1 6rem; }
+
+	/* A cluster of controls under a small label ("Leverage from your retinue"). */
+	.leverage-group {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.section-label {
+		font-size: var(--text-label);
+		color: var(--color-text-faint);
+	}
+
+	/* Who has committed what, and where everyone stands: lines with the player's
+	   shape in front, never chips. */
+	.plain-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+	.plain-list li {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+	.footer-summary {
+		margin: 0;
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
 </style>

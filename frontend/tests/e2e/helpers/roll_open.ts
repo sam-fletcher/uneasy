@@ -1,7 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 
 /**
- * Waits until every page has the open roll on screen (the "Dice Roll" panel).
+ * Waits until every page has the open roll on screen (the roll step, a region
+ * named "Dice roll").
  *
  * Call it between a roll opening and a `/api/dev/force-roll` on it, with every
  * page that is open on the table.
@@ -21,7 +22,7 @@ import { expect, type Page } from '@playwright/test';
 export async function expectRollOpen(...pages: Page[]): Promise<void> {
 	await Promise.all(
 		pages.map(page =>
-			expect(page.locator('.roll-title', { hasText: 'Dice Roll' }).first(), 'the open roll is on screen').toBeVisible({
+			expect(page.getByRole('region', { name: 'Dice roll' }).first(), 'the open roll is on screen').toBeVisible({
 				timeout: 10_000,
 			}),
 		),
