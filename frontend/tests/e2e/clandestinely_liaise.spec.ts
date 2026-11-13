@@ -367,7 +367,7 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	const aliceShare = await chooseShare(alice, "Break partner's meeting peer");
 	await expect(aliceShare.getByText('Break Bob Confidant')).toBeVisible();
 	await pickCard(aliceShare, 'Bob Confidant');
-	await expect(aliceShare.locator('.res-warning')).toBeVisible();
+	await expect(aliceShare.locator('.notice')).toBeVisible();
 	await submitShare(aliceShare);
 	await expect(alice.getByText("You've submitted. Waiting for your partner")).toBeVisible();
 	await expectWaitingOn(bob, ['bob'], 'bob');
