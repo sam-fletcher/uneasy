@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- FeedbackForm.svelte
   Login-gated feedback intake (adr/FEEDBACK_AND_RESET_PLAN.md). Rendered
   inside a RetinueSheet by its callers (HelpButton, the table page's inline
@@ -16,6 +15,7 @@
 	import { getMe, submitFeedback } from '$lib/api';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 
 	let { gameId, route, phase }: { gameId?: string; route?: string; phase?: string } = $props();
 
@@ -58,7 +58,7 @@
 	{:else if !loggedIn}
 		<p class="muted-text">Log in to send feedback.</p>
 	{:else if submitted}
-		<p class="status">Thanks — it's been recorded.</p>
+		<Notice tone="success" live>Thanks — it's been recorded.</Notice>
 	{:else}
 		<label class="field-label" for="feedback-body">What's on your mind?</label>
 		<textarea
@@ -94,27 +94,33 @@
 	.feedback-form {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: var(--space-2);
 	}
 	.field-label {
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
+	/* The global input rule (+layout.svelte) doesn't cover <textarea>, so the
+	   same look is spelled out here. Inside a sheet, a field sits one step
+	   above the sheet's own surface. */
 	textarea {
-		/* The app's global :global(input) dark styling (app-wide layout)
-		   doesn't cover <textarea>, so it needs the same look spelled out here. */
 		background: var(--color-surface-2);
 		color: inherit;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border-control);
+		border-radius: var(--radius-control);
 		font: inherit;
-		padding: 0.6rem 0.8rem;
+		font-size: var(--text-body);
+		padding: var(--space-2) var(--space-3);
 		resize: vertical;
 		min-height: 100px;
 	}
 	textarea:focus {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
+	}
+	/* Each text field is a touch target, so it is at least the touch floor. */
+	.feedback-form input {
+		min-height: var(--size-tap);
 	}
 	.privacy-note {
 		margin: 0;

@@ -1,7 +1,7 @@
-<!-- tokens: not migrated -->
 <!-- Combined entry screen: title + log in / sign up in one mobile-first page. -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/chip.css';
 	import '$lib/components/shared/statusText.css';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -103,21 +103,23 @@
 	</header>
 
 	{#if formReady}
-		<form class="card" onsubmit={(e) => { e.preventDefault(); submit(); }}>
+		<form class="entry" onsubmit={(e) => { e.preventDefault(); submit(); }}>
 			<div class="toggle" role="tablist" aria-label="Log in or sign up">
 				<button
 					type="button"
+					class="chip"
+					class:selected={mode === 'login'}
 					role="tab"
 					aria-selected={mode === 'login'}
-					class:active={mode === 'login'}
 					onclick={() => setMode('login')}
 					disabled={loading}
 				>Log in</button>
 				<button
 					type="button"
+					class="chip"
+					class:selected={mode === 'signup'}
 					role="tab"
 					aria-selected={mode === 'signup'}
-					class:active={mode === 'signup'}
 					onclick={() => setMode('signup')}
 					disabled={loading}
 				>Sign up</button>
@@ -172,42 +174,42 @@
 <style>
 	.screen {
 		position: relative;
-		/* Cancels the shared <main> wrapper's 1rem top/bottom padding so this
-		   min-height:100dvh screen doesn't end up 2rem taller than the
+		/* Cancels the shared <main> wrapper's top and bottom padding, so this
+		   min-height:100dvh screen doesn't end up a gutter taller than the
 		   viewport (and scrollable) on top of it. */
-		margin: -1rem 0;
+		margin: calc(-1 * var(--space-4)) 0;
 		min-height: 100dvh;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 1.5rem;
-		padding: 1.5rem 1rem;
+		gap: var(--space-5);
+		padding: var(--space-5) var(--space-4);
 	}
 
-	/* "Buy the book" + Help, top-right. Generous padding on .buy gives it a
-	   ≥44px tap target while the text itself stays unobtrusive. */
+	/* "The Book" and GitHub, with Help, top-right. The links keep the touch
+	   floor, so each is a 44px target while the text stays unobtrusive. */
 	.top-actions {
 		position: absolute;
-		top: max(0.5rem, env(safe-area-inset-top));
-		right: max(0.5rem, env(safe-area-inset-right));
+		top: max(var(--space-2), env(safe-area-inset-top));
+		right: max(var(--space-2), env(safe-area-inset-right));
 		display: flex;
 		align-items: center;
-		gap: 0.15rem;
+		gap: var(--space-1);
 	}
 	.top-link {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3em;
-		min-height: 44px;
-		padding: 0 0.75rem;
-		color: var(--color-text-muted);
-		font-size: 0.9rem;
+		gap: var(--space-1);
+		min-height: var(--size-tap);
+		padding: 0 var(--space-3);
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
 		text-decoration: none;
-		border-radius: 6px;
+		border-radius: var(--radius-control);
 	}
 	.top-link:hover { color: var(--color-accent); }
-	.top-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+	.top-link:focus-visible { outline: 2px solid var(--color-you); outline-offset: 2px; }
 	.external-icon { flex-shrink: 0; }
 
 	.hero {
@@ -217,66 +219,52 @@
 		font-family: var(--font-display);
 		text-transform: uppercase;
 		letter-spacing: 0.28em;
-		/* Trailing letter-spacing pushes the centered text right; nudge it back. */
-		margin-right: -0.28em;
-		font-size: clamp(0.8rem, 3.5vw, 1.05rem);
+		/* Trailing letter-spacing pushes the centred text right; this pulls it back. */
+		margin-right: calc(-1 * var(--space-1));
+		font-size: var(--text-small);
 		color: var(--color-accent);
 	}
 	h1 {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		margin-top: 0.35rem;
+		margin-top: var(--space-1);
 		font-family: var(--font-display);
-		font-size: clamp(2.8rem, 14vw, 4.25rem);
+		font-size: var(--text-display);
 		line-height: 0.95;
 		text-transform: uppercase;
 		letter-spacing: 0.01em;
 		color: var(--color-accent);
 	}
+	/* "the" is half the title's size, so it stays a small word in the line at
+	   every width. */
 	h1 .the {
-		font-size: 0.5em;
+		font-size: calc(var(--text-display) * 0.5);
 		letter-spacing: 0.12em;
 	}
 	.subtitle {
-		margin-top: 0.75rem;
+		margin-top: var(--space-3);
 		font-family: var(--font-serif);
-		font-size: 1.1rem;
-		color: var(--color-text-muted);
-		/* font-style: italic; */
+		font-size: var(--text-body);
+		color: var(--color-text-secondary);
 	}
 
-	.card {
+	/* The sign-in form sits on the page with no box: a section gets space, and
+	   only the controls in it are boxed. */
+	.entry {
 		width: 100%;
 		max-width: 380px;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 12px;
-		padding: 1.5rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: var(--space-3);
 	}
 
+	/* Log in and Sign up, as two chips: the one you're on wears the selected
+	   border, the way any choice does. */
 	.toggle {
-		display: flex;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 3px;
-		margin-bottom: 0.25rem;
-	}
-	.toggle button {
-		flex: 1;
-		min-height: 44px;
-		padding: 0.5rem;
-		background: transparent;
-		color: var(--color-text-muted);
-		border-radius: 6px;
-	}
-	.toggle button.active {
-		background: var(--color-border);
-		color: var(--color-text);
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-2);
 	}
 	.toggle button:disabled { cursor: not-allowed; }
 
@@ -287,35 +275,36 @@
 		position: relative;
 	}
 	.field input {
-		padding: 1.25rem 0.8rem 0.45rem;
+		min-height: var(--size-tap);
+		padding: var(--space-5) var(--space-3) var(--space-1);
 	}
 	/* Pinned to the field's top-right, opposite the floating label, so the
 	   counter appearing mid-typing never reflows the form. */
 	.field-counter {
 		position: absolute;
-		top: 0.5rem;
-		right: 0.8rem;
+		top: var(--space-2);
+		right: var(--space-3);
 		pointer-events: none;
 	}
 	.field label {
 		position: absolute;
-		left: 0.85rem;
+		left: var(--space-3);
 		top: 50%;
 		transform: translateY(-50%);
 		color: var(--color-text-faint);
-		font-size: 1rem;
+		font-size: var(--text-body);
 		pointer-events: none;
 		transition: top 0.15s ease, font-size 0.15s ease, color 0.15s ease, transform 0.15s ease;
-		max-width: calc(100% - 1.7rem);
+		max-width: calc(100% - var(--space-5));
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 	.field input:focus + label,
 	.field input:not(:placeholder-shown) + label {
-		top: 0.5rem;
+		top: var(--space-2);
 		transform: none;
-		font-size: 0.7rem;
+		font-size: var(--text-label);
 		color: var(--color-accent);
 	}
 	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): the label still
@@ -328,22 +317,22 @@
 		.field label { transition: none; }
 	}
 
-	.primary { margin-top: 0.25rem; align-self: center; }
+	.primary { margin-top: var(--space-1); align-self: center; }
 
 	.forgot-password {
 		text-align: center;
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
 	.forgot-password a { color: var(--color-accent); }
 
 	.credits {
 		position: absolute;
-		bottom: max(1.5rem, env(safe-area-inset-bottom));
+		bottom: max(var(--space-5), env(safe-area-inset-bottom));
 		left: 50%;
 		transform: translateX(-50%);
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-label);
+		color: var(--color-text-secondary);
 		text-align: center;
 		white-space: nowrap;
 	}
@@ -352,5 +341,5 @@
 		text-decoration: none;
 	}
 	.credits a:hover { color: var(--color-accent-hover); }
-	.credits a:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; border-radius: 2px; }
+	.credits a:focus-visible { outline: 2px solid var(--color-you); outline-offset: 2px; border-radius: var(--radius-control); }
 </style>

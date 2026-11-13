@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- Logged-out "locked out?" intake (adr/FEEDBACK_AND_RESET_PLAN.md). There is
   no self-service reset: the owner verifies the requester socially via the
   stated contact channel and hand-generates a reset link. Honest copy only —
@@ -6,6 +5,7 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import { submitResetRequest } from '$lib/api';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
@@ -44,11 +44,11 @@
 		<h1>Locked out?</h1>
 
 		{#if submitted}
-			<p class="status">
+			<Notice tone="success" live>
 				Thanks — a person (not a bot) will verify it's really you over the contact you gave,
 				then send you a link to set a new password. There's no automated email here, so hang
 				tight until you hear back.
-			</p>
+			</Notice>
 			<a class="action-btn secondary" href="/">Back to login</a>
 		{:else}
 			<p class="muted-text">
@@ -122,51 +122,51 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		padding: 1.5rem 1rem;
+		padding: var(--space-5) var(--space-4);
 	}
+	/* The form sits on the page with no box: a section gets space, and only its
+	   controls are boxed. */
 	.card {
 		width: 100%;
 		max-width: 420px;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 12px;
-		padding: 1.5rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: var(--space-3);
 	}
 	h1 {
-		font-size: 1.4rem;
+		font-size: var(--text-title);
 		color: var(--color-accent);
-	}
-	.status {
-		color: var(--color-accent);
-		font-size: 0.9rem;
 	}
 	form {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: var(--space-2);
+	}
+	/* Each text field is a touch target, so it is at least the touch floor. The
+	   honeypot is hidden from everyone, so it keeps its own size. */
+	form input:not(.honeypot) {
+		min-height: var(--size-tap);
 	}
 	.field-label {
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
+	/* The global input rule (+layout.svelte) doesn't cover <textarea>, so the
+	   same look is spelled out here. */
 	textarea {
-		/* The app's global :global(input) dark styling doesn't cover
-		   <textarea>, so it needs the same look spelled out here. */
 		background: var(--color-surface-2);
 		color: inherit;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border-control);
+		border-radius: var(--radius-control);
 		font: inherit;
-		padding: 0.6rem 0.8rem;
+		font-size: var(--text-body);
+		padding: var(--space-2) var(--space-3);
 		resize: vertical;
 		min-height: 72px;
 	}
 	textarea:focus {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
 	}
 	.honeypot {
 		position: absolute;

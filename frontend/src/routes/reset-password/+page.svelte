@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- Redemption side of the operator-driven password reset
   (adr/FEEDBACK_AND_RESET_PLAN.md). Reached via a single-use link an owner
   hand-generates with cmd/resetlink after verifying the requester socially.
@@ -8,6 +7,7 @@
 	import { page } from '$app/state';
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import { submitPasswordReset } from '$lib/api';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
@@ -50,7 +50,7 @@
 			<ErrorText message="This link is missing its token — it may have been copied incorrectly." />
 			<a class="action-btn secondary" href="/locked-out">Request a reset</a>
 		{:else if succeeded}
-			<p class="status">Your password has been updated.</p>
+			<Notice tone="success" live>Your password has been updated.</Notice>
 			<a class="action-btn primary" href="/">Go to login</a>
 		{:else if failed}
 			<ErrorText message="Link invalid or expired — request a new one." />
@@ -99,35 +99,33 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		padding: 1.5rem 1rem;
+		padding: var(--space-5) var(--space-4);
 	}
+	/* The form sits on the page with no box: a section gets space, and only its
+	   controls are boxed. */
 	.card {
 		width: 100%;
 		max-width: 420px;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 12px;
-		padding: 1.5rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: var(--space-3);
 	}
 	h1 {
-		font-size: 1.4rem;
+		font-size: var(--text-title);
 		color: var(--color-accent);
-	}
-	.status {
-		color: var(--color-accent);
-		font-size: 0.9rem;
 	}
 	form {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: var(--space-2);
+	}
+	/* Each text field is a touch target, so it is at least the touch floor. */
+	form input {
+		min-height: var(--size-tap);
 	}
 	.field-label {
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
 	.action-btn {
 		align-self: flex-start;
