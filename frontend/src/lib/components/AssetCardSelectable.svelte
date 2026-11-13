@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!--
 	AssetCardSelectable.svelte
 
@@ -7,32 +6,50 @@
 	in two variants:
 
 	- Display-only (default): name + type, expand to read marginalia.
-	- Selectable: tap target toggles a checkmark; the card grows a coloured
-	  border in the owner's player color when selected. Use the
-	  `selected`/`onToggle` props (multi-select) or pair `selected` with a
-	  parent that clears other cards before flipping (single-select).
+	- Selectable: a checkbox in the header toggles the card's selected state.
+	  Use the `selected`/`onToggle` props (multi-select) or pair `selected` with
+	  a parent that clears other cards before flipping (single-select).
 
-	Owner color is provided by the caller via `ownerColor` so this component
-	stays decoupled from the player list. The caller resolves the color via
-	`playerColor()` from $lib/playerColor.
+	A card is a game piece: the warm piece border, the piece corner and the
+	raised surface. SELECTED is the 2px bright gold border with no fill, and a
+	tick in the checkbox (ToneMark's success tick, the same one a success notice
+	uses, painted gold by the card). Gold
+	alone says "you picked this"; the owner's colour is kept for saying whose
+	the card is. That shows as the owner's shape beside the name, derived from
+	`ownerColor` (so callers need not change); the card's own left edge no
+	longer wears the colour.
+
+	Status reads as words, not badges: "Leveraged" sits under the name in
+	orange beside the die. The card's colour and weight carry nothing the words
+	don't also say.
 
 	The component is intentionally small: it doesn't mutate the asset or
 	tear marginalia. The one exception is leverage during a dice roll — pass
 	`leverageMode` to surface a die toggle in the header's left slot (used by
-	DiceRollPanel's draft-then-submit flow). The die has three states:
-	  - empty outline  → not selected; tap to add it to your draft
-	  - filled (owner)  → drafted (leverageDrafted) or already committed
+	DiceRollPanel's draft-then-submit flow). The die toggle is a chip, so it
+	has the chip's three looks:
+	  - outlined        → not selected; tap to add it to your draft
+	  - gold-bordered   → drafted (leverageDrafted) or already committed
 	    (asset.is_leveraged); committed dice are locked
 	The parent owns draft state and the actual commit (on Ready).
 -->
 <script lang="ts">
+	import './shared/chip.css';
+	import './shared/statusText.css';
 	import { untrack } from 'svelte';
 	import type { Asset } from '$lib/api';
 	import { isBlankAsset, isNeedlesslyAtRisk } from '$lib/assetRisk';
+	import { seatForColor } from '$lib/playerColor';
 	import { hiddenCount } from '$lib/secretCounts';
 	import { useSuccession } from '$lib/successionContext';
 	import AssetTypeIcon from './AssetTypeIcon.svelte';
 	import CrownGlyph from './CrownGlyph.svelte';
+	import LogMark from './LogMark.svelte';
+	import DieMark from './shared/DieMark.svelte';
+	import PlayerShape from './shared/PlayerShape.svelte';
+	import RowMark from './shared/RowMark.svelte';
+	import StarMark from './shared/StarMark.svelte';
+	import ToneMark from './shared/ToneMark.svelte';
 
 	interface Props {
 		asset: Asset;
@@ -177,6 +194,10 @@
 	// and caret red so the fragility reads at a glance. See isNeedlesslyAtRisk.
 	const atRisk = $derived(isNeedlesslyAtRisk(asset));
 
+	// The owner's shape. Null for a colour that isn't one of the five seat
+	// colours, in which case no mark is drawn rather than a wrong one.
+	const ownerSeat = $derived(seatForColor(ownerColor));
+
 	// Line-of-succession crown lookup (ADR-007). Undefined when no provider is
 	// mounted (isolated stories/tests) → no crowns render.
 	const succession = useSuccession();
@@ -189,7 +210,6 @@
 	class:marginalia-selectable={marginaliaSelectable}
 	class:has-leverage={leverageMode && !selectable && !marginaliaSelectable}
 	class:disabled
-	style:--owner-color={ownerColor}
 >
 	<button
 		type="button"
@@ -212,7 +232,7 @@
 					}
 				}}
 			>
-				<span class="check">{selected ? '✓' : ''}</span>
+				{#if selected}<ToneMark tone="success" />{/if}
 			</span>
 		{:else if marginaliaSelectable}
 			<!-- Placeholder keeps the header grid columns aligned with the
@@ -221,11 +241,12 @@
 			<span class="select-tap-placeholder" aria-hidden="true"></span>
 		{:else if leverageMode}
 			<!-- Leverage draft toggle. Shares the left "act on this asset"
-			     slot with the checkbox; the two modes never appear together. -->
+			     slot with the checkbox; the two modes never appear together.
+			     It is a chip: picked is the bright gold border, locked is the
+			     chip's own disabled look. -->
 			<span
-				class="lev-tap"
-				class:filled={leverageFilled}
-				class:locked={leverageLocked}
+				class="lev-tap chip"
+				class:selected={leverageFilled}
 				role="button"
 				tabindex={leverageLocked ? -1 : 0}
 				aria-pressed={leverageFilled}
@@ -246,15 +267,35 @@
 						handleLeverage();
 					}
 				}}
-			>+<span class="die-icon" aria-hidden="true">🎲</span></span>
+			>+<DieMark size={18} /></span>
 		{/if}
 
 		<span class="name-block">
 			<span class="name">
+				{#if ownerSeat != null}
+					<!-- Whose it is: the owner's shape, in their colour. The name
+					     (or the "Owned by" line) is nearby, so it is decoration
+					     to a screen reader. -->
+					<PlayerShape seat={ownerSeat} color={ownerColor} />
+				{/if}
 				<span class="name-text">{asset.name}</span>
 			</span>
-			{#if ownerLabel}
-				<span class="owner-label">{ownerLabel}</span>
+			{#if ownerLabel || asset.is_leveraged}
+				<span class="sub">
+					{#if ownerLabel}
+						<span class="owner-label">{ownerLabel}</span>
+					{/if}
+					{#if asset.is_leveraged}
+						<!-- Passive status: this asset is spent for a roll until
+						     refreshed. Orange, beside its word, so the colour never
+						     has to say it alone. Shown in every mode (leverage
+						     mode filters leveraged assets out of its own list, so
+						     no double-die there). -->
+						<span class="status-word lev-word" title="Spent for a roll until refreshed">
+							<DieMark size={14} />Leveraged
+						</span>
+					{/if}
+				</span>
 			{/if}
 		</span>
 
@@ -262,23 +303,7 @@
 		     separated from the name by the 1fr name-block. -->
 		<span class="meta">
 			{#if asset.is_main_character}
-				<span class="main-badge" title="Main character">★</span>
-			{/if}
-			{#if asset.is_leveraged}
-				<!-- Passive status glyph: this asset is spent for a roll until
-				     refreshed. Echoes the "+🎲" leverage chip; tinted
-				     --color-leveraged. Shown in every mode (leverage mode filters
-				     leveraged assets out of its own list, so no double-die there). -->
-				<span class="lev-badge" title="Leveraged — spent for a roll until refreshed" aria-label="Leveraged">
-					<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-						<rect x="3" y="3" width="18" height="18" rx="3" />
-						<circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
-						<circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" />
-						<circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
-						<circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" />
-						<circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" />
-					</svg>
-				</span>
+				<span class="main-badge" title="Main character"><StarMark size={14} label="Main character" /></span>
 			{/if}
 			{#if showSecrets && knownSecrets > 0}
 				<!-- Open eye: secrets whose content you can read. -->
@@ -307,7 +332,10 @@
 			>
 				{liveMarginalia.length}{tornCount > 0 ? ` / ${asset.marginalia.length}` : ''}
 			</span>
-			<span class="caret" class:at-risk={atRisk} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+			{#if !marginaliaSelectable}
+				<!-- A caret: tapping the header expands the card in place. -->
+				<span class="caret-slot" class:at-risk={atRisk}><RowMark kind="caret" open={expanded} /></span>
+			{/if}
 		</span>
 	</button>
 
@@ -332,7 +360,7 @@
 								}
 							}}
 						>
-							<span class="check">{blankPicked ? '✓' : ''}</span>
+							{#if blankPicked}<ToneMark tone="success" size={14} />{/if}
 						</span>
 						<span class="m-line">
 							<span class="m-text destroys">No marginalia — breaking destroys this asset.</span>
@@ -340,7 +368,7 @@
 					</li>
 				</ul>
 			{:else if asset.marginalia.length === 0}
-				<p class="empty">No marginalia recorded.</p>
+				<p class="empty-note">No marginalia recorded.</p>
 			{:else}
 				<ul class="marginalia">
 					{#each asset.marginalia as m (m.id)}
@@ -348,7 +376,9 @@
 						{@const isPicked = isPickable && selectedMarginaliaID === m.id}
 						<li class:torn={m.is_torn} class:picked={isPicked}>
 							{#if m.is_torn}
-								<span class="torn-mark" aria-label="torn">✗</span>
+								<!-- The house tear, in red: a torn note is a loss. The line
+								     through the words says it too, without colour. -->
+								<span class="torn-mark" role="img" aria-label="torn"><LogMark family="tear" /></span>
 							{:else if marginaliaSelectable}
 								<span
 									class="select-tap m-tap"
@@ -364,7 +394,7 @@
 										}
 									}}
 								>
-									<span class="check">{isPicked ? '✓' : ''}</span>
+									{#if isPicked}<ToneMark tone="success" size={14} />{/if}
 								</span>
 							{:else}
 								<span class="bullet" aria-hidden="true">•</span>
@@ -390,62 +420,66 @@
 </div>
 
 <style>
+	/* A card is a game piece: warm border, piece corner, raised surface. */
 	.card {
-		border: 1px solid var(--color-surface-2);
-		border-left: 3px solid var(--owner-color, var(--color-border-strong));
-		border-radius: 5px;
-		background: var(--color-surface-sunken);
+		border: 1px solid var(--color-border-piece);
+		border-radius: var(--radius-piece);
+		background: var(--color-surface);
 		overflow: hidden;
 	}
 
-	.card.selectable.selected {
-		border-color: var(--owner-color, var(--color-accent));
-		background: var(--color-surface-active);
-	}
+	/* A card that can't be picked (a peer already claimed, say) drops to the
+	   neutral hairline and faint text. It is not faded with opacity, which would
+	   take the words under the contrast floor. */
+	.card.disabled { border-color: var(--color-border); }
+	.card.disabled .name,
+	.card.disabled .owner-label,
+	.card.disabled .count,
+	.card.disabled .meta { color: var(--color-text-faint); }
 
-	.card.disabled {
-		opacity: 0.5;
+	/* SELECTED: the 2px bright gold border with no fill. The second pixel is an
+	   inset shadow so selecting never moves the card or its neighbours. It stays
+	   gold when the card is also disabled: it still shows which one was picked.
+	   (In marginalia-pick mode the card is the one that holds the picked line.) */
+	.card.selected,
+	.card.marginalia-selectable:has(.marginalia li.picked) {
+		border-color: var(--color-you);
+		box-shadow: inset 0 0 0 1px var(--color-you);
 	}
 
 	.header {
 		display: grid;
 		grid-template-columns: auto 1fr auto;
 		align-items: center;
-		gap: 0.5rem;
+		gap: var(--space-2);
 		width: 100%;
-		padding: 0.55rem 0.65rem;
+		padding: var(--space-2) var(--space-3);
 		background: none;
 		border: none;
 		text-align: left;
 		color: inherit;
 		cursor: pointer;
-		min-height: 44px; /* tap target */
+		min-height: var(--size-tap);
+	}
+	.header:focus-visible {
+		outline: 2px solid var(--color-you);
+		outline-offset: -2px;
 	}
 
 	/* select/marginalia/leverage modes all add one left "act" slot, giving 3
 	   children — the base .header layout above already fits that. Plain
 	   display-only cards drop the slot, so they get the narrower 2-column
-	   override below. (The owner dot used to be a separate column; it was
-	   dropped as redundant with the card's owner-color left border, see
-	   .card above.) */
+	   override below. */
 
 	/* Header click is a no-op in marginalia-pick mode (the card stays open)
 	   so don't suggest a pointer affordance there. */
 	.card.marginalia-selectable .header { cursor: default; }
-	.card.marginalia-selectable .caret { display: none; }
 	.card:not(.selectable):not(.marginalia-selectable):not(.has-leverage) .header { grid-template-columns: 1fr auto; }
 
 	.select-tap-placeholder {
-		width: 22px;
-		height: 22px;
+		width: 24px;
+		height: 24px;
 		flex-shrink: 0;
-	}
-
-	/* Highlight a card that has the picked marginalia, so the user can
-	   see at a glance which asset their selection belongs to. */
-	.card.marginalia-selectable:has(.marginalia li.picked) {
-		border-color: var(--owner-color, var(--color-accent));
-		background: var(--color-surface-active);
 	}
 
 	/* The marginalia row's own checkbox + selected state. In pick mode the row
@@ -455,7 +489,7 @@
 		min-height: 32px;
 	}
 	/* Pick mode: every live row is a 44px tap target (docs/STYLE_GUIDE.md). The
-	   22px box stays the visible affordance; its ::after is stretched over the
+	   24px box stays the visible affordance; its ::after is stretched over the
 	   whole row (the li is the positioned ancestor — .m-tap deliberately isn't),
 	   so tapping the text picks it too, and neighbouring rows never overlap
 	   because each is a full 44px tall. */
@@ -463,7 +497,7 @@
 		align-items: center;
 	}
 	.card.marginalia-selectable .marginalia li:not(.torn) {
-		min-height: 44px;
+		min-height: var(--size-tap);
 		position: relative;
 	}
 	.card.marginalia-selectable .m-tap::after {
@@ -471,61 +505,60 @@
 		position: absolute;
 		inset: 0;
 	}
+	/* A picked line is bright gold, the one place a pick reaches the text. */
 	.marginalia li.picked {
-		color: var(--color-accent-bright);
-	}
-	.m-tap {
-		width: 20px;
-		height: 20px;
-	}
-	.marginalia li.picked .m-tap {
-		background: var(--owner-color, var(--color-accent));
+		color: var(--color-you);
 	}
 
+	/* The checkbox: a control standing on a raised card, so it takes the
+	   raised-twice fill and a neutral control border. Picked is the bright gold
+	   border plus the tick; no fill. */
 	.select-tap {
-		width: 22px;
-		height: 22px;
-		border: 1px solid var(--owner-color, var(--color-neutral));
-		border-radius: 4px;
+		width: 24px;
+		height: 24px;
+		box-sizing: border-box;
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border-control);
+		border-radius: var(--radius-control);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
 		cursor: pointer;
+		color: var(--color-you);
+	}
+	.m-tap { width: 20px; height: 20px; }
+	.select-tap[aria-checked='true'] {
+		border-color: var(--color-you);
+		box-shadow: inset 0 0 0 1px var(--color-you);
+	}
+	.select-tap[aria-disabled='true'] { cursor: not-allowed; }
+	.select-tap:focus-visible {
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
 	}
 
-	.select-tap:focus { outline: 2px solid var(--owner-color, var(--color-accent)); outline-offset: 1px; }
-
-	/* Invisible tap target around the header checkbox: extends the 22px box
+	/* Invisible tap target around the header checkbox: extends the 24px box
 	   out to ~44px. Scoped to .header: the per-line marginalia checkboxes
 	   (.m-tap) stretch over their whole 44px row instead (see above). */
 	.header .select-tap { position: relative; }
-	.header .select-tap::after { content: ''; position: absolute; inset: -11px; }
-
-	.card.selectable.selected .select-tap {
-		background: var(--owner-color, var(--color-accent));
-	}
-
-	.check {
-		color: var(--color-bg);
-		font-size: 0.85rem;
-		line-height: 1;
-	}
+	.header .select-tap::after { content: ''; position: absolute; inset: -10px; }
 
 	.name-block {
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
-		gap: 0.05rem;
+		gap: var(--space-1);
 	}
 
-	/* Name holds only the (truncating) text now; status glyphs moved to the
-	   right-aligned .meta cluster. */
+	/* Name holds the owner's shape and the (truncating) text; status glyphs
+	   live in the right-aligned .meta cluster and status words in .sub. */
 	.name {
 		display: flex;
 		align-items: center;
+		gap: var(--space-2);
 		min-width: 0;
-		font-size: 0.92rem;
+		font-size: var(--text-body);
 		color: var(--color-text);
 	}
 
@@ -550,68 +583,79 @@
 		-webkit-box-orient: vertical;
 	}
 
+	/* Under the name: who owns it, and any status words. */
+	.sub {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		column-gap: var(--space-3);
+		row-gap: 0;
+	}
 	.owner-label {
-		font-size: 0.72rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+
+	/* Leveraged: orange, beside the die and its word. The status-word recipe
+	   (small capitals) with the leveraged colour. */
+	.lev-word {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		color: var(--color-leveraged);
 	}
 
 	.main-badge {
-		color: var(--owner-color, var(--color-accent));
-		font-size: 0.78rem;
+		display: inline-flex;
+		color: var(--color-accent);
 		flex-shrink: 0;
 	}
-
-	/* Leveraged status glyph in the right-aligned meta cluster. Passive — not a
-	   tap target. */
-	.lev-badge {
-		color: var(--color-leveraged);
-		flex-shrink: 0;
-	}
-	.lev-badge svg { vertical-align: -0.18em; }
 
 	/* Secret indicators in the meta cluster. Open eye (known) reads in gold like
-	   the Retinue eye; struck eye (hidden) is muted to read as "not available to
+	   the Retinue eye; struck eye (hidden) is quiet to read as "not available to
 	   you". Passive — not tap targets here. */
 	.sec-badge {
 		display: inline-flex;
 		align-items: center;
-		gap: 1px;
+		gap: 0;
 		flex-shrink: 0;
 	}
 	.sec-badge svg { vertical-align: -0.18em; }
 	.sec-badge.known { color: var(--color-accent); }
-	.sec-badge.hidden { color: var(--color-text-muted); }
-	.sec-num { font-size: 0.72rem; font-weight: 600; }
+	.sec-badge.hidden { color: var(--color-text-secondary); }
+	.sec-num { font-size: var(--text-label); font-weight: 600; }
 
 	.meta {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.72rem;
-		color: var(--color-text-muted);
+		gap: var(--space-2);
+		font-size: var(--text-label);
+		color: var(--color-text-secondary);
 		flex-shrink: 0;
 	}
 
 	/* The marginalia count reads like a note in the margin: a vertical hairline
-	   (echoing the Laws/Rumors count divider) separates it from the type icon,
-	   and it stretches to the row height so the rule has presence. Default text
-	   colour matches the name; only the at-risk case goes red. */
+	   separates it from the type icon, and it stretches to the row height so the
+	   rule has presence. Default text colour matches the name; only the at-risk
+	   case goes red. */
 	.count {
 		align-self: stretch;
 		display: flex;
 		align-items: center;
-		padding-left: 0.45rem;
-		border-left: 1px solid var(--color-border-warm);
+		padding-left: var(--space-2);
+		border-left: 1px solid var(--color-border);
 		font-variant-numeric: tabular-nums;
 		color: var(--color-text);
 	}
 
-	.caret { font-size: 0.8rem; color: var(--color-text); }
+	.caret-slot { display: inline-flex; }
 
-	/* Needlessly-at-risk: red count + caret, matching the header-chip risk
-	   badge. Title on .count carries the meaning for non-colour users. */
+	/* Needlessly-at-risk: red count + caret. Red is "something could be lost";
+	   the title on .count carries the meaning for non-colour users, and the
+	   retinue says it in words. RowMark sets its own colour, so the override
+	   reaches in with :global. */
 	.count.at-risk { color: var(--color-danger); font-weight: 600; }
-	.caret.at-risk { color: var(--color-danger); }
+	.caret-slot.at-risk :global(.row-mark) { color: var(--color-danger); }
 
 	/* Narrow columns (small phones; any record-phase column): claw back a few
 	   px from the meta cluster's gaps so more of the name survives before
@@ -619,68 +663,47 @@
 	   requirement. Container query, not viewport (docs/STYLE_GUIDE.md
 	   "Layout widths"). */
 	@container column (max-width: 400px) {
-		.meta { gap: 0.25rem; }
-		.count { padding-left: 0.3rem; }
+		.meta { gap: var(--space-1); }
+		.count { padding-left: var(--space-1); }
 	}
 
-	/* Leverage draft toggle. A ~36px-tall "+🎲" chip wrapped in a 44px
-	   invisible tap target (::after) so it's comfortable to hit without
-	   inflating the header. Outlined = not picked; filled (owner colour) =
-	   drafted or already committed. Sits in the same left slot the checkbox
-	   uses. */
-	.lev-tap {
+	/* Leverage draft toggle: the house chip, drawn 36px tall inside a 44px
+	   invisible tap target (::after) so it is comfortable to hit without
+	   inflating the header. Picked, locked and hover come from chip.css; only the
+	   size is this card's. Sits in the same left slot the checkbox uses. */
+	.lev-tap.chip {
 		position: relative;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.05rem;
-		height: 36px;
-		padding: 0 0.4rem;
-		border: 1px solid var(--owner-color, var(--color-accent));
-		border-radius: 4px;
-		color: var(--color-text);
-		font-size: 1rem;
+		gap: var(--space-1);
+		min-height: 36px;
+		padding: 0 var(--space-2);
 		line-height: 1;
-		flex-shrink: 0;
-		cursor: pointer;
 	}
-	/* Match the 🎲 glyph in the dashed Actor-pool / Interference boxes (1.1rem). */
-	.lev-tap .die-icon { font-size: 1.1rem; }
 	/* Invisible tap target: extends the 36px chip out to ~44px on all sides. */
 	.lev-tap::after { content: ''; position: absolute; inset: -4px; }
-	.lev-tap:focus-visible { outline: 2px solid var(--owner-color, var(--color-accent)); outline-offset: 1px; }
-	/* Drafted or committed → filled with owner colour. */
-	.lev-tap.filled { background: var(--owner-color, var(--color-accent)); color: var(--color-bg); }
-	/* Locked: committed (filled, dimmed) or readied-empty (faint outline). */
-	.lev-tap.locked { cursor: not-allowed; }
-	.lev-tap.locked.filled { opacity: 0.6; }
-	.lev-tap.locked:not(.filled) {
-		border-color: var(--color-border-strong);
-		color: var(--color-text-faint);
-		opacity: 0.55;
-	}
 
 	.body {
-		padding: 0 0.7rem 0.6rem 1rem;
-		border-top: 1px dashed var(--color-surface-2);
+		padding: 0 var(--space-3) var(--space-3) var(--space-4);
+		border-top: 1px solid var(--color-border);
 	}
 
 	.marginalia {
 		list-style: none;
-		margin: 0.4rem 0 0;
+		margin: var(--space-2) 0 0;
 		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		font-size: 0.85rem;
+		gap: var(--space-1);
+		font-size: var(--text-small);
 		color: var(--color-text-secondary);
 	}
 
 	.marginalia li {
 		display: flex;
-		gap: 0.5rem;
+		gap: var(--space-2);
 		align-items: baseline;
 	}
 
+	/* A torn note: faint words with a line through them. The red is the tear mark. */
 	.marginalia li.torn { color: var(--color-text-faint); text-decoration: line-through; }
 
 	/* Text + trailing crown on one centred line. align-items:center keeps the
@@ -689,23 +712,32 @@
 	.m-line {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: var(--space-2);
 		min-width: 0;
 		flex: 1;
 	}
 
-	.bullet { color: var(--owner-color, var(--color-text-muted)); }
-	.torn-mark { color: var(--color-danger-muted); font-size: 0.78rem; }
+	.bullet { color: var(--color-text-faint); }
+	.torn-mark {
+		display: inline-flex;
+		flex: none;
+		width: 14px;
+		height: 14px;
+		align-self: center;
+		color: var(--color-danger);
+	}
 
 	/* Blank-asset pick row: picking it destroys the asset, so the line reads in
 	   the danger colour rather than as ordinary marginalia text. Italic matches
-	   the .empty placeholder it replaces. */
+	   the .empty-note placeholder it replaces. */
 	.m-text.destroys { color: var(--color-danger); font-style: italic; }
 
-	.empty {
-		font-size: 0.82rem;
+	/* Named -note, not .empty: a bare state-class name collides with the
+	   marginalia tile's .empty slot (see RetinueView's .empty-note). */
+	.empty-note {
+		font-size: var(--text-small);
 		color: var(--color-text-faint);
-		margin: 0.4rem 0;
+		margin: var(--space-2) 0;
 		font-style: italic;
 	}
 </style>

@@ -81,6 +81,21 @@ export function seatIndex(seatOrder: number | null | undefined): number {
 export const PLAYER_SLOTS = DEFAULT_PALETTE.length;
 
 /**
+ * The 1-based seat whose palette colour this is, or null when the colour isn't
+ * one of the five. It is for a component that is handed a colour and not a
+ * Player (AssetCardSelectable's `ownerColor`), and so can't pass a seat to
+ * <PlayerShape>. A component that has the Player should pass that instead:
+ * this goes round the houses, and a `token_color` override (which nothing sets
+ * yet) would find no seat here and show no shape.
+ */
+export function seatForColor(color: string | null | undefined): number | null {
+	if (!color) return null;
+	const wanted = color.trim().toLowerCase();
+	const i = DEFAULT_PALETTE.findIndex((c) => c.toLowerCase() === wanted);
+	return i < 0 ? null : i + 1;
+}
+
+/**
  * Convenience: look up a player by id from a list and return their color.
  * Returns UNKNOWN_PLAYER_COLOR if id is null (e.g. a system post — no player
  * author) or the player isn't found in `players`.

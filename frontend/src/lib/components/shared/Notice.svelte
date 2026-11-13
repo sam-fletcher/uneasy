@@ -16,9 +16,10 @@
   The update banner is the one place that keeps a tinted background, because
   it is app chrome rather than game content. It is not this component.
 
-  Marks: each tone has a default drawing in the house line idiom (24x24,
-  2-unit stroke, round ends). The warning triangle and the tick are drawn in
-  the signed-off mockups; danger (an octagon, the stop shape) and info (a
+  Marks: each tone has a default drawing, and they all live in ToneMark.svelte
+  (so the player row's warning mark and a selected card's tick borrow the same
+  drawings). The warning triangle and the tick are drawn in the signed-off
+  mockups; danger (an octagon, the stop shape) and info (a
   circled "i") are not yet signed off (see docs/work/questions/notice-marks.md).
   Pass `mark` to use a house mark of the noun instead, which is often better:
   a <LogMark> of the family the notice is about.
@@ -29,6 +30,7 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import ToneMark from './ToneMark.svelte';
 
 	interface Props {
 		tone?: 'warning' | 'danger' | 'success' | 'info';
@@ -47,24 +49,7 @@
 		{#if mark}
 			{@render mark()}
 		{:else}
-			<svg
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				{#if tone === 'warning'}
-					<path d="M12 3.5L21.5 20H2.5zM12 10v4.5M12 17.5v0.01" />
-				{:else if tone === 'danger'}
-					<path d="M8.5 2.5h7L21.5 8.5v7l-6 6h-7l-6-6v-7zM12 7.5v5.5M12 16.5v0.01" />
-				{:else if tone === 'success'}
-					<path d="M5 12.5l4.5 4.5L19 7.5" />
-				{:else}
-					<path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 11v6M12 7.5v0.01" />
-				{/if}
-			</svg>
+			<ToneMark {tone} />
 		{/if}
 	</span>
 	<span class="notice-text">{@render children()}</span>
