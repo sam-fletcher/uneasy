@@ -243,6 +243,29 @@
 	);
 
 	let pickerOpen = $state(false);
+	let personaBtn = $state<HTMLButtonElement | null>(null);
+
+	// The list closes the way any popup does: choosing an option (below), Escape,
+	// or a tap anywhere outside the control and its list. Escape hands focus back
+	// to the control so a keyboard user keeps their place; that button is not the
+	// message box, so it never raises the soft keyboard.
+	$effect(() => {
+		if (!pickerOpen) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== 'Escape') return;
+			pickerOpen = false;
+			personaBtn?.focus();
+		};
+		const onPointer = (e: PointerEvent) => {
+			if (!(e.target as Element | null)?.closest('.persona-bar')) pickerOpen = false;
+		};
+		window.addEventListener('keydown', onKey);
+		window.addEventListener('pointerdown', onPointer);
+		return () => {
+			window.removeEventListener('keydown', onKey);
+			window.removeEventListener('pointerdown', onPointer);
+		};
+	});
 
 	// ── Visibility ─────────────────────────────────────────────────────────────
 	// Hiding the pane (choosing another tab) sends a read-marker report that was
@@ -983,7 +1006,7 @@
 	        moves focus off the textarea — otherwise the button ends up focused,
 	        then goes disabled as the box empties, and focus falls to <body>.
 	     The keyboard still opens only when the box is tapped, never on arrival
-	     (docs/STYLE_GUIDE.md; the chat design ruling): nothing here calls focus(). -->
+	     (docs/STYLE_GUIDE.md; the chat design ruling): nothing here focuses the box. -->
 	<div class="compose">
 		{#if currentPlayerID != null && personae.length > 1}
 			{@const selfPlayer = playerByID(currentPlayerID)}
@@ -1002,6 +1025,7 @@
 				<button
 					type="button"
 					class="persona-btn"
+					bind:this={personaBtn}
 					class:character={selectedPersona?.kind === 'asset'}
 					style:--player-color={personaColor}
 					onclick={() => { pickerOpen = !pickerOpen; }}
