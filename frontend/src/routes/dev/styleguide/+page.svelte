@@ -20,8 +20,10 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
+	import '$lib/components/shared/marginaliaTile.css';
 	import { onMount } from 'svelte';
-	import type { Player } from '$lib/api';
+	import type { Asset, Player } from '$lib/api';
+	import AssetCardSelectable from '$lib/components/AssetCardSelectable.svelte';
 	import CharCounter from '$lib/components/CharCounter.svelte';
 	import CrownGlyph from '$lib/components/CrownGlyph.svelte';
 	import LogMark from '$lib/components/LogMark.svelte';
@@ -35,6 +37,8 @@
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import RowMark from '$lib/components/shared/RowMark.svelte';
+	import StarMark from '$lib/components/shared/StarMark.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 	import TableRoster from '$lib/components/shared/TableRoster.svelte';
 	import { playerColor, PLAYER_SLOTS, UNKNOWN_PLAYER_COLOR } from '$lib/playerColor';
 	import { PLAYER_SHAPES } from '$lib/playerShape';
@@ -71,6 +75,7 @@
 		['status', 'Status words'],
 		['notices', 'Notices'],
 		['sheets', 'Sheets'],
+		['pieces', 'Game pieces'],
 	];
 
 	// ── Measured values ────────────────────────────────────────────────────
@@ -144,6 +149,33 @@
 	}));
 	// Ash is "you"; the game is waiting on you and on Mira.
 	const waiting = new Set([1, 4]);
+
+	// Placeholder assets for the game-pieces section: made-up names, no game data.
+	function sampleAsset(id: number, over: Partial<Asset>, notes: { text: string; torn?: boolean }[]): Asset {
+		return {
+			id, game_id: 0, owner_id: 0, creator_id: 0, asset_type: 'peer', name: 'Sample',
+			is_main_character: false, is_leveraged: false, is_destroyed: false, created_at: '',
+			destroyed_at: null, linked_card_suit: null, linked_card_value: null, secret_count: 0,
+			marginalia: notes.map((n, i) => ({
+				id: id * 10 + i, asset_id: id, position: i + 1, text: n.text, is_torn: !!n.torn,
+				torn_at: null, torn_by_id: null, title: null,
+			})),
+			...over,
+		};
+	}
+	const NOTES = [{ text: 'Keeps the harbour ledgers.' }, { text: 'Owes the crown a ship.' }, { text: 'Never seen to run.' }];
+	const cardPlain = sampleAsset(1, { name: 'Lady Merrow' }, NOTES);
+	const cardLeveraged = sampleAsset(2, { name: 'The Old Ledger', asset_type: 'artifact', is_leveraged: true }, NOTES);
+	const cardMain = sampleAsset(3, { name: 'Captain Vell', is_main_character: true }, NOTES);
+	const cardTorn = sampleAsset(
+		4,
+		{ name: 'The Salt Road', asset_type: 'resource' },
+		[NOTES[0], { text: 'A third of it is owed already.', torn: true }, NOTES[2]],
+	);
+	const cardAtRisk = sampleAsset(5, { name: 'Wren’s Tower', asset_type: 'holding' }, [NOTES[0]]);
+	const cardMarginalia = sampleAsset(6, { name: 'Lady Merrow' }, NOTES);
+	let cardPicked = $state(false);
+	let notePicked = $state<number | null>(null);
 
 	// ── Live state for the interactive specimens ───────────────────────────
 	let choice = $state<'aid' | 'interfere'>('aid');
@@ -452,6 +484,21 @@
 				<DieMark label="a die" />
 				<DieMark size={32} label="a die" />
 			</Cell>
+			<Cell label="StarMark · the main character (solid), and the control that makes one (outline)">
+				<StarMark size={24} label="main character" />
+				<StarMark size={24} outline label="make main character" />
+				<StarMark />
+			</Cell>
+			<Cell label="ToneMark · warning, danger, success, info (a notice's marks; colour comes from the caller)">
+				<span class="tone-sample warning"><ToneMark tone="warning" size={24} label="warning" /></span>
+				<span class="tone-sample danger"><ToneMark tone="danger" size={24} label="danger" /></span>
+				<span class="tone-sample success"><ToneMark tone="success" size={24} label="success" /></span>
+				<span class="tone-sample info"><ToneMark tone="info" size={24} label="info" /></span>
+			</Cell>
+			<Cell label="ToneMark · the success tick on a picked card, in bright gold">
+				<span class="tone-sample picked"><ToneMark tone="success" size={24} label="picked" /></span>
+				<ToneMark tone="success" />
+			</Cell>
 			<Cell label="NewDot · with the tab it sits on">
 				<span class="with-dot">Chat <NewDot /></span>
 				<NewDot />
@@ -675,6 +722,95 @@
 		<Cell label="RetinueSheet · tap to open; close with the button, the scrim, Escape or Back">
 			<button class="action-btn secondary" onclick={() => (sheetOpen = true)}>Open the example sheet</button>
 		</Cell>
+	</Section>
+
+	<Section
+		id="pieces"
+		title="Game pieces"
+		blurb="Asset cards and marginalia tiles are the pieces a player touches and reads. Each takes the warm border, the piece corner and the raised surface. Whose a card is shows as the owner's shape beside its name; its status is a word, and orange is leverage. Selected is the bright gold border with no fill, plus a tick."
+	>
+		<Cell label="Marginalia tile · filled, torn, titled, empty slot">
+			<div class="tile-run">
+				<div class="m-tile">Keeps the harbour ledgers.</div>
+				<div class="m-tile torn">Owes the crown a ship.</div>
+				<div class="m-tile titled">The Monarch <CrownGlyph mark={{ role: 'monarch' }} size={14} /></div>
+				<div class="m-tile empty"></div>
+			</div>
+		</Cell>
+		<div class="specimens wide">
+			<Cell label="Asset card · not picked (tap the box to pick it)">
+				<div class="piece-col">
+					<AssetCardSelectable
+						asset={cardPlain}
+						ownerColor={playerColor({ token_color: null, seat_order: 1 })}
+						selectable
+						selected={cardPicked}
+						onToggle={() => (cardPicked = !cardPicked)}
+						defaultExpanded
+					/>
+				</div>
+			</Cell>
+			<Cell label="Asset card · selected: bright gold border and a tick, no fill">
+				<div class="piece-col">
+					<AssetCardSelectable
+						asset={cardPlain}
+						ownerColor={playerColor({ token_color: null, seat_order: 2 })}
+						selectable
+						selected
+						onToggle={() => {}}
+					/>
+				</div>
+			</Cell>
+			<Cell label="Asset card · leveraged: orange, beside its word">
+				<div class="piece-col">
+					<AssetCardSelectable
+						asset={cardLeveraged}
+						ownerColor={playerColor({ token_color: null, seat_order: 3 })}
+						ownerLabel="Owned by Rose"
+					/>
+				</div>
+			</Cell>
+			<Cell label="Asset card · can't be picked: greyed out, not faded">
+				<div class="piece-col">
+					<AssetCardSelectable
+						asset={cardMain}
+						ownerColor={playerColor({ token_color: null, seat_order: 4 })}
+						selectable
+						disabled
+						onToggle={() => {}}
+					/>
+				</div>
+			</Cell>
+			<Cell label="Asset card · a torn note, struck through with a red tear">
+				<div class="piece-col">
+					<AssetCardSelectable
+						asset={cardTorn}
+						ownerColor={playerColor({ token_color: null, seat_order: 5 })}
+						defaultExpanded
+					/>
+				</div>
+			</Cell>
+			<Cell label="Asset card · one note left and a slot free: the count and caret are red">
+				<div class="piece-col">
+					<AssetCardSelectable
+						asset={cardAtRisk}
+						ownerColor={playerColor({ token_color: null, seat_order: 1 })}
+						defaultExpanded
+					/>
+				</div>
+			</Cell>
+			<Cell label="Asset card · picking a note: the card holding it takes the gold border">
+				<div class="piece-col">
+					<AssetCardSelectable
+						asset={cardMarginalia}
+						ownerColor={playerColor({ token_color: null, seat_order: 2 })}
+						marginaliaSelectable
+						selectedMarginaliaID={notePicked}
+						onMarginaliaToggle={(id) => (notePicked = notePicked === id ? null : id)}
+					/>
+				</div>
+			</Cell>
+		</div>
 	</Section>
 </div>
 
@@ -969,5 +1105,23 @@
 		flex-direction: column;
 		gap: var(--space-4);
 		align-items: flex-start;
+	}
+	.tone-sample { display: inline-flex; }
+	.tone-sample.warning { color: var(--color-warning); }
+	.tone-sample.danger { color: var(--color-danger); }
+	.tone-sample.success { color: var(--color-success); }
+	.tone-sample.info { color: var(--color-highlight); }
+	.tone-sample.picked { color: var(--color-you); }
+	.tile-run {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+		gap: var(--space-2);
+		width: 100%;
+		max-width: 28rem;
+	}
+	.tile-run .m-tile { min-height: var(--size-tap); }
+	.piece-col {
+		width: 100%;
+		min-width: 0;
 	}
 </style>

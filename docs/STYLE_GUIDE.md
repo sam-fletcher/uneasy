@@ -536,12 +536,14 @@ Reuse before writing new CSS — these live in
 | `PlayerShape.svelte` | a player's shape in their colour: the five seat shapes, 12px and up |
 | `ClockMark.svelte` | the waiting glyph: bright gold for you, secondary for anyone else the game waits on |
 | `BarbuteMark.svelte` | war's mark, in war red |
+| `ToneMark.svelte` | the four marks a notice wears (a warning triangle, a danger octagon, a success tick, an info "i"), drawn once. `Notice` takes its default mark from it; so does anything else that needs a tone's mark, including the tick in a selected card's checkbox |
+| `StarMark.svelte` | the main character's star: solid for the main character, an outline for the control that makes one. `★` means only this, and no player's shape is ever a star |
 | `DieMark.svelte` | the die, in place of the 🎲 emoji |
 | `NewDot.svelte` | the pale "new since you looked" dot |
 | `choicePip.css` | the prologue choice pip — one gold disc with two homes (turn card ↔ category header), plus the spend animation |
 | `cornerBadge.css` | corner count badge on a glyph that is itself a count of secrets |
 | `jumpPulse.css` | the "you landed here" accent flash after the app scrolls the reader somewhere (chat jump, prologue claim). Carries its own reduced-motion guard |
-| `marginaliaTile.css` | the warm ledger tile for marginalia |
+| `marginaliaTile.css` | **the** marginalia tile (`.m-tile`): a game piece, with the warm border, the piece corner and the raised surface. Torn is a line through faint words with a red line; an empty slot is a dashed outline |
 | `modalShell.css` | the sheet's scrim, close button and title, and the full-screen sheet variant; see Recipes |
 | `rankChip.css`, `rankStrip.css` | rank track pieces |
 | `statusText.css` | caption and error text (`.muted-text`, `.error-text`) and **the** status word (`.status-word`: small capitals in a colour, never a chip) |
@@ -591,6 +593,18 @@ more; `/dev/styleguide` shows every state.
   colour: "Resolving", "Set aside", "Make", "Mar", a checklist state. Plain
   secondary text for a state; a meaning colour only for a result, always beside
   its word. Never a border or a fill.
+- **Game pieces** (`marginaliaTile.css`, `AssetCardSelectable.svelte`, the tiles in
+  `RetinueView.svelte`). An asset card and a marginalia tile are pieces: the warm piece border, the
+  piece corner, the raised surface. A tile sits inside a card, and that is the only nesting.
+  **Selected** is the 2px bright gold border with no fill, plus a tick in the card's checkbox (the
+  success tone's tick from `ToneMark`); the second pixel is an inset shadow, so picking never moves the card. Whose a
+  card is shows as the owner's **shape** beside its name, never as a coloured edge; the owner's
+  colour is kept for that and gold alone says "picked". Status is **words under the name** (the type, "Leveraged", "Destroyed"), never a
+  badge: leveraged is orange beside the die and its word, destroyed is red, and the type is plain
+  secondary text. A card that can't be picked drops to the neutral hairline and faint text; nothing
+  fades with opacity, which would take words under the contrast floor. The **at-risk count** lives in
+  the retinue sheet as a danger notice in words, and the empty slot to fill keeps its red rim. See the
+  "Game pieces" section of `/dev/styleguide`.
 - **Notices** (`Notice.svelte`). A mark and coloured text, like a log line. A
   notice sits inside a step, so it is a group and gets no box or tint. Pass a
   house mark of the noun as `mark` when one fits better than the tone's default.

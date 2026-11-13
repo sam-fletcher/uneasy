@@ -1,27 +1,39 @@
-/* tokens: not migrated */
-/* Shared marginalia-tile look (the m-tile in RetinueView's 2×2 grid, and
-   HelpContent's static replica). Import as a side effect wherever .m-tile
-   is used; component-local <style> blocks layer on top for anything that
-   diverges (tap-target sizing, interactive/add-slot states) since those
-   don't apply to the static replica. */
+/* The marginalia tile: one note on an asset, drawn as a small game piece.
+   It is the m-tile in RetinueView's 2×2 grid, HelpContent's static replica of
+   it, and the preview in AssetCreationForm. Import as a side effect wherever
+   .m-tile is used; component-local <style> blocks layer on top for anything
+   that diverges (tap-target sizing, the interactive and add-slot states),
+   since those don't apply to the static replica.
+
+   A piece, so it takes a piece's look: the warm border, the piece corner
+   (--radius-piece) and the raised surface. The border is what marks it as a
+   thing in the game; its fill stays neutral. A tile sits inside an asset card
+   (itself a piece): one piece in another is the only nesting these have.
+
+   TORN is shown by the line through the words, which survives without colour,
+   with the line itself in red, the colour of a loss. The words go faint rather
+   than the whole tile fading: opacity would take the text under the contrast
+   floor. An EMPTY slot is not a piece yet, so it is a dashed outline with no
+   fill. */
 
 .m-tile {
-	padding: 0.35rem 0.45rem;
-	background: var(--color-surface-sunken);
-	border: 1px solid var(--color-border-warm);
-	border-radius: 5px;
-	font-size: 0.78rem;
+	padding: var(--space-1) var(--space-2);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border-piece);
+	border-radius: var(--radius-piece);
+	font-size: var(--text-small);
 	line-height: 1.25;
 	color: var(--color-text-secondary);
 	display: flex;
 	align-items: center;
 }
 .m-tile.torn {
-	opacity: 0.45;
+	color: var(--color-text-faint);
 	text-decoration: line-through;
+	text-decoration-color: var(--color-danger-muted);
 }
-.m-tile.titled { gap: 0.3rem; }
+.m-tile.titled { gap: var(--space-1); }
 .m-tile.empty {
 	background: transparent;
-	border: 1px dashed var(--color-border-warm);
+	border: 1px dashed var(--color-border-piece);
 }

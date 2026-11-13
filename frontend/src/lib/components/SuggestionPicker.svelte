@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- SuggestionPicker.svelte
   Shared "write your own, with a nudge if you're stuck" control. The free-text
   field is always visible and is the only source of `value`; below it sits a
@@ -14,6 +13,13 @@
   jump the panel under the player's thumb. The endpoint hands back the whole
   unused pool in one response, so reroll walks it locally and only spends a
   request on the wrap-around — a tap never blocks on the network.
+
+  Looks: the field is an input and the example and reroll are controls, so all
+  three take the control corner and a neutral border, on the raised-twice fill
+  (they stand on a raised panel or sheet). The example is DASHED, the one
+  place a dashed control survives: it is an offer, not something chosen, and
+  the outline says "there is nothing here yet". The reroll is a plain secondary
+  button with an icon.
 -->
 <script lang="ts">
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -87,10 +93,11 @@
 
 	// Fit-to-width: the example must stay on one line at a fixed height, but
 	// the pools run to 34 characters and the narrowest column leaves ~206px for
-	// text (docs/STYLE_GUIDE.md "Layout widths"), where 0.9rem would overflow.
-	// Shrinking only the strings that need it keeps the typical one legible.
-	const BASE_PX = 14.4; // 0.9rem, matching the field above
-	const MIN_PX = 11;    // below this, ellipsis is kinder than a squint
+	// text (docs/STYLE_GUIDE.md "Layout widths"), where the full size would
+	// overflow. Shrinking only the strings that need it keeps the typical one
+	// legible.
+	const BASE_PX = 14; // --text-small, the example's size
+	const MIN_PX = 12;  // the smallest any text gets; below it, ellipsis is kinder than a squint
 	let textEl = $state<HTMLElement | null>(null);
 
 	// clientWidth/scrollWidth on the nowrap span give available vs natural
@@ -189,28 +196,35 @@
 <style>
 	/* The example belongs to the field above it, so it sits closer to that
 	   than to whatever follows the picker. */
-	.sp { display: flex; flex-direction: column; gap: 0.3rem; }
+	.sp { display: flex; flex-direction: column; gap: var(--space-1); }
 
+	/* An input: control corner, neutral border, raised-twice fill, and the 16px
+	   body size iOS needs so it doesn't zoom the page on focus. */
 	.sp-input {
 		width: 100%;
 		box-sizing: border-box;
 		background: var(--color-surface-2);
 		color: var(--color-text);
-		border: 1px solid var(--color-border-strong);
-		border-radius: 6px;
-		padding: 0.5rem 0.6rem;
-		font-size: 0.9rem;
+		border: 1px solid var(--color-border-control);
+		border-radius: var(--radius-control);
+		padding: var(--space-2) var(--space-3);
+		font-size: var(--text-body);
 		font-family: inherit;
 	}
-	.sp-input:focus {
-		outline: none;
-		border-color: var(--color-accent);
+	.sp-input:focus-visible {
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
 	}
-	.sp-input:disabled { opacity: 0.4; cursor: not-allowed; }
+	/* Greyed out, not faded: faint words, no border. */
+	.sp-input:disabled {
+		color: var(--color-text-faint);
+		border-color: transparent;
+		cursor: not-allowed;
+	}
 
 	.sp-example-row {
 		display: flex;
-		gap: 0.4rem;
+		gap: var(--space-2);
 		min-width: 0;
 	}
 
@@ -219,14 +233,14 @@
 	.sp-example {
 		flex: 1;
 		min-width: 0;
-		height: 44px;
+		height: var(--size-tap);
 		display: flex;
 		align-items: center;
-		padding: 0 0.5rem;
+		padding: 0 var(--space-2);
 		background: transparent;
-		border: 1px dashed var(--color-border-strong);
-		border-radius: 6px;
-		color: var(--color-text-muted);
+		border: 1px dashed var(--color-border-control);
+		border-radius: var(--radius-control);
+		color: var(--color-text-secondary);
 		font-family: inherit;
 		font-style: italic;
 		cursor: pointer;
@@ -237,9 +251,13 @@
 	@media (hover: hover) {
 		.sp-example:hover:not(:disabled) {
 			background: var(--color-surface-hover);
-			border-color: var(--color-accent);
+			border-color: var(--color-border-control-hover);
 			color: var(--color-text);
 		}
+	}
+	.sp-example:focus-visible {
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
 	}
 	.sp-example:disabled { cursor: default; }
 
@@ -252,27 +270,44 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		font-size: 0.9rem;
+		font-size: var(--text-small);
 	}
 
-	/* Unfilled + warm border so the reroll reads as an action, not a choice. */
+	/* The reroll is a secondary button (neutral border, raised-twice fill, main
+	   text), square at the touch minimum, so it reads as an action and not a
+	   choice. */
 	.sp-reroll {
 		flex: none;
-		width: 44px;
-		height: 44px;
+		width: var(--size-tap);
+		height: var(--size-tap);
 		padding: 0;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		background: transparent;
-		border: 1px solid var(--color-border-warm-strong);
-		border-radius: 6px;
-		color: var(--color-accent);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border-control);
+		border-radius: var(--radius-control);
+		color: var(--color-text);
 		cursor: pointer;
-		transition: background-color 120ms ease;
+		transition: border-color 120ms ease;
 	}
 	@media (hover: hover) {
-		.sp-reroll:hover:not(:disabled) { background: var(--color-surface-hover); }
+		.sp-reroll:hover:not(:disabled) { border-color: var(--color-border-control-hover); }
 	}
-	.sp-reroll:disabled { opacity: 0.4; cursor: not-allowed; }
+	.sp-reroll:focus-visible {
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
+	}
+	.sp-reroll:disabled {
+		color: var(--color-text-faint);
+		border-color: transparent;
+		cursor: not-allowed;
+	}
+
+	/* Reduced motion removes the travel, not the feedback: the colours still
+	   change, they just don't fade. */
+	@media (prefers-reduced-motion: reduce) {
+		.sp-example,
+		.sp-reroll { transition: none; }
+	}
 </style>
