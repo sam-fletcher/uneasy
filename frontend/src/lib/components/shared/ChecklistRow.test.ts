@@ -100,7 +100,22 @@ describe('ChecklistRow — row furniture', () => {
 	});
 });
 
-describe('HelpDisclosure — a ChecklistRow specialisation', () => {
+describe('HelpDisclosure — its own tappable row', () => {
+	it('draws its head as the shared tap row, with a caret and no box', () => {
+		const { body: html } = render(HelpDisclosure, {
+			props: { title: 'How the rankings work', id: 'rankings-help-body', children: body() },
+		});
+		expect(html).toMatch(/class="tap-row help-head[^"]*"/);
+		expect(html).toContain('data-kind="caret"');
+		const css = styleOf(readFileSync(join(__dirname, 'HelpDisclosure.svelte'), 'utf8'));
+		const boxy = declarations(css).filter(
+			(d) =>
+				/^(background|box-shadow|outline|border-radius)/.test(d.prop) ||
+				(/^border/.test(d.prop) && !/^border-bottom(-color)?$/.test(d.prop))
+		);
+		expect(boxy).toEqual([]);
+	});
+
 	it('is an expanding help row, shut by default', () => {
 		const { body: html } = render(HelpDisclosure, {
 			props: { title: 'How the prologue works', id: 'prologue-help-body', children: body() },

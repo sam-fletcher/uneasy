@@ -20,8 +20,14 @@
   Callers import the matching stylesheet as they already do; this component
   only supplies the markup and the role. Render it inside an {#if}: an empty
   live region is fine, but the surrounding layout gap usually isn't.
+
+  The look is a danger notice (docs/STYLE_GUIDE.md "Notices"): the danger mark
+  beside the words, in the danger colour. The words say what went wrong, so the
+  colour is never the only signal.
 -->
 <script lang="ts">
+	import ToneMark from './ToneMark.svelte';
+
 	interface Props {
 		message: string;
 		/** Which class namespace to render in. Defaults to the routes/phase
@@ -36,4 +42,25 @@
 	const base = $derived(variant === 'panel' ? 'res-error' : 'error-text');
 </script>
 
-<p class="{base}{extra ? ' ' + extra : ''}" role="alert">{message}</p>
+<p class="{base} error-notice{extra ? ' ' + extra : ''}" role="alert">
+	<span class="error-mark" aria-hidden="true"><ToneMark tone="danger" /></span>
+	<span class="error-words">{message}</span>
+</p>
+
+<style>
+	/* The mark is centred on the first line however many lines the words take,
+	   as in Notice: its box is exactly one line tall. The colour and size come
+	   from the classes above, so each caller keeps the look it had. */
+	.error-notice {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-2);
+	}
+	.error-mark {
+		display: flex;
+		align-items: center;
+		flex: none;
+		height: 1lh;
+	}
+	.error-words { min-width: 0; }
+</style>

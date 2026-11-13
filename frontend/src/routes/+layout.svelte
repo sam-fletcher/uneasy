@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
@@ -144,35 +143,37 @@
 
 	:global(button) {
 		cursor: pointer;
-		font-size: 1rem;
-		padding: 0.6rem 1.2rem;
-		border-radius: var(--radius-sm);
+		font-size: var(--text-body);
+		padding: var(--space-2) var(--space-4);
+		border-radius: var(--radius-control);
 		border: none;
 		font-family: inherit;
 	}
 
 	:global(input) {
-		font-size: 1rem;
-		padding: 0.6rem 0.8rem;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--color-border);
+		font-size: var(--text-body);
+		padding: var(--space-2) var(--space-3);
+		border-radius: var(--radius-control);
+		border: 1px solid var(--color-border-control);
 		background: var(--color-surface-2);
 		color: inherit;
 		font-family: inherit;
 		width: 100%;
 	}
-
+	/* Focus is bright gold, the colour of "you" (docs/STYLE_GUIDE.md "Focus"). */
 	:global(input:focus) {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 1px;
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
 	}
 
+	/* The same height as the table page's title bar, so the two bars line up.
+	   A thin rule divides it from the page; it takes no fill. */
 	.site-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 0.6rem 1rem;
-		background: var(--color-surface-sunken);
+		min-height: var(--layout-title-bar);
+		padding: 0 var(--space-4);
 		border-bottom: 1px solid var(--color-border);
 	}
 	/* A running head, deliberately NOT a badge. It used to borrow the shared
@@ -187,7 +188,7 @@
 	   chip used to supply. */
 	.page-title {
 		margin: 0;
-		font-size: 0.8rem;
+		font-size: var(--text-label);
 		color: var(--color-accent);
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
@@ -195,27 +196,27 @@
 	.header-actions {
 		display: flex;
 		align-items: center;
-		gap: 0.25rem;
+		gap: var(--space-1);
 	}
 	.top-link {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3em;
-		min-height: 44px;
-		padding: 0 0.5rem;
-		color: var(--color-text-muted);
-		font-size: 0.9rem;
+		gap: var(--space-1);
+		min-height: var(--size-tap);
+		padding: 0 var(--space-2);
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
 		text-decoration: none;
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius-control);
 	}
 	.top-link:hover { color: var(--color-accent); }
-	.top-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+	.top-link:focus-visible { outline: 2px solid var(--color-you); outline-offset: 2px; }
 	.external-icon { flex-shrink: 0; }
 
 	main {
 		max-width: 1500px;
 		margin: 0 auto;
-		padding: 1rem;
+		padding: var(--space-4);
 	}
 	/* Pages whose own column supplies the gutter (FLUSH_PATHS above). Same
 	   principle as .full-bleed: a column in the width system has to derive

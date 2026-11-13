@@ -558,7 +558,7 @@ Reuse before writing new CSS — these live in
 | `ChecklistRow.svelte` | **the** checklist/disclosure row: glyph · title+subtitle · state word · caret-or-arrow, with an optional body. A `tapRow.css` row, so no box. Used by the lobby's *While you wait* and the prologue's closing stage; `action` picks the affordance (see the caret rule above) |
 | `TableRoster.svelte` | who's at the table, as plain lines: the seat's shape, **You** for the current player, a clock on whoever the game waits on (bright gold on you), an arrow when the row is tappable — and no role tags, see **Roles are named, not worn** below. Caller owns the heading, the count, per-row `trailing` content and the lobby's invite chair |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
-| `HelpDisclosure.svelte` | the collapsible "? How X works" panel — a `ChecklistRow` specialisation. **The** way step-local rules reach a play screen — see **Local help** below |
+| `HelpDisclosure.svelte` | the collapsible "? How X works" panel: a `tapRow.css` row with the help mark and a caret, and its body below. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
 | `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), `TonesSheet`, and the Waiting On stopgap `WarEntry`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`, `clock`, `war`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below. The newer marks have a component of their own that adds the size, colour rule and label |
@@ -663,11 +663,11 @@ off the first screen. Live in three places today: the prologue's choosing and
 ANY-spending steps (`prologue/PrologueHelp.svelte` holds both bodies) and
 scene setup.
 
-`HelpDisclosure` is now a **specialisation of `ChecklistRow`** (the help
-glyph, an expanding caret, quiet by default) rather than its own frame:
-`adr/LOBBY_AND_CHECKLIST_PLAN.md` D2. Its API is unchanged, plus `tone` and
-`defaultOpen` pass-throughs. Style changes belong in `ChecklistRow`, so the
-lobby's checklist and the prologue's local help can't drift apart.
+`HelpDisclosure` draws its own head from the shared row recipes: `tapRow.css`
+for the 44px line and `RowMark` for the caret, with the help mark at its start.
+It no longer wraps `ChecklistRow`. Its API is unchanged, plus `tone` and
+`defaultOpen` pass-throughs. Change the recipe in `tapRow.css` or `RowMark`,
+which both rows use, rather than restyling one row alone.
 
 The lobby is the one place `HelpContent` is mounted **inside a row** — a
 `ChecklistRow`, not a `HelpDisclosure`, because the two help surfaces keep
@@ -693,6 +693,32 @@ because you want that shape.
   needs widening, not that the panel needs hiding. Where the screen greys
   out for watchers (scene setup's read-only mirror), the disclosure stays at
   full brightness — it is the one thing there they can still operate.
+
+### Pages outside a game
+
+The landing and sign-in pages, the app frame, Help and the feedback form. Each
+rule here applies the recipes above to a screen that has no game in it.
+
+- **A form is a section, not a box.** The sign-in, reset and locked-out forms sit
+  on the page with space between their parts. Only the controls in them are
+  boxed (inputs, the chips and the buttons).
+- **Log in and Sign up are two chips.** The one you're on wears the selected
+  border, like any other choice.
+- **Errors are a danger notice:** the danger mark beside the words, which is what
+  `ErrorText` draws. A success that the user has just caused, such as a request
+  sent or a password changed, is a success notice with `live` set.
+- **One main button per screen.** The sign-in and reset pages each have one. A
+  sheet with no step in it, such as Help, has none: its footer action is
+  secondary.
+- **Help's topics are chips** (`Chip` with `compact`), and its figures take no box.
+  Each figure's space and caption set it apart.
+- **Diagrams are drawn at their real size.** An SVG's font size counts in the
+  drawing's own units, so a diagram scaled down from a larger drawing can't use
+  the text tokens. The Public Record diagram in Help is drawn 1:1 for that reason.
+- **The landing title is the one `--text-display` user.** Its small word is half
+  that size, written as `calc(var(--text-display) * 0.5)`, which the guard accepts.
+- **The update banner keeps its tint,** the one tinted strip in the app. Its
+  token is the sunken surface, pending the question in `docs/work/questions/`.
 
 ## Motion & the deck
 
@@ -763,8 +789,10 @@ the `war/` sub-components take to lift their message into the parent panel.
 
 **3. Render through `ErrorText`, never a raw `<p class="error-text">`.**
 It carries `role="alert"`, which cannot come from CSS and which these
-messages need — they are almost always *inserted* after an action. Two
-variants, matching the two class namespaces (kept distinct because the
+messages need — they are almost always *inserted* after an action. It draws
+a danger notice, not bare red text: the danger mark sits beside the words, in
+the danger colour, so a message is read as a notice even by someone who can't
+tell the colour apart. Two variants, matching the two class namespaces (kept distinct because the
 `plans/` tree has its own unscoped `.muted`; see `statusText.css`):
 
 ```svelte

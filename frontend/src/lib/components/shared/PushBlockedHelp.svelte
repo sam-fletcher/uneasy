@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- PushBlockedHelp.svelte
   What to do when the browser has notifications blocked for this origin.
 
@@ -30,28 +29,30 @@
 </div>
 
 <style>
+	/* A thin warning rule down the left of the steps. It is kept as it was,
+	   until the owner rules on it (docs/work/questions/push-blocked-rule.md). */
 	.push-blocked {
 		border-left: 2px solid var(--color-warning-border);
-		padding: 0.1rem 0 0.1rem 0.75rem;
-		margin: 0.15rem 0;
+		padding: var(--space-1) 0 var(--space-1) var(--space-3);
+		margin: var(--space-1) 0;
 	}
 	/* Kept as block flow rather than a flex column: a flex item's marker box is
 	   inconsistent across engines, and the step numbers are the point here. */
 	ol {
 		margin: 0;
-		padding-left: 1.1rem;
+		padding-left: var(--space-4);
 		list-style: decimal;
 		color: var(--color-text);
-		font-size: 0.85rem;
+		font-size: var(--text-small);
 		line-height: 1.4;
 	}
 	li + li {
-		margin-top: 0.3rem;
+		margin-top: var(--space-1);
 	}
 	.note {
-		margin: 0.5rem 0 0;
-		color: var(--color-text-muted);
-		font-size: 0.8rem;
+		margin: var(--space-2) 0 0;
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
 		line-height: 1.4;
 	}
 </style>
