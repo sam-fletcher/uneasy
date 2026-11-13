@@ -997,6 +997,9 @@
 							{players}
 							playerNames={playerNameMap}
 							{currentPlayerID}
+							{assets}
+							seenLaws={lawsSeenRev}
+							seenRumors={rumorsSeenRev}
 						/>
 					</div>
 				{/if}
