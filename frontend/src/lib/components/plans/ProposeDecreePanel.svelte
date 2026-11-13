@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- ProposeDecreePanel.svelte
   Prep + resolve UI for Propose Decree (Tier 2, Power).
 
@@ -42,6 +41,7 @@
 
 	import type { PlanPanelProps } from './types';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Chip from '$lib/components/shared/Chip.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -416,7 +416,7 @@
 			bind:performStepsWinnerID />
 
 		<!-- Council roster (visible to all) ────────────────────────────── -->
-		<div class="choices-section">
+		<div class="council">
 			<p class="choices-header">
 				Council ({pdState.council.length})
 				{#if pdState.signatoryID != null}
@@ -426,7 +426,7 @@
 			{#if pdState.council.length === 0}
 				<p class="choices-note muted">Something has gone wrong; try refreshing the page.</p>
 			{:else}
-				<ul class="plan-notes" style="margin:0;padding-left:1.25rem;">
+				<ul class="council-list">
 					{#each pdState.council as pid}
 						<li>
 							{playerName(players, pid)}
@@ -437,7 +437,7 @@
 				</ul>
 			{/if}
 			{#if pdState.declined.length > 0}
-				<p class="choices-note muted" style="margin-top:0.35rem;">
+				<p class="choices-note muted">
 					Declined: {pdState.declined.map(id => playerName(players, id)).join(', ')}
 				</p>
 			{/if}
@@ -448,9 +448,9 @@
 			<!-- Step 1: the preparer finalizes the decree and opens the debate. -->
 			{#if !debateStarted}
 				{#if isPreparer}
-					<div class="plan-form" style="margin-top:0.5rem;">
+					<div class="plan-form">
 						<p class="choices-header">Finalize your decree</p>
-						<p class="choices-note">
+						<p class="ft-prompt">
 							Decide the text of the law you're proposing, then open the debate.
 						</p>
 						<label class="form-label">
@@ -464,24 +464,26 @@
 						</button>
 					</div>
 				{:else}
-					<p class="choices-note muted" style="margin-top:0.5rem;">
+					<p class="choices-note muted">
 						{playerName(players, plan.preparer_id)} is finalizing the decree…
 					</p>
 				{/if}
 			{:else}
 				<!-- Debate open: show the proposed law under discussion. -->
-				<p class="choices-header" style="margin-top:1rem;">
-					Proposed decree being debated:
-				</p>
-				<p class="plan-notes">"{pdState.lawText}"</p>
+				<div class="debated">
+					<p class="choices-header">
+						Proposed decree being debated:
+					</p>
+					<p class="ft-prompt">“{pdState.lawText}”</p>
+				</div>
 			{/if}
 
 			<!-- Join / decline — available while the council forms (before and
 			     during the debate). -->
 			{#if canDecide}
-				<div class="plan-form" style="margin-top:0.5rem;">
+				<div class="plan-form">
 					<p class="choices-header">Join the council?</p>
-					<p class="choices-note">
+					<p class="ft-prompt">
 						Leverage one asset to join the debate — it becomes a die you can use
 						during the roll to help or interfere.
 					</p>
@@ -511,11 +513,11 @@
 					</div>
 				</div>
 			{:else if amDeclined}
-				<p class="choices-note muted" style="margin-top:0.5rem;">
+				<p class="choices-note muted">
 					You declined to join the council.
 				</p>
 			{:else if !amMember && currentPlayerID != null}
-				<p class="choices-note muted" style="margin-top:0.5rem;">
+				<p class="choices-note muted">
 					The Monarch and members with higher power than the decree proposer
 					are already seated.
 				</p>
@@ -524,14 +526,14 @@
 			<!-- Step 4: the signatory closes the debate (only once it's open and
 			     every eligible player has decided). -->
 			{#if amSignatory && debateStarted}
-				<div class="plan-form" style="margin-top:0.5rem;">
+				<div class="plan-form">
 					{#if pendingDeciderIDs.length > 0}
 						<p class="choices-note muted">
 							Waiting on {pendingDeciderIDs.map(id => playerName(players, id)).join(', ')}
 							to decide if they want to join the council.
 						</p>
 					{:else}
-						<p class="choices-note">
+						<p class="ft-prompt">
 							The council members are final. Discuss the proposed decree in the chat.
 							When the discussion is done, call for the roll.
 						</p>
@@ -561,7 +563,7 @@
 				{#if !lawEnacted && rollOutcome != null}
 					<p class="choices-header">
 						Result: <span class="outcome-{rollOutcome}">
-							{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
+							{rollOutcome === 'make' ? 'Make' : 'Mar'}
 						</span>
 					</p>
 				{/if}
@@ -574,10 +576,10 @@
 				</p>
 
 				<!-- Current law text (live, reflects amendments so far). -->
-				<p class="plan-notes">
+				<p class="ft-prompt">
 					Law: {pdState.lawText}
 					{#if pdState.addendumPlaced && pdState.addendum}
-						<em> — {pdState.addendumConnector} {pdState.addendum}</em>
+						— {pdState.addendumConnector} {pdState.addendum}
 					{/if}
 				</p>
 
@@ -586,7 +588,7 @@
 					{#if myAmendTurn}
 						<div class="plan-form">
 							<p class="choices-header">Amend the law (your turn)</p>
-							<p class="choices-note">
+							<p class="ft-prompt">
 								Rewrite the law's text. The next council member amends your version.
 							</p>
 							<label class="form-label">
@@ -622,14 +624,14 @@
 					{#if amAddendumActor}
 						<div class="plan-form">
 							<p class="choices-header">Signatory's Addendum</p>
-							<p class="choices-note">
+							<p class="ft-prompt">
 								Add your rider to the final law's text (or leave it blank).
 							</p>
 							<div class="chip-row">
-								<button type="button" class="chip-btn" class:active={addendumConnector === 'and'}
-									onclick={() => (addendumConnector = 'and')}>and</button>
-								<button type="button" class="chip-btn" class:active={addendumConnector === 'but'}
-									onclick={() => (addendumConnector = 'but')}>but</button>
+								<Chip selected={addendumConnector === 'and'}
+									onclick={() => (addendumConnector = 'and')}>and</Chip>
+								<Chip selected={addendumConnector === 'but'}
+									onclick={() => (addendumConnector = 'but')}>but</Chip>
 							</div>
 							<label class="form-label">
 								<textarea rows={2} bind:value={addendumDraft} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
@@ -656,7 +658,7 @@
 						<div class="plan-form">
 							<p class="choices-header">Enact the law</p>
 							{#if isMakeEnact}
-								<p class="choices-note">
+								<p class="ft-prompt">
 									The law above takes effect. Name the resource it creates for you.
 								</p>
 								<AssetCreationForm
@@ -669,7 +671,7 @@
 									marginaliaLabel="2 · First marginalia"
 								/>
 							{:else}
-								<p class="choices-note">The law above takes effect (no resource on a mar).</p>
+								<p class="ft-prompt">The law above takes effect (no resource on a mar).</p>
 							{/if}
 							<button class="action-btn primary"
 								onclick={() => submitEnact(plan)}
@@ -694,3 +696,22 @@
 
 	</ResolvingCard>
 {/if}
+
+<style>
+	/* A heading and the text it introduces read as one group, so they sit close
+	   (the step's groups sit a full gap apart). */
+	.council,
+	.debated {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+
+	/* The council, one member per line. Plain text: nothing here is pressed. */
+	.council-list {
+		margin: 0;
+		padding-left: var(--space-4);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+</style>

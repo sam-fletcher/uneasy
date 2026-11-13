@@ -42,7 +42,7 @@ const LAW = 'No private armies within the capital.';
 
 /** The proposed text under debate, as the panel shows it (not the prep note above it). */
 const debated = (page: Page) =>
-	page.locator('.choices-header', { hasText: 'Proposed decree being debated:' }).locator('+ p.plan-notes');
+	page.locator('.choices-header', { hasText: 'Proposed decree being debated:' }).locator('+ p.ft-prompt');
 
 /** Tick a card in a CardPicker (assets are chosen by checkbox). */
 async function pickCard(page: Page, name: string) {
@@ -130,7 +130,7 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	await alice.getByRole('button', { name: 'Open the debate' }).click();
 	// The proposed law now shows to everyone, live.
 	await expect(bob.getByText('Proposed decree being debated:')).toBeVisible();
-	for (const page of [alice, bob, carol]) await expect(debated(page)).toHaveText(`"${LAW}"`);
+	for (const page of [alice, bob, carol]) await expect(debated(page)).toHaveText(`“${LAW}”`);
 	expect((await act(g, 'alice', planID, 'start-debate', { text: LAW })).status()).toBe(409);
 
 	// The signatory can't close the debate while anyone is undecided.
