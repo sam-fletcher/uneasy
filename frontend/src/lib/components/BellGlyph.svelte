@@ -1,5 +1,5 @@
 <!--
-  BellGlyph.svelte — the reminder bell on the profile page's table cards, and
+  BellGlyph.svelte — the reminder bell on the profile page's table rows, and
   its struck twin for a table that is sending nothing.
 
   House icon idiom, same as HelpGlyph/CrownGlyph: 24×24 viewBox, stroke=
@@ -53,9 +53,9 @@
 	}
 	/* Widened and painted in the caller's own background so the diagonal carves
 	   a gap through the bell's outline rather than blending into it. The caller
-	   sets --bell-strike-bg to whatever it actually sits on — on the profile
-	   card that is the warm your-move fill, not the plain surface, and getting
-	   it wrong leaves a visible seam. */
+	   sets --bell-strike-bg to whatever it actually sits on — on a profile
+	   table row that is the page, or the raised surface while the row is
+	   hovered, and getting it wrong leaves a visible seam. */
 	.strike-under {
 		stroke: var(--bell-strike-bg, var(--color-surface));
 		stroke-width: 5;

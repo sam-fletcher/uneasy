@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/modalShell.css';
@@ -11,17 +10,15 @@
 		createTable, joinTable, setReminderMute,
 		type Account, type MyTable,
 	} from '$lib/api';
-	import { tableBell } from '$lib/tableBell';
-	import BellGlyph from '$lib/components/BellGlyph.svelte';
-	import { playerColor } from '$lib/playerColor';
-	import PhaseBadge from '$lib/components/shared/PhaseBadge.svelte';
-	import LogMark from '$lib/components/LogMark.svelte';
+	import { groupTables } from '$lib/tableGroups';
+	import TableRow from '$lib/components/profile/TableRow.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import CharCounter from '$lib/components/CharCounter.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import FeedbackForm from '$lib/components/FeedbackForm.svelte';
 	import { getPushState, enablePush, disablePush, onPushPermissionChange, type PushState } from '$lib/push';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import PushBlockedHelp from '$lib/components/shared/PushBlockedHelp.svelte';
 
 	let me = $state<Account | null>(null);
@@ -41,16 +38,10 @@
 	let notice = $state('');
 	let feedbackOpen = $state(false);
 
-	// ── Table cards ──────────────────────────────────────────────────────────
-	// Live games first; within each group keep the server's most-recently-
-	// joined-first order (Array.prototype.sort is stable).
-	const sortedTables = $derived(
-		[...tables].sort((a, b) => Number(a.phase === 'ended') - Number(b.phase === 'ended'))
-	);
-
-	function isYourMove(t: MyTable): boolean {
-		return t.phase !== 'ended' && t.waiting_on_player_ids.includes(t.player_id);
-	}
+	// ── Table list ───────────────────────────────────────────────────────────
+	// Three groups: where you're needed, where others are, what's over. Each
+	// keeps the server's most-recently-joined-first order (lib/tableGroups.ts).
+	const groups = $derived(groupTables(tables));
 
 	// Tables whose bell is mid-request, so a double tap can't fire twice.
 	let mutingGames = $state<number[]>([]);
@@ -60,7 +51,7 @@
 	// keep anywhere: the server clears it when the table moves on.
 	//
 	// Optimistic, then corrected from the response rather than assumed: with no
-	// reminder pending the server keeps no quiet and says so, and the card has
+	// reminder pending the server keeps no quiet and says so, and the row has
 	// to show what is true, not what was asked for.
 	async function toggleMute(t: MyTable, setMutedTo: boolean) {
 		if (mutingGames.includes(t.game_id)) return;
@@ -165,11 +156,11 @@
 	// tap it, and production's ~400ms request floor plus ~170KB/s transfer
 	// puts the table chunk (~97KB gz) at about a second on the tap path. So
 	// fetch it as soon as we know they have a table, while they read the
-	// cards. One call covers every table: they all share the [id] route.
+	// rows. One call covers every table: they all share the [id] route.
 	//
 	// Programmatic rather than data-sveltekit-preload-code="viewport" on the
 	// links: SvelteKit only registers viewport observers for anchors present
-	// when navigation completes, and these cards render after a fetch, so the
+	// when navigation completes, and these rows render after a fetch, so the
 	// attribute would silently do nothing on a cold load — the visit that
 	// matters. The body's global preload-data="hover" still runs on
 	// touchstart, but that is ~100ms before navigation, too late to hide a
@@ -184,7 +175,7 @@
 	});
 
 	// ── Refresh on return ────────────────────────────────────────────────────
-	// The table cards (roster, phase, waiting-on, online) come from one fetch
+	// The table rows (roster, title, waiting-on, unread) come from one fetch
 	// in onMount and have no WebSocket behind them — an account-level socket
 	// doesn't exist, and by design: hub presence means "has a table open", so
 	// a profile page deliberately counts as offline. Without this, a player
@@ -217,7 +208,7 @@
 			const res = await withTimeout(listMyTables());
 			tables = res.tables;
 		} catch {
-			// Leave the cards showing what they already had — a failed
+			// Leave the rows showing what they already had — a failed
 			// background refresh shouldn't replace a working page with an
 			// error. The next return to the page tries again.
 		} finally {
@@ -365,6 +356,8 @@
 	}
 </script>
 
+
+
 {#if loading}
 	<p class="muted-text">Loading…</p>
 {:else if !me}
@@ -377,90 +370,36 @@
 		<p class="wordmark">Uneasy Lies <span class="the">the</span> Head</p>
 
 		{#if error}<ErrorText message={error} />{/if}
-		{#if notice}<p class="status">{notice}</p>{/if}
+		{#if notice}<Notice tone="success" live>{notice}</Notice>{/if}
 
 		{#if tables.length > 0}
-			<section class="card tables-card">
-				<h2>Your tables</h2>
-				<ul class="table-list">
-					{#each sortedTables as t (t.game_id)}
-						{@const ended = t.phase === 'ended'}
-						{@const bell = tableBell(t)}
-						<li class="table-slot" class:has-bell={bell}>
-							<a class="table-card" class:your-move={isYourMove(t)} class:ended href={`/table/${t.game_id}`}>
-								<span class="table-id">
-									<span class="table-code">Table <span class="code-value">{t.join_code}</span></span>
-									<span class="status-row">
-										<PhaseBadge phase={t.phase} />
-										{#if !ended && t.unread_count > 0}
-											<span
-												class="unread-chip"
-												aria-label={`${t.unread_count} unread chat ${t.unread_count === 1 ? 'message' : 'messages'}`}
-											>
-												<span class="unread-chip-mark" aria-hidden="true"><LogMark family="chat" /></span>
-												<b>{t.unread_count > 99 ? '99+' : t.unread_count}</b>
-											</span>
-										{/if}
-									</span>
-								</span>
-								<span class="pills">
-									{#each t.players as p (p.id)}
-										{@const online = !ended && (p.online || p.id === t.player_id)}
-										{@const waited = !ended && t.waiting_on_player_ids.includes(p.id)}
-										<span
-											class="pill"
-											class:waited
-											style:--pill-color={playerColor(p)}
-											aria-label={`${p.display_name}${p.id === t.player_id ? ' (you)' : ''}${online ? ', online' : ''}${waited ? ', game is waiting on them' : ''}`}
-										>
-											<span class="pill-dot" aria-hidden="true"></span>
-											<span class="pill-name">{p.display_name}</span>
-										</span>
-									{/each}
-								</span>
-							</a>
-							{#if bell}
-								{#if bell.setMutedTo === null}
-									<!-- Reminders stopped on their own, so this is a status, not a
-									     control: a button here would offer to silence something
-									     already silent. -->
-									<span class="bell bell-static" title={bell.title} aria-label={bell.label}>
-										<BellGlyph size={20} struck={bell.struck} />
-									</span>
-								{:else}
-									<button
-										class="bell"
-										type="button"
-										aria-pressed={bell.struck}
-										title={bell.title}
-										aria-label={bell.label}
-										disabled={mutingGames.includes(t.game_id)}
-										onclick={() => toggleMute(t, bell.setMutedTo as boolean)}
-									>
-										<BellGlyph size={20} struck={bell.struck} />
-									</button>
-								{/if}
-							{/if}
-						</li>
-					{/each}
-				</ul>
+			<section class="section" aria-labelledby="tables-heading">
+				<h2 id="tables-heading">Your tables</h2>
+				{#each groups as group (group.key)}
+					<h3 class="group-heading" id={`group-${group.key}`}>{group.heading}</h3>
+					<ul class="table-list" aria-labelledby={`group-${group.key}`}>
+						{#each group.tables as t (t.game_id)}
+							<TableRow table={t} mutePending={mutingGames.includes(t.game_id)} onMute={toggleMute} />
+						{/each}
+					</ul>
+				{/each}
 			</section>
 		{/if}
 
-		<section class="card">
+		<section class="section">
 			<h2>Join a table</h2>
 			<p class="hint">Have a code from your host? Enter it to take a seat.</p>
 			<div class="join">
-				<input aria-label="Join code" placeholder="Join code" bind:value={joinCode} maxlength={6} style="text-transform:uppercase;letter-spacing:0.15em" />
+				<input class="code-input" aria-label="Join code" placeholder="Join code" bind:value={joinCode} maxlength={6} />
 				<button class="action-btn primary" onclick={doJoin} disabled={busy || !joinCode.trim()}>Join</button>
 			</div>
 			<div class="create-row">
 				<span class="hint">Hosting a game?</span>
-				<button class="action-btn primary" onclick={doCreate} disabled={busy}>Create a new table</button>
+				<button class="action-btn secondary" onclick={doCreate} disabled={busy}>Create a new table</button>
 			</div>
 		</section>
 
-				<section class="card">
+		<section class="section">
 			<h2>Notifications</h2>
 			<p class="hint">
 				If a table is waiting on you longer than your chosen time, we'll send a reminder.
@@ -494,7 +433,7 @@
 					</div>
 				{:else}
 					<span>Push notifications: {pushState === 'on' ? 'On' : 'Off'}</span>
-					<button class="action-btn primary" onclick={togglePush} disabled={pushBusy}>
+					<button class="action-btn secondary" onclick={togglePush} disabled={pushBusy}>
 						{pushBusy ? '…' : pushState === 'on' ? 'Turn off' : 'Turn on'}
 					</button>
 				{/if}
@@ -505,18 +444,18 @@
 			</p>
 		</section>
 
-		<section class="card">
+		<section class="section">
 			<h2>Account</h2>
 			<div class="row">
 				<span class="label">Player name</span>
 				{#if editingUsername}
 					<input aria-label="Player name" bind:value={usernameDraft} maxlength={TEXT_LIMITS.USERNAME} />
 					<CharCounter value={usernameDraft} max={TEXT_LIMITS.USERNAME} />
-					<button class="action-btn primary small" onclick={saveUsername}>Save</button>
-					<button class="action-btn secondary small" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
+					<button class="action-btn primary" onclick={saveUsername}>Save</button>
+					<button class="action-btn secondary" onclick={() => { editingUsername = false; usernameDraft = me?.username ?? ''; }}>Cancel</button>
 				{:else}
 					<span>{me.username}</span>
-					<button class="action-btn primary small" aria-label="Edit player name" onclick={() => { editingUsername = true; }}>Edit</button>
+					<button class="action-btn secondary" aria-label="Edit player name" onclick={() => { editingUsername = true; }}>Edit</button>
 				{/if}
 			</div>
 			<!-- TODO: Hook up backend email handling -->
@@ -524,28 +463,28 @@
 				<span class="label">Email</span>
 				{#if editingEmail}
 					<input type="email" aria-label="Email" bind:value={emailDraft} />
-					<button class="action-btn primary small" onclick={saveEmail}>Save</button>
-					<button class="action-btn secondary small" onclick={() => { editingEmail = false; emailDraft = me?.email ?? ''; }}>Cancel</button>
+					<button class="action-btn primary" onclick={saveEmail}>Save</button>
+					<button class="action-btn secondary" onclick={() => { editingEmail = false; emailDraft = me?.email ?? ''; }}>Cancel</button>
 				{:else}
 					<span>{me.email ?? 'Not set. For notifications and password recovery.'}</span>
-					<button class="action-btn secondary small" aria-label="Edit email" onclick={() => { editingEmail = true; }}>Edit</button>
+					<button class="action-btn secondary" aria-label="Edit email" onclick={() => { editingEmail = true; }}>Edit</button>
 				{/if}
 			</div> -->
 			<div class="row">
 				<span class="label">Password</span>
 				{#if editingPassword}
 					<input type="password" aria-label="New password" bind:value={passwordDraft} placeholder="Enter a new password" />
-					<button class="action-btn primary small" onclick={savePassword} disabled={!passwordDraft}>Save</button>
-					<button class="action-btn secondary small" onclick={() => { editingPassword = false; passwordDraft = ''; }}>Cancel</button>
+					<button class="action-btn primary" onclick={savePassword} disabled={!passwordDraft}>Save</button>
+					<button class="action-btn secondary" onclick={() => { editingPassword = false; passwordDraft = ''; }}>Cancel</button>
 				{:else}
 					<span class="masked">••••••••</span>
-					<button class="action-btn primary small" aria-label="Edit password" onclick={() => { editingPassword = true; }}>Edit</button>
+					<button class="action-btn secondary" aria-label="Edit password" onclick={() => { editingPassword = true; }}>Edit</button>
 				{/if}
 			</div>
 		</section>
 
 		<div class="footer-actions">
-			<button class="action-btn primary feedback-btn" onclick={() => feedbackOpen = true}>Send feedback</button>
+			<button class="action-btn secondary" onclick={() => feedbackOpen = true}>Send feedback</button>
 			<button class="action-btn secondary" onclick={doLogout}>Log out</button>
 		</div>
 	</div>
@@ -559,292 +498,135 @@
 {/if}
 
 <style>
-	/* A content column like any other: capped at 440 and centered
-	   (docs/STYLE_GUIDE.md "Layout widths"). From the chat dock up — the
-	   system's "two columns fit" boundary — the page widens to two column
-	   widths so the tables grid can go 2-up, while the form sections stay
-	   phone-width (forms gain nothing from width).
-	   The horizontal gutter is ours, not main's (main.flush in +layout.svelte):
-	   inside the cap, so the column measures a true 440 / 888 at those
-	   viewports. 0.75rem matches the phase views' inner gutter, which keeps
-	   the content box identical to a table column's at every width. */
-	.profile { display:flex; flex-direction:column; gap:1.25rem; max-width:440px; margin: 0 auto; padding:1rem 0.75rem 0; }
-	@media (min-width: 790px) {
-		/* 440 + 8 gutter + 440, sizing the PAGE, not the tiles. An outer-box
-		   cap like .phase-column's 440, so our gutter and .card's padding both
-		   eat into it — the tiles land at 406 here. They're fluid (the grid's
-		   floor is 330), not capped columns in their own right, so that's
-		   within range; the number's job is to stop the page growing past two
-		   phones. */
-		.profile { max-width: 888px; }
-		.profile > :not(.tables-card) { width: 100%; max-width: 440px; margin-inline: auto; }
+	/* One phone-width column at every window width (docs/STYLE_GUIDE.md "Layout
+	   widths": the column cap is 440, and extra width becomes centring margin).
+	   The gutter is ours, not main's (main.flush in +layout.svelte): inside the
+	   cap, so the column measures a true 440 at that viewport. There are no
+	   boxes on this page. A section is a heading and space; the tables are rows
+	   with a line between them; only the controls (inputs, buttons) are drawn
+	   as objects. */
+	.profile {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-5);
+		max-width: 440px;
+		margin: 0 auto;
+		padding: 0 var(--space-4) var(--space-5);
 	}
 	.wordmark {
 		text-align: center;
 		font-family: var(--font-display);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		font-size: clamp(1.15rem, 4.5vw, 1.6rem);
+		font-size: var(--text-title);
 		color: var(--color-accent);
-		margin-top: -0.8rem;
-		margin-bottom: -0.4rem;
 	}
-	.wordmark .the { font-size: 0.6em; letter-spacing: 0.1em; }
-	h2 { color:var(--color-accent); font-size:1.2rem; margin-bottom:0.75rem; }
-	.hint { color:var(--color-text-muted); font-size:0.85rem; margin-bottom:0.6rem; }
-	.card { background:var(--color-surface); border:1px solid var(--color-border); border-radius:12px; padding:1.25rem; }
-	.row { display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem; padding:0.5rem 0; border-bottom:1px solid var(--color-border); }
-	.row:last-child { border-bottom:none; }
-	.label { width:5rem; color:var(--color-text-muted); font-size:0.85rem; }
-	.masked { letter-spacing:0.15em; color:var(--color-text-muted); }
-	.row input, .row select { flex:1; min-width:0; min-height:44px; }
-	.row select {
-		background: var(--color-surface-2);
+	/* The small connecting word is the smallest step that reads at this size. */
+	.wordmark .the { font-size: var(--text-small); letter-spacing: 0.1em; }
+
+	.section {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	h2 {
+		color: var(--color-accent);
+		font-size: var(--text-heading);
+	}
+	.hint {
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
+	}
+
+	/* ── The table list ─────────────────────────────────────────────────────
+	   A small heading and a rule per group, then the rows (TableRow). The rule
+	   under the heading doubles as the line above the group's first row. */
+	.group-heading {
+		margin-top: var(--space-4);
+		padding-bottom: var(--space-1);
+		border-bottom: 1px solid var(--color-border);
+		font-size: var(--text-label);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--color-text-secondary);
+	}
+	h2 + .group-heading { margin-top: var(--space-1); }
+	.table-list { list-style: none; }
+
+	/* ── Controls ───────────────────────────────────────────────────────── */
+	/* A control standing on the page: the raised surface and the neutral control
+	   border. 16px type, because iOS Safari zooms the page when a focused input
+	   is set smaller. */
+	input, select {
+		min-height: var(--size-tap);
+		padding: 0 var(--space-3);
+		font-family: inherit;
+		font-size: var(--text-body);
 		color: var(--color-text);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		padding: 0 0.6rem;
-		font: inherit;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border-control);
+		border-radius: var(--radius-control);
 	}
-	.row span:not(.label) { flex:1; min-width:0; }
+	input:focus, select:focus {
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
+	}
+	input::placeholder { color: var(--color-text-faint); }
+	.join { display: flex; gap: var(--space-2); }
+	.join input { flex: 1; min-width: 0; }
+	.code-input { letter-spacing: 0.15em; text-transform: uppercase; }
+	/* "Create a new table" is a secondary button, set under the join row, so Join
+	   is the only filled button on the page. */
+	.create-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		padding-top: var(--space-2);
+	}
+
+	/* ── Notifications and Account: label, value, control, a line between ─── */
+	.row {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		padding: var(--space-2) 0;
+		border-bottom: 1px solid var(--color-border);
+	}
+	.row:last-child { border-bottom: none; }
+	/* The field label sits on its own line so the value and its buttons get the
+	   full width instead of cramping. */
+	.label {
+		width: 100%;
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
+	}
+	.masked { letter-spacing: 0.15em; color: var(--color-text-secondary); }
+	.row input, .row select { flex: 1; min-width: 0; }
+	.row span:not(.label) { flex: 1; min-width: 0; }
 	.push-row { border-bottom: none; }
-	/* The blocked case is a paragraph plus a numbered list, not a value that
-	   can sit inline next to its label like the other rows' controls. */
-	.push-blocked-row { flex: 1 1 100%; display: flex; flex-direction: column; gap: 0.4rem; }
-	.push-hint { margin-top: -0.3rem; }
-	/* Renders in place of .profile, so it carries the same gutter — main.flush
-	   no longer supplies one. */
-	.load-error { display:flex; flex-direction:column; align-items:center; gap:1rem; max-width:440px; margin:0 auto; padding:2rem 0.75rem 0; }
-	.status { color:var(--color-accent); font-size:0.9rem; }
-	/* The field label sits on its own line so the value and its buttons get
-	   the full width instead of cramping — the form sections stay phone-width
-	   (≤440) at every viewport, so this is unconditional. */
-	.label { width:100%; }
-	ul { list-style:none; }
+	/* The blocked case is a paragraph plus a numbered list, not a value that can
+	   sit inline next to its label like the other rows' controls. */
+	.push-blocked-row { flex: 1 1 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+	.push-hint { margin-top: calc(-1 * var(--space-1)); }
 
-	/* ── Table cards ────────────────────────────────────────────────────────
-	   One card per game, echoing the in-table header: table id + shared
-	   PhaseBadge stacked on the left, the roster as a pill grid on the
-	   right. State channels: waited pill = gold BORDER (the app's one
-	   waiting-on treatment, shared with the header chips and TableRoster),
-	   your-move = warm card fill, ended = whole card muted with the other
-	   treatments suppressed. Presence is no longer drawn here — see
-	   `.pill` below. */
-	/* Tiles: ~330px is the card content's intrinsic minimum (sized at the
-	   phone floor), so the auto-fill grid is 1-up while the section is a
-	   single 440 column and 2-up (~420 each, inside the phone band) once
-	   the page widens at the dock. min(330px, 100%) keeps the minimum from
-	   forcing overflow on phones. */
-	.table-list {
-		display:grid;
-		grid-template-columns:repeat(auto-fill, minmax(min(330px, 100%), 1fr));
-		gap:0.6rem;
+	/* Renders in place of .profile, so it carries the same gutter: main.flush no
+	   longer supplies one. */
+	.load-error {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--space-4);
+		max-width: 440px;
+		margin: 0 auto;
+		padding: var(--space-6) var(--space-4) 0;
 	}
-	/* The card is a link, and the bell inside it is a button — which cannot be
-	   nested in an <a> at all. So the <li> is the positioned box, the link and
-	   the button are siblings, and the link stretches over the whole card via
-	   ::after to keep the full-card tap target a phone needs. The button sits
-	   above that overlay on its own layer, so the two never fight for a tap.
-	   Two focusable stops, in reading order: open the table, then silence it. */
-	.table-slot { position:relative; }
-	.table-card {
-		display:flex;
-		align-items:center;
-		flex-wrap:wrap;
-		gap:0.6rem 1.25rem;
-		padding:0.7rem 0.75rem;
-		border:1px solid var(--color-border);
-		border-radius:var(--radius-md);
-		color:var(--color-text);
-		text-decoration:none;
+	.footer-actions {
+		display: flex;
+		justify-content: center;
+		gap: var(--space-3);
+		flex-wrap: wrap;
 	}
-	.table-card::after { content:''; position:absolute; inset:0; border-radius:var(--radius-md); }
-	/* Room for the bell so a long roster can never wrap underneath it. Reserved
-	   only when there is one, or every other card would carry a dead margin. */
-	.table-slot.has-bell .table-card { padding-right:3.4rem; }
-	.table-card:hover { border-color:var(--color-accent-dim); }
-	.table-card:focus-visible { outline:2px solid var(--color-accent); outline-offset:1px; }
-
-	/* 44px of tap target around a 20px glyph, per the house mobile minimum —
-	   the visual weight comes from the glyph, not from the hit area. Vertically
-	   centred against the whole card rather than pinned to a corner: the card's
-	   height changes with roster wrapping, and a corner bell drifts away from
-	   the thumb as it does. */
-	.bell {
-		position:absolute;
-		right:0.35rem;
-		top:50%;
-		transform:translateY(-50%);
-		z-index:1;
-		display:flex;
-		align-items:center;
-		justify-content:center;
-		width:44px;
-		height:44px;
-		padding:0;
-		border:none;
-		background:none;
-		border-radius:var(--radius-md);
-		/* Plain text, not --color-text-muted: muted is this app's de-emphasis
-		   register, so a greyed bell reads as "reminders are off" — the exact
-		   opposite of what an un-struck bell means. Not gold either, tempting as
-		   an "active" colour is: the bell only ever renders on a your-move card,
-		   where gold is already carrying turn semantics twice (the surface fill
-		   and the waited pill) with the unread chip's quiet gold on top. A gold
-		   bell would be the fourth, and would collapse "the table wants you"
-		   into "reminders are on" — the same reasoning the .unread-chip comment
-		   above works through. */
-		color:var(--color-text);
-		--bell-strike-bg:var(--color-surface);
-	}
-	/* The bell only ever appears on a card the game is waiting on, which is
-	   always the warm your-move fill — the strike has to be cut in that colour
-	   or it leaves a seam through the bell's outline. */
-	.table-slot.has-bell .bell { --bell-strike-bg:var(--color-surface-active); }
-	button.bell { cursor:pointer; }
-	button.bell:hover { color:var(--color-text); background:var(--color-surface-hover); }
-	button.bell:focus-visible { outline:2px solid var(--color-accent); outline-offset:1px; }
-	button.bell:disabled { opacity:0.5; cursor:default; }
-	/* The two struck states are told apart by colour, and colour alone has to do
-	   it: the only other difference is the title attribute, which never appears
-	   on a touch device, so on a phone they would otherwise be identical.
-	   Which register each one takes follows agency, not severity:
-	     * Silenced by the player is their own deliberate, undoable choice with
-	       nothing wrong about it — the feature working as asked. Muted grey,
-	       the same de-emphasis that would have been wrong on the live bell, is
-	       exactly right on a bell the player has switched off themselves.
-	     * Given up on is the system's doing and the genuinely new information:
-	       nobody is being nudged here any more, and the table may be over.
-	       That earns the warning family (orange), which is also where the
-	       Retinue's reminder line puts every "no ping will reach them" state.
-	   Deliberately NOT --color-danger: red is spoken for by errors and the
-	   at-risk game state (app.css ruling 3), and a reminder winding down is
-	   neither. */
-	button.bell[aria-pressed='true'] { color:var(--color-text-muted); }
-	.bell-static { color:var(--color-warning); }
-	/* The game is blocked on you: warm emphasis fill, same semantics as the
-	   in-table selected/active gold surfaces. */
-	.table-card.your-move {
-		background:var(--color-surface-active);
-		border-color:var(--color-accent-dim);
-	}
-	.table-card.ended { opacity:0.55; }
-	.table-card.ended:hover { opacity:0.8; }
-	/* Unread ("12 new") sits in the status cluster beside the phase badge,
-	   since it is card-level status like the phase is.
-	   It uses the QUIET gold chip trio, not the solid-accent badge the in-game
-	   chat bar wears: on this card gold already carries turn semantics twice
-	   (.your-move's surface fill, .waited's pill), so a third solid-gold
-	   object would collapse two independent signals — "you owe a move" and
-	   "the table has been talking" — into one indistinguishable glow. The
-	   trio is the documented register for a quiet badge, and it differs from
-	   .your-move by channel as well as brightness: that is a surface fill,
-	   this is an object.
-	   The chat mark carries the noun instead of the word "new", which never
-	   said new *what* while sitting beside a phase badge. It also repays the
-	   mark the mobile chat bar teaches, so recognising it in one place works
-	   in the other. Bold on the number, per the style guide's standalone-
-	   numeric-counter ruling. The mark is aria-hidden and the chip carries an
-	   aria-label, since dropping the word would otherwise leave a screen
-	   reader announcing a bare number. */
-	.unread-chip {
-		display:inline-flex;
-		align-items:center;
-		gap:0.3rem;
-		padding:0.15rem 0.5rem;
-		border-radius:999px;
-		background:var(--color-chip-gold-bg);
-		border:1px solid var(--color-chip-gold-border);
-		color:var(--color-chip-gold-text);
-		font-size:0.75rem;
-		white-space:nowrap;
-	}
-	/* 14px against 12px text — the usual optical bump that keeps a line icon
-	   from reading smaller than the type beside it. This is the smallest any
-	   house mark renders anywhere, which is exactly why `chat` holds the
-	   simplest shape in the set (see LogMark's note on the rumor swap). */
-	.unread-chip-mark { width:14px; height:14px; flex-shrink:0; }
-
-	.table-id {
-		display:flex;
-		flex-direction:column;
-		/* Badge centres under the (wider) table name. */
-		align-items:center;
-		gap:0.5rem;
-		flex-shrink:0;
-	}
-	/* Phase badge and unread chip share a row under the table code — both are
-	   card-level status, so they read as one cluster. Wraps rather than
-	   overflowing if a long phase label meets a 3-digit count. */
-	.status-row {
-		display:flex;
-		align-items:center;
-		justify-content:center;
-		flex-wrap:wrap;
-		gap:0.4rem;
-	}
-	.table-code { font-size:0.85rem; color:var(--color-text-muted); }
-	.code-value { color:var(--color-text); letter-spacing:0.12em; }
-
-	/* Roster pills fill the space right of the table id (the card's column
-	   gap keeps a healthy minimum distance) and centre in it both ways,
-	   wrapping to as many rows as the names need. */
-	.pills {
-		flex:1;
-		display:flex;
-		flex-wrap:wrap;
-		justify-content:center;
-		align-items:center;
-		align-content:center;
-		gap:0.4rem;
-	}
-	.pill {
-		display:inline-flex;
-		align-items:center;
-		gap:0.35rem;
-		padding:0.28rem 0.6rem;
-		font-size:0.8rem;
-		background:var(--color-surface-2);
-		border:1px solid var(--color-border);
-		border-radius:999px;
-	}
-	/* Waiting-on = a gold BORDER, the app's single treatment for it (header
-	   chips, TableRoster, here). It was a gold tint; the fill was the thing
-	   that read as muddy brown, and a green presence ring wrapped around that
-	   brown was the worst object on this page (owner, 2026-08-16).
-
-	   It paints your OWN pill too, deliberately. `.your-move` already fills
-	   the whole card when the table is blocked on you, so the pill is saying
-	   it twice — but a channel that changes meaning depending on whose row it
-	   is isn't a channel (owner's ruling). Gold border = "waiting on this
-	   player", every row, every surface; the card fill is emphasis stacked on
-	   top, not a different statement.
-
-	   Presence is no longer drawn. It was a green ring, and it never said
-	   anything about you in the first place: `online` is computed as
-	   `p.online || p.id === t.player_id`, so your own pill was hard-coded lit.
-	   The word still reaches a screen reader through the pill's aria-label. */
-	.pill.waited { border-color:var(--color-accent); }
-	.pill-dot {
-		width:8px; height:8px;
-		border-radius:50%;
-		background:var(--pill-color, var(--color-text-muted));
-		flex-shrink:0;
-	}
-	/* These pills WRAP (see .pills) rather than scrolling, so there's no
-	   strip to share and no reason for the header's tighter budget — a long
-	   name costs a row, not a clipped name. 26ch is the same pathological
-	   wide-glyph backstop the header chips use. */
-	.pill-name {
-		max-width:26ch;
-		overflow:hidden;
-		white-space:nowrap;
-		text-overflow:ellipsis;
-	}
-	.join { display:flex; gap:0.5rem; }
-	/* Secondary "create a table" action, set apart below the primary join row. */
-	.create-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--color-border); }
-	.create-row .hint { margin:0; }
-	.footer-actions { display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap; margin-top:0.5rem; }
-	.feedback-btn { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
 </style>

@@ -10,8 +10,8 @@ test('dev-login + profile renders username', async ({ page, request }) => {
   await page.context().addCookies(cookies.cookies);
 
   await page.goto('/profile');
-  // .first(): "alice" also appears in the roster pill of any table the
-  // account belongs to, not just the profile header — strict mode needs a
+  // .first(): "alice" also appears in the player line of any table the
+  // account belongs to, not just the account section — strict mode needs a
   // single target.
   await expect(page.getByText('alice').first()).toBeVisible();
 });
