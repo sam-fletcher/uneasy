@@ -37,7 +37,8 @@ comment at the top explaining the *why*; this is just the map.
   reconnect/resync), `chatFeed.ts` (unified chat/log feed assembly),
   `waitingOn.ts` (the "Waiting On" bar), `tableTitle.ts` (a table's one
   title, shared by its title bar and the profile row), `lawsRumorsSeen.ts`
-  (is this law or rumor new to me?), `secretCounts.ts` /
+  (is this law or rumor new to me?), `recordLines.ts` (the status word on a
+  Public Record plan line), `secretCounts.ts` /
   `succession.ts` (secret-existence and monarch-succession display rules),
   `severity.ts` / `textLimits.ts` (mirrors of Go-side constants — see each
   file's header comment for which one), `push.ts` (web push
