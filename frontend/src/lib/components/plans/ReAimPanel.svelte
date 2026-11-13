@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- ReAimPanel.svelte
   Shown INSTEAD of a plan's own resolve panel while the plan is paused because its
   prepare-time target is gone (resolution_data.reaim.owed — handler/plan_reaim.go).
@@ -27,6 +26,8 @@
 	import ResolvingCard from './ResolvingCard.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
+	import FormField from './FormField.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 	import { PLAN_SHORT, playerName, parseResolutionData } from './shared';
 
 	interface Props {
@@ -115,11 +116,9 @@
 </script>
 
 <ResolvingCard {plan} {players} error={error || loadError}>
-	<div class="reaim">
-		<p class="reaim-lead">
-			<strong>{planName}</strong> has lost its mark.
-		</p>
-		{#if reason}<p class="reaim-reason">{reason}</p>{/if}
+	<div class="reaim plan-form">
+		<p class="ft-prompt">{planName} has lost its mark.</p>
+		{#if reason}<p class="choices-note">{reason}</p>{/if}
 
 		{#if !isPreparer}
 			<p class="choices-note">
@@ -129,19 +128,18 @@
 		{:else if !loaded && !loadError}
 			<p class="choices-note">Loading the choices…</p>
 		{:else if loaded}
-			<p class="choices-note">
+			<p class="ft-prompt">
 				Choose a new target. The plan carries on from the top once you do.
 			</p>
 
 			{#if plan.plan_type === 'exchange_courtiers'}
-				<div class="reaim-field">
-					<span class="reaim-label">Target player</span>
+				<FormField label="Target player">
 					<PlayerChips
 						players={optionPlayers}
 						isActive={(p) => pickedPlayerID === p.id}
 						onSelect={(p) => { pickedPlayerID = p.id; pickedAssetID = null; }}
 					/>
-				</div>
+				</FormField>
 				{#if pickedPlayerID != null}
 					<CardPicker
 						label="Target peer"
@@ -163,45 +161,36 @@
 					onSelect={(id) => (pickedAssetID = id)}
 				/>
 			{:else if plan.plan_type === 'make_demands'}
-				<div class="reaim-field">
-					<span class="reaim-label">Demand against</span>
+				<FormField label="Demand against">
 					<div class="choice-list">
 						{#each planChoices as p (p.id)}
+							{@const isPicked = pickedPlanID === p.id}
 							<button
 								type="button"
 								class="choice-card"
-								class:active={pickedPlanID === p.id}
-								aria-pressed={pickedPlanID === p.id}
-								onclick={() => (pickedPlanID = pickedPlanID === p.id ? null : p.id)}
+								class:active={isPicked}
+								aria-pressed={isPicked}
+								onclick={() => (pickedPlanID = isPicked ? null : p.id)}
 							>
-								<span class="reaim-plan-text">
-									<span>{playerName(players, p.preparer_id)}'s {PLAN_SHORT[p.plan_type] ?? p.plan_type}</span>
+								<span class="choice-text">
+									<span class="choice-title">{playerName(players, p.preparer_id)}'s {PLAN_SHORT[p.plan_type] ?? p.plan_type}</span>
 									{#if p.preparation_notes}
-										<span class="reaim-plan-notes">“{p.preparation_notes}”</span>
+										<span class="choice-desc">“{p.preparation_notes}”</span>
 									{/if}
 								</span>
+								{#if isPicked}
+									<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
+								{/if}
 							</button>
 						{/each}
 					</div>
-				</div>
+				</FormField>
 			{/if}
 
-			<div class="reaim-actions">
-				<button class="action-btn primary" onclick={submit} disabled={!picked || busy}>
-					{busy ? '…' : 'Re-aim this plan'}
-				</button>
-				<EndsNote text="This ends the pause: the plan carries on from the top once you re-aim it." />
-			</div>
+			<button class="action-btn primary" onclick={submit} disabled={!picked || busy}>
+				{busy ? '…' : 'Re-aim this plan'}
+			</button>
+			<EndsNote text="This ends the pause: the plan carries on from the top once you re-aim it." />
 		{/if}
 	</div>
 </ResolvingCard>
-
-<style>
-	.reaim-lead { margin: 0 0 0.25rem 0; }
-	.reaim-reason { margin: 0 0 0.5rem 0; font-style: italic; }
-	.reaim-field { margin-top: 0.5rem; }
-	.reaim-label { display: block; margin-bottom: 0.25rem; font-size: 0.9em; }
-	.reaim-plan-text { display: flex; flex-direction: column; gap: 0.15rem; }
-	.reaim-plan-notes { font-size: 0.85em; color: var(--color-text-faint); }
-	.reaim-actions { margin-top: 0.75rem; }
-</style>
