@@ -385,6 +385,52 @@ fallback for when no player can be resolved at all — it is never used for
 OOC/table-talk speech, which keeps the speaking player's own colour, and
 never means "a quieter player."
 
+## The Public Record's lists
+
+What the pane shows once a chip is chosen. Both lists are plain text between hairlines: boxes are
+for controls, and a record is read, not pressed. `PublicRecord.svelte` and
+`LawsRumors.svelte`; the pure rules are in `lib/recordLines.ts`.
+
+**Events**
+
+- **A row is its number and its lines.** The number is faint and does nothing; an empty row is
+  only its number. A hairline (`--color-border-quiet`) closes each row. The **current** row has a
+  deep gold number and a 2px deep gold bar down its left edge (an inset shadow, so it never moves
+  the row), and no fill. A row the plan picker points at takes the info blue for the same two
+  marks instead.
+- **A line is a tappable row** (`tapRow.css`, 44px): the preparer's or author's shape, the name,
+  at most one status word, then `RowMark kind="arrow"`, since a line opens Chat somewhere else.
+  The caret means "expands in place" and would be wrong here. A scene line draws the scene mark
+  (`LogMark` family `scene`) in place of its "Scene:" word and truncates to one line; the tap
+  opens the whole thing.
+- **The one status word** (`.status-word`, small capitals): `Resolving` on the plan being
+  played (plain secondary text); `Make` (green) or `Mar` (red) on a resolved plan; `No effect`
+  (plain) on a plan that closed without a roll, which the server stores as a resolved plan with a
+  NULL result; nothing on a future plan. **Make War and Clandestinely Liaise never show Make or
+  Mar:** the server stores "make" when either ends, but the book gives neither one. A test pins it.
+- **Rankings** are marked by a row of small scallops either side of the podium (`LogMark`
+  `ranking`, deep gold), after rows 4, 8 and 12. **The Shake-Up row** draws the house burst
+  (`LogMark` `shake_up`), faint until the Shake-Up is under way; its three pips appear only then.
+- **Before play** (the lobby, tone setting, the Prologue) the same thirteen blank rows show, with
+  one line saying when play starts.
+
+**Laws and Rumors**
+
+- **An entry** is text at body size with its bylines under it, a hairline (`--color-border`)
+  between entries, and no card. The list's own total ("2 laws") is faint 12px text at its top;
+  totals never go on a tab.
+- **A byline** is a faint label, then the player's shape and name in their colour ("Proposed
+  by", "Signed by", "Spread by"). A hidden source reads "Unknown" in faint italics with **no**
+  shape. A rumor's "About" line, above its text, names the asset with the shape of whoever owns
+  it now.
+- **The "new" dot** (`NewDot`) starts an entry above the viewer's marker. It is drawn against the
+  marker **as it was when the list opened**: the table page reports a list as seen the moment it
+  is on screen, and the dot must outlive that. Switching list, or leaving and returning, opens
+  it again against the newer marker. An edit made through the entry's own Edit button isn't new to
+  its writer.
+- **Edit** is the house secondary button (`action-btn secondary`, 44px), shown only on an entry
+  you wrote.
+
 ## Typography
 
 - **Sizes** are the five `--text-*` steps above. Fonts follow.
