@@ -416,7 +416,7 @@
 			bind:performStepsWinnerID />
 
 		<!-- Council roster (visible to all) ────────────────────────────── -->
-		<div class="council">
+		<div class="titled">
 			<p class="choices-header">
 				Council ({pdState.council.length})
 				{#if pdState.signatoryID != null}
@@ -449,10 +449,12 @@
 			{#if !debateStarted}
 				{#if isPreparer}
 					<div class="plan-form">
-						<p class="choices-header">Finalize your decree</p>
-						<p class="ft-prompt">
-							Decide the text of the law you're proposing, then open the debate.
-						</p>
+						<div class="titled">
+							<p class="choices-header">Finalize your decree</p>
+							<p class="ft-prompt">
+								Decide the text of the law you're proposing, then open the debate.
+							</p>
+						</div>
 						<label class="form-label">
 							<textarea rows={4} bind:value={debateDraft} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
 								placeholder="The decree's text…"></textarea>
@@ -470,7 +472,7 @@
 				{/if}
 			{:else}
 				<!-- Debate open: show the proposed law under discussion. -->
-				<div class="debated">
+				<div class="titled">
 					<p class="choices-header">
 						Proposed decree being debated:
 					</p>
@@ -482,11 +484,13 @@
 			     during the debate). -->
 			{#if canDecide}
 				<div class="plan-form">
-					<p class="choices-header">Join the council?</p>
-					<p class="ft-prompt">
-						Leverage one asset to join the debate — it becomes a die you can use
-						during the roll to help or interfere.
-					</p>
+					<div class="titled">
+						<p class="choices-header">Join the council?</p>
+						<p class="ft-prompt">
+							Leverage one asset to join the debate — it becomes a die you can use
+							during the roll to help or interfere.
+						</p>
+					</div>
 					<CardPicker
 						label="Leverage one asset to join"
 						items={myUnleveragedAssets}
@@ -587,10 +591,12 @@
 				{#if rollOutcome === 'mar' && !amendmentsDone}
 					{#if myAmendTurn}
 						<div class="plan-form">
-							<p class="choices-header">Amend the law (your turn)</p>
-							<p class="ft-prompt">
-								Rewrite the law's text. The next council member amends your version.
-							</p>
+							<div class="titled">
+								<p class="choices-header">Amend the law (your turn)</p>
+								<p class="ft-prompt">
+									Rewrite the law's text. The next council member amends your version.
+								</p>
+							</div>
 							<label class="form-label">
 								<textarea rows={3} bind:value={amendDraft} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
 									placeholder="The amended law…"></textarea>
@@ -623,10 +629,12 @@
 				{#if amendmentsDone && !pdState.addendumPlaced}
 					{#if amAddendumActor}
 						<div class="plan-form">
-							<p class="choices-header">Signatory's Addendum</p>
-							<p class="ft-prompt">
-								Add your rider to the final law's text (or leave it blank).
-							</p>
+							<div class="titled">
+								<p class="choices-header">Signatory's Addendum</p>
+								<p class="ft-prompt">
+									Add your rider to the final law's text (or leave it blank).
+								</p>
+							</div>
 							<div class="chip-row">
 								<Chip selected={addendumConnector === 'and'}
 									onclick={() => (addendumConnector = 'and')}>and</Chip>
@@ -656,11 +664,17 @@
 				{#if awaitingEnact}
 					{#if amChoiceActor}
 						<div class="plan-form">
-							<p class="choices-header">Enact the law</p>
-							{#if isMakeEnact}
+							<div class="titled">
+								<p class="choices-header">Enact the law</p>
 								<p class="ft-prompt">
-									The law above takes effect. Name the resource it creates for you.
+									{#if isMakeEnact}
+										The law above takes effect. Name the resource it creates for you.
+									{:else}
+										The law above takes effect (no resource on a mar).
+									{/if}
 								</p>
+							</div>
+							{#if isMakeEnact}
 								<AssetCreationForm
 									{gameID}
 									assetType="resource"
@@ -670,8 +684,6 @@
 									nameLabel="1 · Name the resource"
 									marginaliaLabel="2 · First marginalia"
 								/>
-							{:else}
-								<p class="ft-prompt">The law above takes effect (no resource on a mar).</p>
 							{/if}
 							<button class="action-btn primary"
 								onclick={() => submitEnact(plan)}
@@ -698,10 +710,10 @@
 {/if}
 
 <style>
-	/* A heading and the text it introduces read as one group, so they sit close
-	   (the step's groups sit a full gap apart). */
-	.council,
-	.debated {
+	/* A title and the text it introduces read as one block, so they sit close; the
+	   step's groups sit a full gap apart. One mechanism for every such pair: wrap
+	   them in this. */
+	.titled {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-1);

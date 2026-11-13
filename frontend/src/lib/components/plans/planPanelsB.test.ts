@@ -43,6 +43,22 @@ describe('the five panels draw no legacy chip or warning markup', () => {
 	});
 });
 
+// One mechanism puts a title close to its sentence: wrap the two in a block with a
+// small gap. A negative margin pulling a sentence up closed the gap by a different
+// amount depending on what else set one (a wrapper's own gap made it overlap), so
+// none of the five uses one.
+describe('the five panels do not close a gap with a negative margin', () => {
+	function styleOf(file: string): string {
+		const src = readFileSync(join(HERE, file), 'utf8');
+		const blocks = [...src.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1]);
+		const inline = [...src.matchAll(/\sstyle="([^"]*)"/g)].map(m => m[1]);
+		return [...blocks, ...inline].join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
+	}
+	it.each(PANELS)('%s', (file) => {
+		expect(styleOf(file), `${file} has a negative margin`).not.toMatch(/margin[a-z-]*\s*:[^;}]*(?:calc\(\s*-|:\s*-\s*\d|\s-\s*\d|\(\s*-\s*1\s*\*)/i);
+	});
+});
+
 // ── Reading rendered HTML ────────────────────────────────────────────────
 
 interface Btn { open: string; text: string }
@@ -58,6 +74,16 @@ const byLabel = (html: string, label: string) => {
 const hasClass = (b: Btn, cls: string) => new RegExp(`class="[^"]*\\b${cls}\\b`).test(b.open);
 const pressed = (b: Btn) => /aria-pressed="true"/.test(b.open);
 const ariaDisabled = (b: Btn) => /aria-disabled="true"/.test(b.open);
+
+/** The HTML with the framework's comment markers dropped, so adjacent elements read as adjacent. */
+const clean = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/>\s+</g, '><');
+/** A title and the sentence under it, in one `.titled` block. */
+function expectTitled(html: string, title: string) {
+	const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	expect(clean(html), `"${title}" sits in a titled block with its sentence`).toMatch(
+		new RegExp(`<div class="titled[^"]*"><p class="choices-header">${escaped}</p><p class="ft-prompt`),
+	);
+}
 
 const PREPARER = 1;
 const OTHER = 2;
@@ -124,6 +150,18 @@ describe('Make Introductions chips', () => {
 		expect(pressed(taken)).toBe(false);
 	});
 
+	it('the settled peers are one tight list above the next form', () => {
+		const body = clean(marAs(PREPARER, [
+			{ draft_id: 'd1', outcome: 'other_retinue', author_player_id: OTHER, done: false },
+			{ draft_id: 'd2', outcome: 'delayed', done: true },
+		]));
+		const recap = body.match(/<div class="recap[^"]*">(.*?)<\/div>/)?.[1] ?? '';
+		expect(recap.match(/class="choices-applied"/g)).toHaveLength(2);
+		expect(text(recap)).toBe('Lady Vane — Another retinue (awaiting marginalia)Sir Pell — Delayed');
+		// And with nothing settled there is no empty block to add a gap of its own.
+		expect(clean(marAs(PREPARER, []))).not.toContain('class="recap');
+	});
+
 	it('the recap of a settled peer carries no typed check mark', () => {
 		const body = marAs(PREPARER, [{ draft_id: 'd1', outcome: 'delayed', done: true }]);
 		expect(text(body)).toContain('Lady Vane — Delayed');
@@ -165,6 +203,35 @@ describe('Propose Decree', () => {
 			expect(body).toMatch(new RegExp(`Result: <span class="outcome-${outcome}[^"]*">${word}</span>`));
 			expect(body).not.toMatch(/[✓✗]/);
 		}
+	});
+
+	it('each step\'s title and its sentence share one block', () => {
+		const RANKS = [
+			{ category: 'power', player_id: PREPARER, rank: 1 },
+			{ category: 'power', player_id: OTHER, rank: 2 },
+		];
+		const as = (over: Record<string, unknown>, seat: number, rollOutcome: 'make' | 'mar' | null, extra: { rankings?: never; assets?: never } = {}) => {
+			const plan = {
+				id: 9, plan_type: 'propose_decree', status: 'resolving', preparer_id: PREPARER, preparation_notes: 'x',
+				resolution_data: JSON.stringify({
+					propose_decree: { signatory_id: PREPARER, signatory_player_ids: [PREPARER], debate_started: true, law_text: 'No private armies.', ...over },
+				}),
+			};
+			return render(ProposeDecreePanel, {
+				props: { ctx: ctxFor({ plans: [plan] as never, currentPlayerID: seat, rollOutcome, ...extra }), plan: plan as never, mode: 'resolve' },
+			}).body;
+		};
+		expectTitled(as({ debate_started: false }, PREPARER, null), 'Finalize your decree');
+		expectTitled(as({}, OTHER, null, { rankings: RANKS as never, assets: [{ id: 1, owner_id: OTHER, name: 'Ring', asset_type: 'artifact', is_destroyed: false, is_leveraged: false, marginalia: [] }] as never }), 'Join the council?');
+		expectTitled(as({ outcome: 'mar', amendment_order: [OTHER], amended_by: [] }, OTHER, 'mar'), 'Amend the law (your turn)');
+		expectTitled(as({ outcome: 'make' }, PREPARER, 'make'), "Signatory's Addendum");
+		expectTitled(as({ outcome: 'make', addendum_placed: true }, PREPARER, 'make'), 'Enact the law');
+		expectTitled(as({}, OTHER, null), 'Proposed decree being debated:');
+	});
+
+	it('the addendum is plain text after the law, not italic', () => {
+		const body = clean(decree({ addendum_placed: true, addendum: 'salt is exempt', addendum_connector: 'and' }));
+		expect(body).toMatch(/<p class="ft-prompt[^"]*">Law: No private armies\. — and salt is exempt<\/p>/);
 	});
 
 	it('the law under debate is step text, and the council is a plain list', () => {
@@ -249,5 +316,25 @@ describe('Clandestinely Liaise delay reveal', () => {
 	it('quotes the note in typographic quotes, left-aligned like every other step line', () => {
 		expect(text(body)).toContain('“Under the old bridge.”');
 		expect(body).not.toContain('class="cl-peer');
+	});
+});
+
+
+describe('Clandestinely Liaise phases', () => {
+	const PHASES: [string, string][] = [
+		['together_at_last', 'Together at Last'],
+		['secrets_we_keep', 'Secrets We Keep'],
+		['things_we_share', 'Things We Share'],
+		['when_will_i_see_you_again', 'When will I see you again?'],
+	];
+	it.each(PHASES)('%s: the title and its sentence share one block', (phase, title) => {
+		const plan = {
+			id: 9, plan_type: 'clandestinely_liaise', status: 'resolving', preparer_id: PREPARER, preparation_notes: 'x',
+			resolution_data: JSON.stringify({ liaise: { phase, partner_id: OTHER, preparer_peer_id: 20, partner_peer_id: 21 } }),
+		};
+		const body = render(ClandestinelyLiaisePanel, {
+			props: { ctx: ctxFor({ plans: [plan] as never, currentPlayerID: PREPARER }), plan: plan as never, mode: 'resolve' },
+		}).body;
+		expectTitled(body, title);
 	});
 });
