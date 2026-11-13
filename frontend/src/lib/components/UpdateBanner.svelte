@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <script lang="ts">
 	// Site-level notice that this tab is running a build the server has since
 	// replaced. See $lib/appVersion for how the staleness is detected and why
@@ -8,7 +7,7 @@
 	// player may be mid-sentence in a scene description. The bar states the
 	// problem and hands them the trigger.
 	import { updated } from '$app/state';
-	import './shared/actionButton.css';
+	import '$lib/components/shared/actionButton.css';
 
 	let dismissed = $state(false);
 
@@ -35,14 +34,17 @@
 {/if}
 
 <style>
+	/* The one tinted strip in the app. It is app chrome, about the software
+	   rather than the game, so it keeps a tinted ground while game content
+	   takes none (docs/STYLE_GUIDE.md "Notices"). */
 	.update-banner {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.5rem 1rem;
-		padding: 0.5rem 1rem;
+		gap: var(--space-2) var(--space-4);
+		padding: var(--space-2) var(--space-4);
 		background: var(--color-surface-sunken);
-		border-bottom: 1px solid var(--color-border-warm);
+		border-bottom: 1px solid var(--color-border);
 	}
 
 	/* Basis auto, so the message asks for exactly the width it needs and sits
@@ -56,7 +58,7 @@
 	.update-banner p {
 		flex: 1 1 auto;
 		min-width: 0;
-		font-size: 0.9rem;
+		font-size: var(--text-small);
 		color: var(--color-text);
 	}
 
@@ -65,7 +67,7 @@
 	.actions {
 		display: flex;
 		flex: none;
-		gap: 0.5rem;
+		gap: var(--space-2);
 		margin-left: auto;
 	}
 </style>
