@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- MainCharacterChoicePanel.svelte
   Takeover panel for RowStateAwaitMainCharacterChoice: one or more players lost
   their main character (it was taken, traded, or destroyed) and must choose a
@@ -11,6 +10,11 @@
                                the custom-rule cost of all their assets becoming
                                leveraged.
   Everyone else sees who the table is waiting on.
+
+  The panel is a heading and its steps, with no box: the play area already
+  frames it, and boxes are for things a player presses. The cost of conscripting is a
+  warning notice (orange: careful), not a red tinted box, since nothing has
+  been lost yet and the player is choosing it.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -20,6 +24,7 @@
 	import CardPicker from '$lib/components/plans/CardPicker.svelte';
 	import AssetCreationForm from '$lib/components/AssetCreationForm.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import EndsNote from '$lib/components/plans/shared/EndsNote.svelte';
 
 	interface Props {
@@ -119,11 +124,11 @@
 				</button>
 			</div>
 		{:else}
-			<p class="warn">
+			<Notice tone="warning">
 				You have no peers left to promote. You may conscript a brand new
 				character — but the upheaval costs you: all of your assets,
 				including this new one, will become leveraged.
-			</p>
+			</Notice>
 			<AssetCreationForm
 				{gameID}
 				assetType="peer"
@@ -153,37 +158,25 @@
 
 <style>
 	.mc-choice {
-		border: 1px solid var(--color-border-warm);
-		border-radius: 8px;
-		padding: 1rem;
-		background: var(--color-surface, var(--color-bg));
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: var(--space-3);
 	}
 	h3 {
 		margin: 0;
 		font-family: var(--font-serif);
+		font-size: var(--text-heading);
 		color: var(--color-accent);
 	}
 	.lede {
 		margin: 0;
-		font-size: 0.9rem;
+		font-size: var(--text-body);
 		line-height: 1.4;
-	}
-	.warn {
-		margin: 0;
-		font-size: 0.88rem;
-		line-height: 1.4;
-		padding: 0.5rem 0.6rem;
-		border-left: 3px solid var(--color-danger);
-		background: color-mix(in srgb, var(--color-danger) 8%, transparent);
-		border-radius: 4px;
 	}
 	.actions {
 		display: flex;
 		justify-content: center;
-		gap: 0.5rem;
-		margin-top: 0.3rem;
+		gap: var(--space-2);
+		margin-top: var(--space-1);
 	}
 </style>

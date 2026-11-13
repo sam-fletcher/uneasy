@@ -1,14 +1,17 @@
-<!-- tokens: not migrated -->
 <!-- AssetCreationForm.svelte
   Shared "name + one marginalia" authoring form for every player-created
   asset. A blank asset (no marginalia) is unbreakable and indestructible, so
   every creation route requires exactly one marginalia alongside the name —
   see adr/ASSET_CREATION_MARGINALIA_PLAN.md.
 
-  Renders a live preview card on top (type badge, name, the one marginalia
-  slot) followed by two SuggestionPicker sections. No internal submit button
-  and no forced fill order — the caller owns the CTA and gates it on
+  Renders a live preview card on top (type, name, the one marginalia slot)
+  followed by two SuggestionPicker sections. No internal submit button and no
+  forced fill order — the caller owns the CTA and gates it on
   `name.trim() && marginalia.trim()`.
+
+  The preview is a game piece, like the card it stands for: the warm border,
+  the piece corner and the raised surface, with the marginalia tile inside it.
+  The name is just text on it: a line you can't press gets no box.
 -->
 <script lang="ts">
 	import './shared/marginaliaTile.css';
@@ -113,7 +116,7 @@
 <div class="acf">
 	<div class="acf-preview">
 		<div class="acf-badge">
-			<AssetTypeIcon type={assetType} size={14} />
+			<AssetTypeIcon type={assetType} size={16} />
 			<span>{typeLabels[assetType]}</span>
 		</div>
 		<div class="acf-name" class:filled={!!name.trim()}>
@@ -158,32 +161,35 @@
 	.acf {
 		display: flex;
 		flex-direction: column;
-		gap: 0.7rem;
+		gap: var(--space-3);
 	}
 
 	.acf-preview {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.4rem;
-		padding: 0.7rem;
+		gap: var(--space-2);
+		padding: var(--space-3);
 		background: var(--color-surface);
-		border: 1px solid var(--color-border-warm);
-		border-radius: 8px;
+		border: 1px solid var(--color-border-piece);
+		border-radius: var(--radius-piece);
 	}
 
+	/* The type, as words with its icon. Not a badge: it can't be pressed. */
 	.acf-badge {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
-		font-size: 0.72rem;
+		gap: var(--space-1);
+		font-size: var(--text-label);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 	}
 
+	/* The name as it will read on the card. Until one is typed it says
+	   "Unnamed" in faint italics, a placeholder and nothing more. */
 	.acf-name {
-		min-height: 44px;
+		min-height: var(--size-tap);
 		width: 100%;
 		max-width: 320px;
 		box-sizing: border-box;
@@ -191,14 +197,13 @@
 		align-items: center;
 		justify-content: center;
 		text-align: center;
-		padding: 0.4rem 0.8rem;
-		border: 1px dashed var(--color-border-strong);
-		border-radius: 6px;
+		padding: 0 var(--space-3);
+		font-size: var(--text-body);
 		font-style: italic;
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
+		overflow-wrap: anywhere;
 	}
 	.acf-name.filled {
-		border: 1px solid var(--color-accent);
 		font-style: normal;
 		color: var(--color-text);
 	}
@@ -211,11 +216,12 @@
 		text-align: center;
 	}
 
+	/* A small-capitals label: the heading of the field below it. */
 	.acf-label {
-		font-size: 0.72rem;
+		font-size: var(--text-label);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		color: var(--color-accent);
-		margin: 0 0 0.35rem;
+		margin: 0 0 var(--space-1);
 	}
 </style>
