@@ -338,15 +338,22 @@
 	outline: 2px solid var(--color-you);
 	outline-offset: 2px;
 }
-/* A chip that can't be pressed: a hairline and faint words. A chosen one still
-   shows which it was (the gold border stays), as chip.css does. */
+/* A chip that can't be pressed: a hairline and faint words, whether the panel
+   sets native `disabled` (the die-face picker once it has been submitted) or
+   `aria-disabled` (a tap that explains why). A chosen one still shows which it
+   was (the gold border stays), as chip.css does. Never faded. */
 .player-chip:disabled,
+.player-chip[aria-disabled='true'],
+.chip-btn:disabled,
 .chip-btn[aria-disabled='true'] {
 	border-color: var(--color-border);
 	color: var(--color-text-faint);
 	cursor: not-allowed;
 }
-.player-chip.active:disabled {
+.player-chip.active:disabled,
+.player-chip.active[aria-disabled='true'],
+.chip-btn.active:disabled,
+.chip-btn.active[aria-disabled='true'] {
 	border-color: var(--color-you);
 }
 

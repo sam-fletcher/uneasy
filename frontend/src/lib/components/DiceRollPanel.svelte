@@ -27,7 +27,10 @@
 		leverageRoll, useBankedDie, callVote, skipVote, voteOnRoll,
 		setRollIntent, setRollReady,
 	} from '$lib/api';
+	import { untrack } from 'svelte';
 	import type { StepHeading as StepHeadingData } from '$lib/stepHeading';
+	import { useHeadingSlot } from './plans/shared/headingSlot';
+	import { rollDraft } from '$lib/rollDraft.svelte';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { useSecretCounts } from '$lib/secretCountsContext';
@@ -75,6 +78,17 @@
 	// Per-viewer known-secret counts (undefined outside a provider → no eyes).
 	const secretCounts = useSecretCounts();
 
+	// An open roll draws the heading at the top of its own step, so it claims the
+	// heading from the page for as long as it does (a resolved roll is a finished
+	// line and draws none). `drawsHeading` is a boolean, so a new heading object
+	// each time the wait changes does not let go and re-claim.
+	const headingSlot = useHeadingSlot();
+	const drawsHeading = $derived(roll.stage !== 'resolved' && heading != null);
+	$effect(() => {
+		if (!drawsHeading) return;
+		return untrack(() => headingSlot?.claim());
+	});
+
 	const isActor = $derived(currentPlayerID === roll.actor_id);
 	const stage = $derived(roll.stage);
 	const me = $derived(participants.find(p => p.player_id === currentPlayerID) ?? null);
@@ -101,22 +115,22 @@
 	// Intent and dice picks live client-side until the player presses Ready,
 	// which reveals + commits them all at once. Until then nothing is broadcast,
 	// so there's no information for opponents to react to.
-	let draftIntent = $state<RollIntent | null>(null);
-	let draftAssetIds = $state<Set<number>>(new Set());
-	let draftBankedIds = $state<Set<number>>(new Set());
-
-	// Clear the draft only when a genuinely new roll appears. Keyed on roll.id
-	// (not object identity) so the frequent WS roll reassignments during a
-	// leverage stage can't wipe an in-progress draft.
-	let lastRollId = -1;
+	//
+	// They live in a store keyed by the roll (lib/rollDraft), not in this
+	// component: the roll is drawn inside the plan's card or alone on the page and
+	// can move from the one to the other (a plan panel that was still loading when
+	// the roll opened), and a component's own state is lost when it does.
+	// A genuinely new roll starts a fresh draft; the frequent WS roll
+	// reassignments during a leverage stage keep it, since it is keyed on roll.id.
+	const draft = rollDraft;
+	draft.begin(roll.id);
 	$effect(() => {
-		if (roll.id !== lastRollId) {
-			lastRollId = roll.id;
-			draftIntent = null;
-			draftAssetIds = new Set();
-			draftBankedIds = new Set();
-		}
+		const id = roll.id;
+		untrack(() => draft.begin(id));
 	});
+	const draftIntent = $derived(draft.intent);
+	const draftAssetIds = $derived(draft.assetIds);
+	const draftBankedIds = $derived(draft.bankedIds);
 
 	// The actor always aids; non-actors fall back to any server intent (set on
 	// a prior submit) so a forced-unready keeps showing the right side.
@@ -247,19 +261,19 @@
 	// button submits the whole draft, then readies.
 	function setDraftIntent(intent: RollIntent) {
 		if (intentLocked || busy) return;
-		draftIntent = intent;
+		draft.intent = intent;
 	}
 	function toggleDraftAsset(asset: Asset) {
 		if (myReady || busy) return;
 		const next = new Set(draftAssetIds);
 		next.has(asset.id) ? next.delete(asset.id) : next.add(asset.id);
-		draftAssetIds = next;
+		draft.assetIds = next;
 	}
 	function toggleDraftBanked(b: BankedDie) {
 		if (myReady || busy) return;
 		const next = new Set(draftBankedIds);
 		next.has(b.id) ? next.delete(b.id) : next.add(b.id);
-		draftBankedIds = next;
+		draft.bankedIds = next;
 	}
 
 	// Append a freshly committed die, guarding against the roll.leverage_added
@@ -291,8 +305,7 @@
 		const willAutoReady = committingAny && remainingAfterSubmit === 0;
 
 		// Clear the draft immediately; we hold local copies for the API calls.
-		draftAssetIds = new Set();
-		draftBankedIds = new Set();
+		draft.clearPicks();
 
 		// 1. Intent (non-actor, not yet locked, changed from server value).
 		if (intentToSet && intentToSet !== me?.intent) {

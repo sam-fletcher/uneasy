@@ -149,7 +149,12 @@ export async function expectWaitingOn(
   } else {
     await expect(heading).toContainText('Waiting on');
     await expect(heading).not.toContainText('Your move');
-    // The heading names the others the game waits on, never the viewer.
-    for (const n of want) await expect(heading).toContainText(n);
+    // The heading names the others the game waits on, never the viewer, as
+    // lib/stepHeading.ts words it: up to three by name, more as a count.
+    if (got.length > 3) {
+      await expect(heading).toContainText(`Waiting on ${got.length} players`);
+    } else {
+      for (const n of want) await expect(heading).toContainText(n);
+    }
   }
 }

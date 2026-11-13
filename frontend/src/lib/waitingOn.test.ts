@@ -20,7 +20,6 @@ function input(over: Partial<MainEventWaitingOnInput> = {}): MainEventWaitingOnI
 	return {
 		rowState: null,
 		activeRoll: null,
-		delayRevealPlanType: null,
 		maxRefresh: 0,
 		...over,
 	};
@@ -199,6 +198,21 @@ describe('await_dice_roll', () => {
 		expect(got.stepLabel).toBe('the roll');
 	});
 
+	// The actor's shortcut to "the roll" holds only while the ACTOR still owes something.
+	// A ready actor, looking, is not asked for the roll: what the table waits on is what
+	// bob still has to aid or interfere with.
+	it('leverage: an actor who has readied, looking, still sees what the others owe', () => {
+		const got = mainEventWaitingOn(
+			input({
+				rowState: rowState('await_dice_roll', { acting_player_ids: [2] }),
+				activeRoll: roll({ stage: 'leverage', actor_id: 8 }),
+				currentPlayerID: 8,
+			}),
+		);
+		expect(playerIDs(got.waitees)).toEqual([2]);
+		expect(got.stepLabel).toBe('aid or interfere');
+	});
+
 	it('leverage: once only the actor is left, it is the roll whoever is looking', () => {
 		const got = mainEventWaitingOn(
 			input({
@@ -225,7 +239,6 @@ describe('await_delay_reveal', () => {
 		const got = mainEventWaitingOn(
 			input({
 				rowState: rowState('await_delay_reveal', { acting_player_ids: [1, 2] }),
-				delayRevealPlanType: 'make_war',
 			}),
 		);
 		expect(playerIDs(got.waitees)).toEqual([1, 2]);
@@ -234,14 +247,14 @@ describe('await_delay_reveal', () => {
 
 	it('labels clandestinely_liaise the same way', () => {
 		const got = mainEventWaitingOn(
-			input({ rowState: rowState('await_delay_reveal'), delayRevealPlanType: 'clandestinely_liaise' }),
+			input({ rowState: rowState('await_delay_reveal') }),
 		);
 		expect(got.stepLabel).toBe('the delay reveal');
 	});
 
 	it('needs no plan type to label the reveal', () => {
 		const got = mainEventWaitingOn(
-			input({ rowState: rowState('await_delay_reveal'), delayRevealPlanType: null }),
+			input({ rowState: rowState('await_delay_reveal') }),
 		);
 		expect(got.stepLabel).toBe('the delay reveal');
 	});

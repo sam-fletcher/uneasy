@@ -28,7 +28,7 @@
 		type RankingCategory, type PreparePlanDraft,
 	} from '$lib/api';
 
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import './plans/planPanel.css';
 	import { PLAN_SHORT, PLAN_DESCRIPTION, PLAN_DELAY, TRACK_ORDER } from './plans/shared';
 	import { REGISTRY } from './plans/registry';
@@ -37,6 +37,7 @@
 	import RowPill from './plans/RowPill.svelte';
 	import ResolvingCard from './plans/ResolvingCard.svelte';
 	import { provideStepFrame } from './plans/shared/stepFrame';
+	import { useHeadingSlot } from './plans/shared/headingSlot';
 	import type { StepHeading as StepHeadingData } from '$lib/stepHeading';
 	import StepHeading from '$lib/components/shared/StepHeading.svelte';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
@@ -306,6 +307,16 @@
 	}
 
 	provideActiveRoll(() => activeRoll);
+
+	// The preparation step draws the heading at the top of its own grid, so while it
+	// is on screen with a heading to draw it claims it from the page.
+	const headingSlot = useHeadingSlot();
+	const prepShown = $derived(prepEnabled && !needsResolution && !suppressPrep);
+	const drawsPrepHeading = $derived(prepShown && heading != null);
+	$effect(() => {
+		if (!drawsPrepHeading) return;
+		return untrack(() => headingSlot?.claim());
+	});
 
 	provideStepFrame(() => ({
 		roll,

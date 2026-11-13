@@ -9,7 +9,7 @@
 // must act — `acting_player_ids` is read directly, with no client-side
 // preparer/focus proxy (the proxy is what produced the original bug).
 
-import type { DiceRoll, RowState, PlanType } from '$lib/api';
+import type { DiceRoll, RowState } from '$lib/api';
 
 /** A single party the game is waiting on. */
 export type Waitee =
@@ -35,8 +35,6 @@ export interface MainEventWaitingOnInput {
 	 *  purely for the AwaitDiceRoll step label; the waitees themselves come
 	 *  from `rowState.acting_player_ids` like every other kind. */
 	activeRoll: DiceRoll | null;
-	/** plan_type of the open delay-reveal plan, or null when not in that kind. */
-	delayRevealPlanType: PlanType | null;
 	/** Max assets the focus player may refresh (for the post-scene label). */
 	maxRefresh: number;
 	/** The viewer. Only a dice roll's wording needs it: the actor's move is the
@@ -47,8 +45,11 @@ export interface MainEventWaitingOnInput {
 const player = (playerID: number): Waitee => ({ kind: 'player', playerID });
 
 /** The roll step's ask. The actor's move is the roll, and everyone else's is
- *  to aid or interfere; when the actor is the only one left, it is the roll
- *  whoever is looking. */
+ *  to aid or interfere. It is "the roll" only while the ACTOR still owes it: to
+ *  the actor looking (and still in the acting set), or to anyone, once the actor
+ *  is the only one left. An actor who has readied is no longer owed anything, so
+ *  what the table waits on is whatever the others owe (aid or interfere), however
+ *  the actor reads it. */
 const rollStepLabel = (
 	roll: DiceRoll | null,
 	acting: number[],
@@ -61,7 +62,7 @@ const rollStepLabel = (
 			return 'difficulty vote';
 		case 'leverage': {
 			const actor = roll.actor_id;
-			if (viewerID != null && viewerID === actor) return 'the roll';
+			if (viewerID != null && viewerID === actor && acting.includes(actor)) return 'the roll';
 			if (acting.length > 0 && acting.every(id => id === actor)) return 'the roll';
 			return 'aid or interfere';
 		}
@@ -82,7 +83,7 @@ const rollStepLabel = (
  * preparer/focus/roll-participant proxy left to mis-attribute the wait.
  */
 export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnState {
-	const { rowState, activeRoll, delayRevealPlanType, maxRefresh } = input;
+	const { rowState, activeRoll, maxRefresh } = input;
 	const viewerID = input.currentPlayerID ?? null;
 
 	// The server-authoritative acting set. The backend names the exact
@@ -168,10 +169,8 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// Marred Chronicle Histories — every present player owes one choice.
 			return { waitees: actingWaitees(), stepLabel: 'everyone chooses' };
 		case 'await_delay_reveal': {
-			// Both plans reveal the same way, and the title bar names the plan, so
-			// one phrase does. delayRevealPlanType stays in the input for callers
-			// that already pass it.
-			void delayRevealPlanType;
+			// Both plans (Make War, Clandestinely Liaise) reveal the same way, and the
+			// title bar names the plan, so one phrase does.
 			return { waitees: actingWaitees(), stepLabel: 'the delay reveal' };
 		}
 		case 'await_battle_cost':

@@ -64,6 +64,22 @@ describe('stepHeading', () => {
 		expect(h?.text).toBe('Waiting on 1 more player to join — gathering players');
 	});
 
+	// A label waitee is free text, not a player: it is never counted toward the
+	// three-name cap, or two of them would read "2 players".
+	it('does not count a label waitee as a player', () => {
+		const three = [
+			{ kind: 'player' as const, playerID: 2 },
+			{ kind: 'player' as const, playerID: 3 },
+			{ kind: 'player' as const, playerID: 4 },
+		];
+		const h = stepHeading(
+			{ waitees: [...three, { kind: 'label', text: '1 more player to join' }], stepLabel: 'gathering players' },
+			1,
+			players,
+		);
+		expect(h?.text).toBe('Waiting on otto, Wren, Mira and 1 more player to join — gathering players');
+	});
+
 	it('drops the dash when there is no step label', () => {
 		expect(stepHeading(on([1]), 1, players)?.text).toBe('Your move');
 		expect(stepHeading(on([2]), 1, players)?.text).toBe('Waiting on otto');
@@ -80,4 +96,68 @@ describe('stepHeading', () => {
 	it('says "someone" for a player it can’t find, rather than a blank', () => {
 		expect(stepHeading(on([99], 'the roll'), 1, players)?.text).toBe('Waiting on someone — the roll');
 	});
+});
+
+// ── Every state the old bar covered has a heading ────────────────────────────
+// The Waiting On bar was drawn by the page and always showed. The heading is drawn
+// by whichever surface holds the open step, with the page as the default, so what
+// must hold here is that the WORDS exist for every state: a kind with no actor is
+// the only one allowed to say nothing. The record is typed, so a row state added
+// to the server without a line here fails the type check, not a code review.
+
+import type { RowStateKind } from '$lib/api';
+import { mainEventWaitingOn } from './waitingOn';
+
+describe('every row state the bar covered has a heading', () => {
+	// true: names whoever the server says must act. false: nobody is owed anything.
+	const HEADED: Record<RowStateKind, boolean> = {
+		phase_not_main_event: false,
+		await_dice_roll: true,
+		await_endgame_vote: true,
+		await_surrender_claim: true,
+		await_battle_cost: true,
+		await_main_character_choice: true,
+		await_delay_reveal: true,
+		plan_resolving: true,
+		plan_pending: true,
+		await_demand_counter: true,
+		await_demand_draft_pick: true,
+		await_demand_leverage: true,
+		await_demand_retarget: true,
+		await_plan_reaim: true,
+		await_festivity_guest_turn: true,
+		await_festivity_challenge_response: true,
+		await_duel_staking: true,
+		await_duel_bout: true,
+		await_take_consent: true,
+		await_question_answer: true,
+		liaise_resolving: true,
+		await_courtier_response: true,
+		await_introductions_marginalia: true,
+		await_chronicle_choices: true,
+		await_counter_propaganda: true,
+		finale_row_complete: false,
+		scene_active: true,
+		post_scene_action: true,
+		scene_setting: true,
+	};
+
+	for (const [kind, headed] of Object.entries(HEADED) as [RowStateKind, boolean][]) {
+		it(`${kind} ${headed ? 'is headed, with a step in it' : 'says nothing, because nobody is owed anything'}`, () => {
+			const state = mainEventWaitingOn({
+				rowState: { kind, acting_player_ids: [2] },
+				activeRoll: null,
+				maxRefresh: 1,
+				currentPlayerID: 1,
+			});
+			const h = stepHeading(state, 1, players);
+			if (headed) {
+				expect(h, `${kind} has no heading`).not.toBeNull();
+				// "Waiting on otto — <a step>": a lead and a phrase, never a bare lead.
+				expect(h!.text).toMatch(/^Waiting on otto — \S/);
+			} else {
+				expect(h).toBeNull();
+			}
+		});
+	}
 });

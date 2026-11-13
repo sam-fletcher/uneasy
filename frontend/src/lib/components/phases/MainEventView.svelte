@@ -38,8 +38,10 @@
 	import EndgameVotePanel from '$lib/components/EndgameVotePanel.svelte';
 	import { followOnPromptForRow } from '$lib/scenePrompts';
 	import { mainEventWaitingOn, type WaitingOnState } from '$lib/waitingOn';
+	import { untrack } from 'svelte';
 	import { stepHeading } from '$lib/stepHeading';
 	import StepHeading from '$lib/components/shared/StepHeading.svelte';
+	import { provideHeadingSlot } from '$lib/components/plans/shared/headingSlot';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	interface Props {
@@ -168,7 +170,6 @@
 		mainEventWaitingOn({
 			rowState,
 			activeRoll,
-			delayRevealPlanType: delayRevealPlan?.plan_type ?? null,
 			maxRefresh,
 			currentPlayerID,
 		}),
@@ -271,13 +272,26 @@
 	const warGateTakeover = $derived(warGate && warGateWarPlans.length > 0);
 
 	// ── Who draws the heading ─────────────────────────────────────────────────
-	// The heading belongs at the top of the open step, and the open step lives in
-	// one of three places. A plan's card draws it (or the roll step, while the roll
-	// is open) and so does the prep step — all inside PlanPanel. Everything else
-	// has no card to carry it, so this view draws it above the surface: the
-	// takeovers (endgame vote, replacement main character, a war's cost, a delay
-	// reveal) and the scene panels. `headingHere` says which; PlanPanel and the
-	// roll are handed no heading in that case, so it is never drawn twice.
+	// The heading belongs at the top of the open step. This view draws it at the
+	// top of the play surface BY DEFAULT, so no state is ever left without one (a
+	// plan that is pending, a scene that has not loaded, Make War's own panel, a
+	// plan panel still loading). A surface that draws it at the top of its own open
+	// step (a plan's card, the preparation step, an open roll) CLAIMS it while it
+	// does, and the default steps aside (plans/shared/headingSlot.ts).
+	//
+	// The takeovers (endgame vote, replacement main character, a war's cost, a
+	// delay reveal) and the scene panels keep the heading at the top: PlanPanel
+	// and the roll are handed none while one is up (`headingHere`), so a card
+	// somewhere below them never takes it from them.
+	let headingClaims = $state(0);
+	provideHeadingSlot({
+		claim: () => {
+			// untrack: this runs inside the claimer's effect, and reading the count
+			// there would make the effect depend on what it writes.
+			untrack(() => { headingClaims += 1; });
+			return () => untrack(() => { headingClaims -= 1; });
+		},
+	});
 	const headingHere = $derived(
 		endgameVoteActive
 		|| mcChoiceActive
@@ -410,9 +424,9 @@
 	     wide desktop layouts. -->
 	<div class="play-surface">
 		<div class="scene-panel">
-			<!-- The open step's heading, for the surfaces that have no card to carry it
-			     (see `headingHere`). -->
-			{#if headingHere}
+			<!-- The open step's heading, unless a card, the preparation step or an open roll
+			     has claimed it (see `headingClaims`). -->
+			{#if headingClaims === 0}
 				<StepHeading {heading} />
 			{/if}
 

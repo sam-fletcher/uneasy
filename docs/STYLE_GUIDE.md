@@ -647,6 +647,8 @@ all on `/dev/styleguide` under "Play steps":
 | `plans/shared/FinishedStep.svelte` | a step that is over, as one line with its mark. With a `detail` it is a tappable row with a caret that opens in place |
 | `plans/shared/DieTile.svelte` | one die: a 44px game piece whose edge is its owner's colour. The die mark before it is rolled, its face after; cancelled and repeated dice are dashed, never faded |
 | `plans/shared/stepFrame.ts` | the context `PlanPanel` gives the plan's card, so the roll slots in between the finished steps and the open one |
+| `plans/shared/headingSlot.ts` | who draws the heading. The page draws it at the top by default, so no state is left without one; a card, the preparation step or an open roll **claims** it while it draws it in its own open step |
+| `lib/rollDraft.svelte.ts` | the side and the dice a player has picked on the open roll but not sent, keyed by roll, so they survive the roll moving between the page and a plan's card |
 | `plans/ResolvingCard.svelte` | the plan's frame. All twelve panels wrap their body in it |
 
 **The order is decided once**, in `ResolvingCard`: who prepared the plan, what

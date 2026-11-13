@@ -109,3 +109,55 @@ test('the play area reads as the plan\'s steps, in order, under one heading', as
 	await expectWaitingOn(alice.page, ['alice'], 'alice');
 	await expectWaitingOn(bob.page, ['alice'], 'bob');
 });
+
+// The roll is drawn inside the plan's card, but a plan's panel is a lazy chunk. If the
+// roll is already open when a page loads (a reload mid-roll, a player arriving late),
+// the page has the roll before it has the card, draws it itself, and moves it into the
+// card when the card arrives. That move must not lose what the player has picked, and
+// the screen must not go without its heading while it waits: the page draws the heading
+// by default, and the roll (then the card) claims it.
+test('a roll open before its plan panel loads keeps the draft when it moves into the card', async ({ browser }) => {
+	const t = await sa.setUp(browser, track, opened, [0, 1, 2]);
+	const { alice, bob } = t;
+
+	// The roll is open and past the vote, over the API, before bob's page loads.
+	const cast = await alice.ctx.request.post(`/api/plans/${t.planID}/seek-cast-roll`, {
+		data: { narration: 'I have learned the holdfast sits on an old smugglers road.' },
+	});
+	expect(cast.ok(), await cast.text()).toBeTruthy();
+	const { roll } = await cast.json();
+	expect((await alice.ctx.request.post(`/api/rolls/${roll.id}/skip-vote`)).ok()).toBeTruthy();
+
+	// Hold back the script that holds Seek Answers' panel (found by its words, since chunk
+	// names are hashes) until released, so bob's page has the roll before it has the card.
+	let release!: () => void;
+	const gate = new Promise<void>(r => (release = r));
+	await bob.page.route('**/_app/immutable/**/*.js', async route => {
+		const res = await route.fetch();
+		const body = await res.text();
+		if (body.includes('What have you learned?')) await gate;
+		await route.fulfill({ response: res, body });
+	});
+	await bob.page.goto(`/table/${t.gameID}`);
+
+	// Before the card: the roll draws itself, with the one heading.
+	const region = bob.page.getByRole('region', { name: 'Dice roll' });
+	await expect(region).toBeVisible({ timeout: 10_000 });
+	await expect(bob.page.getByText('alice prepared Seek Answers')).toHaveCount(0);
+	await expect(bob.page.locator('.step-heading')).toHaveCount(1);
+	await expect(stepHeading(bob.page)).toContainText('aid or interfere');
+
+	// Bob drafts a side.
+	const interfere = region.getByRole('button', { name: 'Interfere', exact: true });
+	await interfere.click();
+	await expect(interfere).toHaveAttribute('aria-pressed', 'true');
+
+	// The card arrives, and the roll moves into it between the finished lines and the body.
+	release();
+	await expect(bob.page.getByText('alice prepared Seek Answers')).toBeVisible({ timeout: 10_000 });
+	await expect(region).toBeVisible();
+	await above(bob.page.getByText('alice prepared Seek Answers'), region);
+	// What bob picked is still picked, and there is still exactly one heading.
+	await expect(region.getByRole('button', { name: 'Interfere', exact: true })).toHaveAttribute('aria-pressed', 'true');
+	await expect(bob.page.locator('.step-heading')).toHaveCount(1);
+});

@@ -216,6 +216,11 @@ describe('planPanel.css: no boxes, no fades', () => {
 			['at rest', { chip: { classes: ['chip'] }, legacy: { classes: ['chip-btn'] } }],
 			['selected', { chip: { classes: ['chip', 'selected'] }, legacy: { classes: ['chip-btn', 'active'] } }],
 			['hovered', { chip: { classes: ['chip'], pseudos: ['hover'] }, legacy: { classes: ['chip-btn'], pseudos: ['hover'] } }],
+			// A face the player cannot press (the die-face picker after Submit sets native
+			// `disabled`; a tap-to-explain option sets aria-disabled): both must look locked.
+			['locked (disabled)', { chip: { classes: ['chip'], pseudos: ['disabled'] }, legacy: { classes: ['chip-btn'], pseudos: ['disabled'] } }],
+			['locked (aria-disabled)', { chip: { classes: ['chip'], attrs: { 'aria-disabled': 'true' } }, legacy: { classes: ['chip-btn'], attrs: { 'aria-disabled': 'true' } } }],
+			['chosen and locked', { chip: { classes: ['chip', 'selected'], pseudos: ['disabled'] }, legacy: { classes: ['chip-btn', 'active'], pseudos: ['disabled'] } }],
 		];
 		for (const [name, { chip, legacy }] of states) {
 			for (const prop of ['border-color', 'box-shadow', 'color', 'border-radius', 'min-height', 'background']) {

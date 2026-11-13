@@ -17,10 +17,11 @@
 -->
 <script lang="ts">
 	import './planPanel.css';
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import type { Plan, Player } from '$lib/api';
 	import { PLAN_SHORT, playerName } from './shared';
 	import { useStepFrame } from './shared/stepFrame';
+	import { useHeadingSlot } from './shared/headingSlot';
 	import FinishedStep from './shared/FinishedStep.svelte';
 	import LogMark from '../LogMark.svelte';
 	import StepHeading from '$lib/components/shared/StepHeading.svelte';
@@ -42,8 +43,22 @@
 	const f = $derived(frame?.() ?? null);
 
 	// Tell the page the roll is drawn in here, for as long as this card is on
-	// screen, so it does not draw it again below.
-	$effect(() => frame?.().claimRoll());
+	// screen, so it does not draw it again below. Claimed ONCE, on mount: the
+	// frame changes with every heading, and an effect that tracked it would let go
+	// and re-claim each time, which would move the roll out and back in (and lose
+	// what a player had drafted in it).
+	$effect(() => untrack(() => frame?.().claimRoll()));
+
+	// The card draws the heading when it has one and the roll is not open (an open
+	// roll is the open step and draws it); it claims it from the page while it does,
+	// so the page's default steps aside. A card with no heading to draw claims
+	// nothing, or the state would show none.
+	const slot = useHeadingSlot();
+	const drawsHeading = $derived(!!f && !f.rollOpen && f.heading != null);
+	$effect(() => {
+		if (!drawsHeading) return;
+		return untrack(() => slot?.claim());
+	});
 
 	const preparer = $derived(playerName(players, plan.preparer_id));
 	const notes = $derived(showNotes ? (plan.preparation_notes ?? '').trim() : '');

@@ -21,7 +21,7 @@ export interface StepHeading {
 	yours: boolean;
 }
 
-/** More than this many names stop being a list and become a count. */
+/** More than this many PLAYERS stop being a list and become a count. */
 const MAX_NAMED = 3;
 
 const join = (parts: string[]): string =>
@@ -31,10 +31,12 @@ function namesOf(waitees: Waitee[], players: Player[]): string {
 	const names: string[] = [];
 	for (const w of waitees) {
 		if (w.kind === 'player') names.push(players.find(p => p.id === w.playerID)?.display_name ?? 'someone');
-		else if (w.kind === 'label') names.push(w.text);
 	}
-	if (names.length > MAX_NAMED) return `${names.length} players`;
-	return join(names);
+	// A label waitee ("1 more player to join") is free text, not a player: it is
+	// said as it is written and never counted toward the cap.
+	const labels = waitees.flatMap(w => (w.kind === 'label' ? [w.text] : []));
+	const who = names.length > MAX_NAMED ? [`${names.length} players`] : names;
+	return join([...who, ...labels]);
 }
 
 /**
