@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, tableTitle } from './helpers';
 import { E2E } from './baseUrl';
 
 // First game-flow spec: lobby → prologue transition driven by the
@@ -34,10 +34,9 @@ test('facilitator starts prologue; non-facilitator sees the phase change live', 
     bobPage.goto(`/table/${game.id}`),
   ]);
 
-  // Sanity: both clients render the lobby. The phase badge sits in the
-  // game-info header strip with class .phase-badge.
-  await expect(alicePage.locator('.phase-badge')).toHaveText('Lobby');
-  await expect(bobPage.locator('.phase-badge')).toHaveText('Lobby');
+  // Sanity: both clients render the lobby. The title bar says so.
+  await expect(tableTitle(alicePage)).toHaveText('Lobby');
+  await expect(tableTitle(bobPage)).toHaveText('Lobby');
 
   // Only the facilitator may start the prologue. The button is rendered
   // exclusively in alice's tree.
@@ -50,8 +49,8 @@ test('facilitator starts prologue; non-facilitator sees the phase change live', 
   // Phase transition: both pages flip to Prologue. Bob's transition is
   // driven purely by the `phase.changed` WebSocket event (no user input,
   // no navigation).
-  await expect(alicePage.locator('.phase-badge')).toHaveText('Prologue');
-  await expect(bobPage.locator('.phase-badge')).toHaveText('Prologue');
+  await expect(tableTitle(alicePage)).toHaveText(/^Prologue/);
+  await expect(tableTitle(bobPage)).toHaveText(/^Prologue/);
 
   // Lobby-only affordances should be gone: the join-code badge only
   // renders while phase === 'lobby'.

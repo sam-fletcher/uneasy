@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, tableTitle } from './helpers';
 import { E2E } from './baseUrl';
 
 // A prologue claim reaches both players' screens from the socket payload
@@ -39,8 +39,8 @@ test('a claim lands live on both screens with zero follow-up fetches', async ({ 
   const alicePage = await aliceCtx.newPage();
   const bobPage = await bobCtx.newPage();
   await Promise.all([alicePage.goto(`/table/${game.id}`), bobPage.goto(`/table/${game.id}`)]);
-  await expect(alicePage.locator('.phase-badge')).toHaveText('Prologue');
-  await expect(bobPage.locator('.phase-badge')).toHaveText('Prologue');
+  await expect(tableTitle(alicePage)).toHaveText(/^Prologue/);
+  await expect(tableTitle(bobPage)).toHaveText(/^Prologue/);
 
   // Pick the first tile of the first non-titles sheet (no main-character
   // dependency) and author both of its cards as makes.

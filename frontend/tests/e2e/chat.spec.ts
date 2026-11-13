@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, openPane } from './helpers';
 import { E2E } from './baseUrl';
 
 // End-to-end coverage for the multi-player chat path: two browser contexts
@@ -92,7 +92,7 @@ test('alice sends a chat message; bob sees it live', async ({ browser, playwrigh
   await bobCtx.close();
 });
 
-test('catch-up: messages sent while away show the unread badge and the New messages divider', async ({ browser }) => {
+test('catch-up: messages sent while away light the Chat tab and show the New messages divider', async ({ browser }) => {
   const aliceCtx = await browser.newContext({ baseURL: E2E });
   const bobCtx = await browser.newContext({ baseURL: E2E });
   await devLogin(aliceCtx.request, 'alice');
@@ -109,25 +109,27 @@ test('catch-up: messages sent while away show the unread badge and the New messa
   const awayMessage = `away-msg-${Date.now()}`;
   await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: awayMessage } });
 
-  // Mobile viewport: the unread badge only renders on the collapsed strip
-  // (desktop's panel is always open, so it has no separate "closed" state
-  // to badge). See feedback_mobile_first.
+  // Mobile viewport: below 744px the chat is a tab, and the tab is where the
+  // pale "new" dot shows. From two columns up the chat is docked and always on
+  // screen, so there is no closed state to put a dot on. See feedback_mobile_first.
   const alicePage = await aliceCtx.newPage();
   await alicePage.setViewportSize({ width: 390, height: 844 });
   await alicePage.goto(`/table/${tableId}`);
 
-  const strip = alicePage.locator('.strip');
-  await expect(strip).toHaveClass(/has-unread/);
-  await expect(strip.locator('.unread-badge')).toHaveText('1');
+  const chatTab = alicePage.getByRole('navigation', { name: 'Panes' }).getByRole('button', { name: 'Chat' });
+  await expect(chatTab.getByRole('img', { name: 'new messages' })).toBeVisible();
+  // A dot, never a count.
+  await expect(chatTab).not.toContainText(/\d/);
 
-  // Opening the panel reveals the "New messages" divider right above the
-  // message that arrived while she was away. Expanded-mobile sets
-  // role="dialog" (see ChatPanel.svelte), so locate by aria-label rather
-  // than the desktop-only "complementary" role.
-  await strip.click();
+  // Opening the pane reveals the "New messages" divider right above the
+  // message that arrived while she was away.
+  await chatTab.click();
   const chat = alicePage.locator('[aria-label="Chat"]');
   await expect(chat.getByText('New messages')).toBeVisible();
   await expect(chat.getByText(awayMessage)).toBeVisible();
+
+  // Having had the new messages on screen, the dot clears.
+  await expect(chatTab.getByRole('img', { name: 'new messages' })).toHaveCount(0, { timeout: 10_000 });
 
   await aliceCtx.close();
   await bobCtx.close();
@@ -312,9 +314,8 @@ test('jumping to a row outside the loaded window enters history mode; Return to 
   });
   await sendMessages(bobCtx.request, gameID, 'newmsg', 120);
 
-  // Default Playwright viewport (1280x720) is exactly at PublicRecord's
-  // ≥1280px "permanent panel" breakpoint, so the row rail needs no tap to
-  // expand.
+  // Default Playwright viewport (1280x720) is three columns (from 1112px), so
+  // the Public Record is a column beside the chat and needs no tap to open.
   const alicePage = await aliceCtx.newPage();
   await alicePage.goto(`/table/${gameID}`);
   const aliceChat = alicePage.getByRole('complementary', { name: 'Chat' });
@@ -379,7 +380,7 @@ test('scene container: single chronology, collapses once ended and read, expands
   const alicePage = await aliceCtx.newPage();
   await alicePage.setViewportSize({ width: 390, height: 844 }); // mobile-first
   await alicePage.goto(`/table/${tableId}`);
-  await alicePage.locator('.strip').click();
+  await openPane(alicePage, 'Chat');
   const chat = alicePage.locator('[aria-label="Chat"]');
   await expect(chat).toBeVisible();
 
@@ -415,7 +416,7 @@ test('scene container: single chronology, collapses once ended and read, expands
   await bobCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: afterBody } });
 
   await alicePage.reload();
-  await alicePage.locator('.strip').click();
+  await openPane(alicePage, 'Chat');
   const chat2 = alicePage.locator('[aria-label="Chat"]');
   const header2 = chat2.locator('.scene-header');
   await expect(header2).toBeVisible();
@@ -457,8 +458,8 @@ test('scene container renders in the always-open desktop chat column', async ({ 
   expect(sceneRes.ok(), `create scene failed: ${await sceneRes.text()}`).toBeTruthy();
   await aliceCtx.request.post(`/api/tables/${tableId}/posts`, { data: { body: 'quiet down at the docks' } });
 
-  // Default Playwright viewport (1280x720) is desktop-width; the chat panel
-  // is a permanent column, no strip to tap.
+  // Default Playwright viewport (1280x720) is three columns; the chat is
+  // docked on the right, with no tab to tap.
   const alicePage = await aliceCtx.newPage();
   await alicePage.goto(`/table/${tableId}`);
   const aliceChat = alicePage.getByRole('complementary', { name: 'Chat' });
@@ -541,7 +542,7 @@ test('plan-scene: a festivity renders both players\' in-character posts inside o
   const alicePage = await aliceCtx.newPage();
   await alicePage.setViewportSize({ width: 390, height: 844 }); // mobile-first
   await alicePage.goto(`/table/${tableId}`);
-  await alicePage.locator('.strip').click();
+  await openPane(alicePage, 'Chat');
   const chat = alicePage.locator('[aria-label="Chat"]');
   await expect(chat).toBeVisible();
 
@@ -583,7 +584,7 @@ test('composer keeps focus after sending, via Enter and via the Send button', as
   const alicePage = await aliceCtx.newPage();
   await alicePage.setViewportSize({ width: 390, height: 844 }); // mobile-first
   await alicePage.goto(`/table/${tableId}`);
-  await alicePage.locator('.strip').click();
+  await openPane(alicePage, 'Chat');
   const chat = alicePage.locator('[aria-label="Chat"]');
   await expect(chat).toBeVisible();
 
@@ -637,7 +638,7 @@ test('a failed send restores the text, but never clobbers a draft typed while in
   });
 
   await alicePage.goto(`/table/${tableId}`);
-  await alicePage.locator('.strip').click();
+  await openPane(alicePage, 'Chat');
   const chat = alicePage.locator('[aria-label="Chat"]');
   await expect(chat).toBeVisible();
 

@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, tableTitle } from './helpers';
 import { E2E } from './baseUrl';
 
 // Guards the stale-while-revalidate snapshots in $lib/pageCache.
@@ -71,6 +71,6 @@ test('returning to a page you just left paints from the snapshot, not the networ
   // still run and the socket must still come up, or the table would be frozen
   // at whatever it looked like a minute ago.
   await page.waitForLoadState('networkidle');
-  await expect(page.locator('.phase-badge')).toHaveText('Main Event');
+  await expect(tableTitle(page)).toHaveText(/^Row \d+/);
   await ctx.close();
 });
