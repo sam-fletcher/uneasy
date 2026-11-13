@@ -1,21 +1,23 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, openPane, tableTitle } from './helpers';
 import { E2E } from './baseUrl';
 
-// Phone Back closes the overlay on top instead of leaving the table
-// ($lib/overlayHistory). The three behaviours worth pinning are the ones that
-// break quietly:
+// Phone Back closes the sheet on top instead of leaving the table
+// ($lib/overlayHistory). The behaviours worth pinning are the ones that break
+// quietly:
 //
-//   1. Back closes the overlay and stays on /table/[id].
-//   2. Closing by the overlay's own control spends the history entry, so the
+//   0. Choosing a tab is not an overlay: it takes no history entry, so Back
+//      still leaves the table. (The chat and the Public Record used to be
+//      overlays that Back dismissed; they are panes now.)
+//   1. Back closes a sheet and stays on /table/[id].
+//   2. Closing by the sheet's own control spends the history entry, so the
 //      next Back leaves the table rather than being a dead press.
-//   3. A hand-off — one surface closing as another opens in the same click —
+//   3. A hand-off — one sheet closing as another opens in the same click —
 //      adds no entry, so one Back still returns to the table instead of
 //      reopening what was just dismissed.
 //
-// Driven at a phone viewport: the chat panel and the Public Record are only
-// overlays below their dock breakpoints, and the sheets are the surfaces a
-// player on a phone actually reaches for.
+// Driven at a phone viewport: a phone is where Back matters, and the sheets
+// are the surfaces a player on a phone actually reaches for.
 
 const PHONE = { width: 390, height: 844 };
 
@@ -34,7 +36,7 @@ const track = cleanupGameAfterEach();
 
 test.use({ viewport: PHONE });
 
-test('phone Back dismisses overlays instead of leaving the table', async ({ browser }) => {
+test('phone Back dismisses sheets instead of leaving the table', async ({ browser }) => {
   const ctx = await browser.newContext({ baseURL: E2E, viewport: PHONE });
   await devLogin(ctx.request, 'alice');
 
@@ -50,11 +52,18 @@ test('phone Back dismisses overlays instead of leaving the table', async ({ brow
   // navigation is exactly what these entries are protecting against.
   await page.goto('/profile');
   await page.goto(`/table/${tableId}`);
-  await expect(page.locator('.phase-badge')).toHaveText('Main Event');
+  await expect(tableTitle(page)).toHaveText(/^Row \d+/);
+  expect(await overlayDepth(page)).toBe(0);
+
+  // ── 0. A tab is not an overlay ───────────────────────────────────────────
+  await openPane(page, 'Chat');
+  await openPane(page, 'Public Record');
+  await openPane(page, 'Play');
   expect(await overlayDepth(page)).toBe(0);
 
   // ── 1. Back closes the sheet, and the table survives ─────────────────────
-  await page.getByRole('button', { name: 'Open tones' }).click();
+  await openPane(page, 'Chat');
+  await page.getByRole('button', { name: /^Tones/ }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   expect(await overlayDepth(page)).toBe(1);
 
@@ -64,7 +73,7 @@ test('phone Back dismisses overlays instead of leaving the table', async ({ brow
   expect(await overlayDepth(page)).toBe(0);
 
   // ── 2. Closing by the × spends the entry ─────────────────────────────────
-  await page.getByRole('button', { name: 'Open laws' }).click();
+  await page.getByRole('button', { name: /How to play/ }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   expect(await overlayDepth(page)).toBe(1);
 
@@ -76,24 +85,22 @@ test('phone Back dismisses overlays instead of leaving the table', async ({ brow
   await page.goBack();
   await expect(page).toHaveURL(/\/profile$/);
   await page.goForward();
-  await expect(page.locator('.phase-badge')).toHaveText('Main Event');
+  await expect(tableTitle(page)).toHaveText(/^Row \d+/);
 
   // ── 3. A hand-off costs no extra entry ───────────────────────────────────
-  // Tapping a header panel while the chat sheet is up closes the chat and
-  // opens the panel in one click (the table page keeps a single full-screen
-  // surface on mobile).
-  await page.getByRole('button', { name: /^Open chat/ }).click();
-  await expect(page.locator('[aria-modal="true"]')).toBeVisible();
+  // Help's "Send feedback" closes Help and opens the feedback sheet in one
+  // click (sheets never nest).
+  await page.getByRole('button', { name: /How to play/ }).click();
+  await expect(page.getByRole('dialog').getByRole('heading', { name: 'How to play' })).toBeVisible();
   expect(await overlayDepth(page)).toBe(1);
 
-  await page.getByRole('button', { name: 'Open rumors' }).click();
-  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Rumors' })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Send feedback' }).click();
+  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Send feedback' })).toBeVisible();
   expect(await overlayDepth(page)).toBe(1);
 
-  // One Back returns to the table — it must not reopen the chat it replaced.
+  // One Back returns to the table — it must not reopen the Help it replaced.
   await page.goBack();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.locator('[aria-modal="true"]')).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`/table/${tableId}$`));
   expect(await overlayDepth(page)).toBe(0);
 

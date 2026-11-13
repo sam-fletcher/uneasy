@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, openRecordTab } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedPD, prepareDecree, resolveDecree, resolvingDecree, openAll, act, actOK, forceRoll, decreeState,
@@ -279,9 +279,9 @@ test('make: the signatory\'s addendum, then the preparer names the resource; the
 		'Hated by the guilds',
 	]);
 
-	// Where players read laws: the Laws drawer shows text, addendum and bylines to
-	// a bystander as well.
-	await carol.getByRole('button', { name: 'Open laws' }).click();
+	// Where players read laws: the Public Record's Laws list shows text, addendum
+	// and bylines to a bystander as well.
+	await openRecordTab(carol, 'Laws');
 	const drawer = carol.locator('.laws-rumors .lr-item', { hasText: LAW });
 	await expect(drawer).toBeVisible();
 	await expect(drawer.getByText('…but salt is exempt')).toBeVisible();

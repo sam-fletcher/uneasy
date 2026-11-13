@@ -1,26 +1,34 @@
 // The two viewport breakpoints of the layout width system
-// (docs/STYLE_GUIDE.md "Layout widths"; derivations and decision history in
-// adr/LAYOUT_WIDTHS_PLAN.md). Every matchMedia in the app composes from
-// these constants. CSS `@media` can't read variables, so the same literals
-// also appear in the shell stylesheets (table +page.svelte, ChatPanel,
-// PublicRecord); layoutTokens.test.ts keeps every occurrence in sync.
+// (docs/STYLE_GUIDE.md "Layout widths"). Every matchMedia in the app composes
+// from these constants. CSS `@media` can't read variables, so the same literals
+// also appear in the few stylesheets that need one (the sheet, the modal
+// shell); layoutTokens.test.ts keeps every occurrence in sync.
+//
+// The table has three panes (Public Record, Play, Chat). A wide window lays them
+// side by side; a narrow one shows fewer at a time and switches with tabs. Every
+// pane is drawn at phone width, so a breakpoint is simply the width at which
+// another phone-width pane fits:
+//
+//     phone        one pane at a time, a tab bar at the foot
+//     two columns  Chat docked on the right; the left column switches between
+//                  Public Record and Play with two tabs at its foot
+//     three        Public Record, Play and Chat side by side, no tabs
 
-/** Chat docks as a right column: 44 rail + 8 + 360 main + 8 + 360 chat + 8. */
-export const CHAT_DOCK_PX = 790;
+/** The narrowest a column is drawn: the narrowest mainstream phone. */
+export const COLUMN_MIN_PX = 360;
 
-/** The Public Record's width — the overlay and the docked panel are the same
- *  token. 316 = the ceiling of the safe range (adr/LAYOUT_WIDTHS_PLAN.md):
- *  at the 360 viewport floor the overlay peek is exactly the 44px touch
- *  minimum (and on 344 fold covers the overlay's max-width clamp keeps the
- *  peek at 44 by shrinking the panel instead). To retune: change this
- *  constant, then let layoutTokens.test.ts point you at the two CSS mirrors
- *  (PublicRecord's `.expanded` width and the table page's record grid
- *  column) and at RECORD_DOCK_PX if the dock no longer covers width + 752. */
-export const RECORD_WIDTH_PX = 316;
+/** The widest a column is drawn: the widest mainstream phone. Past this a
+ *  column stops growing and the slack becomes margin. */
+export const COLUMN_MAX_PX = 440;
 
-/** Record rail/overlay becomes a permanent panel:
- *  8 + 316 record + 8 + 360 main + 8 + 360 chat + 8 = 1068, pinned round. */
-export const RECORD_DOCK_PX = 1070;
+/** The gap between columns, and the edge padding beside the outer two. */
+export const GUTTER_PX = 8;
 
-export const chatDockQuery = `(min-width: ${CHAT_DOCK_PX}px)`;
-export const recordDockQuery = `(min-width: ${RECORD_DOCK_PX}px)`;
+/** Two columns fit: 8 + 360 + 8 + 360 + 8, an upright iPad mini. */
+export const TWO_COLUMN_PX = 744;
+
+/** Three columns fit: 8 + 360 + 8 + 360 + 8 + 360 + 8, an iPad on its side. */
+export const THREE_COLUMN_PX = 1112;
+
+export const twoColumnQuery = `(min-width: ${TWO_COLUMN_PX}px)`;
+export const threeColumnQuery = `(min-width: ${THREE_COLUMN_PX}px)`;

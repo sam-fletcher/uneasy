@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, openTones } from './helpers';
 import { E2E } from './baseUrl';
 
 // Regression cover for the tone-tile write path ($lib/toneWrites.ts).
@@ -66,7 +66,7 @@ test('rapid tone taps coalesce and never replay the cycle', async ({ browser }) 
 	});
 
 	await page.goto(`/table/${game.id}`);
-	await page.getByRole('button', { name: 'Open tones' }).click();
+	await openTones(page);
 
 	const tile = page.locator('.tone-tile').first();
 	await expect(tile).toHaveAttribute('data-status', 'default');
@@ -119,7 +119,7 @@ test('another player\'s tone edit still lands live', async ({ browser }) => {
 
 	const alicePage = await aliceCtx.newPage();
 	await alicePage.goto(`/table/${game.id}`);
-	await alicePage.getByRole('button', { name: 'Open tones' }).click();
+	await openTones(alicePage);
 
 	const tile = alicePage.locator('.tone-tile').first();
 	await expect(tile).toHaveAttribute('data-status', 'default');

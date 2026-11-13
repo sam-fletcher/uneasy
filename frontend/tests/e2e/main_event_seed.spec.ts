@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, tableTitle } from './helpers';
 import { E2E } from './baseUrl';
 
 // First main_event spec, exercising the new /api/dev/seed fixture path.
@@ -49,8 +49,8 @@ test('seeded main_event game renders the main-event view for both players', asyn
   ]);
 
   // Both clients land directly in main_event — no lobby pass-through.
-  await expect(alicePage.locator('.phase-badge')).toHaveText('Main Event');
-  await expect(bobPage.locator('.phase-badge')).toHaveText('Main Event');
+  await expect(tableTitle(alicePage)).toHaveText(/^Row \d+/);
+  await expect(tableTitle(bobPage)).toHaveText(/^Row \d+/);
 
   // MainEventView mounts on both sides.
   await expect(alicePage.locator('.main-event-view')).toBeVisible();

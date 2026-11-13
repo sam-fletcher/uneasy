@@ -13,11 +13,13 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/rankStrip.css';
-	import '$lib/components/shared/rankChip.css';
+	import '$lib/components/shared/chip.css';
 	import '$lib/components/shared/cornerBadge.css';
 	import '$lib/components/shared/marginaliaTile.css';
 	import { PLAN_SHORT, TRACK_ORDER } from './plans/shared';
 	import CrownGlyph from './CrownGlyph.svelte';
+	import ClockMark from './shared/ClockMark.svelte';
+	import PlayerShape from './shared/PlayerShape.svelte';
 	import AssetTypeIcon from './AssetTypeIcon.svelte';
 	import type { Asset } from '$lib/api';
 
@@ -192,7 +194,8 @@
 					</svg>
 				</figure>
 				<div class="record-text">
-					<p>This timeline guides the game after the Prologue.</p>
+					<p>This timeline guides the game after the Prologue. It's the <em>Public Record</em>: its Events list is the timeline, and
+						beside it are the laws and rumors the court has made.</p>
 					<p>We'll step down it row by row — <em>setting a scene</em> on each, and <em>preparing plans</em> that land on later rows.</p>
 					<p><em>Rankings</em> will only change at 3 points: after rows 4, 8, and 12.</p>
 					<p>The finale (the Shake-Up) occurs after row 13.</p>
@@ -232,34 +235,26 @@
 			<p>The ranks will change after rows 4, 8, and 12 based on each player's plans in the category.</p>
 
 			<figure class="diagram">
+				<!-- The real chip, shape and marks (not a drawing of them), so this can't
+				     teach something the player row no longer shows. -->
 				<div class="ex-chip-row" aria-hidden="true">
-					<div class="ex-chip waiting mine">
-						<span class="ex-badge">2</span>
-						<span class="ex-chip-body">
-							<span class="ex-chip-name"><span class="ex-dot"></span>You</span>
-							<span class="ex-ranks">
-								<span class="mr"><span class="mr-cat">P</span>3</span>
-								<span class="mr"><span class="mr-cat">K</span>2</span>
-								<span class="mr"><span class="mr-cat">E</span>5</span>
-							</span>
-						</span>
-					</div>
-					<div class="ex-chip">
-						<span class="ex-badge">1</span>
-						<span class="ex-chip-body">
-							<span class="ex-chip-name"><span class="ex-dot"></span>Alric</span>
-							<span class="ex-ranks">
-								<span class="mr"><span class="mr-cat">P</span>2</span>
-								<span class="mr top"><span class="mr-cat">K</span>1</span>
-								<span class="mr"><span class="mr-cat">E</span>4</span>
-							</span>
-						</span>
-					</div>
+					<span class="chip compact ex-chip">
+						<PlayerShape seat={1} />
+						<span>You</span>
+						<ClockMark tone="you" />
+					</span>
+					<span class="chip compact ex-chip">
+						<PlayerShape seat={2} />
+						<span>Alric</span>
+						<ClockMark tone="other" />
+						<svg class="ex-risk" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5L21.5 20H2.5zM12 10v4.5M12 17.5v0.01" /></svg>
+					</span>
 				</div>
 				<figcaption>
-					Tap any chip to open the player's Retinue. A gold outline means the game is waiting on that player. 
-					The red number counts that player's <em>assets</em> that are one tear from destruction
-					but still have an empty <em>marginalia</em> slot.
+					The row under the title lists everyone at the table, each with their own colour and shape. Tap a name
+					to open that player's Retinue. A clock means the game is waiting on that player, and it is gold when
+					the player is you. A red warning triangle means one of their <em>assets</em> is one tear from destruction
+					but still has an empty <em>marginalia</em> slot.
 				</figcaption>
 			</figure>
 
@@ -500,12 +495,12 @@
 	   (it floated over content while the phase view scrolled) — content height
 	   varies per tab and the footer simply follows it. */
 
-	/* Panel (? sheet) below the chat dock: the help is a fixed height that fills
+	/* Panel (? sheet) on a phone: the help is a fixed height that fills
 	   the sheet, and the BODY is the only scroll region. Short tabs leave
 	   non-scrollable blank above the pinned footer; the tallest tab scrolls real
 	   content only. The 130px allowance covers the sheet header, its padding,
 	   and the "How to play" title above this component. */
-	@media (max-width: 789px) {
+	@media (max-width: 743px) {
 		.help.panel { height: calc(85dvh - 130px); }
 		.help.panel .tabs { flex-shrink: 0; }
 		.help.panel .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
@@ -669,46 +664,15 @@
 		color: var(--color-text);
 	}
 
-	/* ── Header-chip replica (Rankings tab) ──────────────────────────────── */
-	/* Mirrors .member/.risk-badge in routes/table/[id]/+page.svelte. Kept as a
-	   local replica rather than a shared file (same call as the other help
-	   diagrams) — but the two must be restyled together, or the legend starts
-	   teaching a chip the header no longer draws. */
+	/* ── Player-row replica (Rankings tab) ───────────────────────────────── */
+	/* The chips are the real ones (chip.css, PlayerShape, ClockMark), so only
+	   their layout lives here. They are pictures, not controls. */
 	.ex-chip-row {
 		display: flex; flex-wrap: wrap; justify-content: center;
-		gap: 0.6rem; /* clears the badges' 6px overhang between chips */
+		gap: 0.6rem;
 	}
-	.ex-chip {
-		position: relative; /* the badge's containing block */
-		display: flex; align-items: center; gap: 0.4rem;
-		min-height: 44px; padding: 0.3rem 0.7rem;
-		background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: 999px;
-		width: fit-content;
-	}
-	.ex-chip.waiting { border-color: var(--color-accent); }
-	.ex-chip.waiting.mine {
-		box-shadow: 0 0 0 1px var(--color-accent), 0 0 8px color-mix(in srgb, var(--color-accent) 45%, transparent);
-	}
-	.ex-badge {
-		position: absolute; top: -6px; right: -6px;
-		min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box;
-		display: inline-flex; align-items: center; justify-content: center;
-		border-radius: 999px; font-size: 0.78rem; font-weight: 600; line-height: 1;
-		font-variant-numeric: tabular-nums;
-		background: var(--color-surface-2); border: 1px solid var(--color-danger-muted);
-		color: var(--color-danger);
-	}
-	.ex-chip-body { display: flex; flex-direction: column; align-items: center; gap: 0.12rem; }
-	.ex-chip-name { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--color-text); }
-	/* Stands in for a player colour. Deliberately NOT a real palette entry:
-	   playerColor.ts owns those and they're per-game data, so a diagram can't
-	   name one honestly. */
-	.ex-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-highlight); flex-shrink: 0; }
-	.ex-ranks { display: flex; gap: 0.4rem; font-size: 0.62rem; line-height: 1; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-
-	/* ── Rank-strip replica (Rankings tab) ───────────────────────────────── */
-	/* .rank-strip itself (grid/colors/etc.) comes from shared/rankStrip.css;
-	   this just centres it in the narrow help diagram box. */
+	.ex-chip { pointer-events: none; cursor: default; color: var(--color-text); }
+	.ex-risk { flex: none; color: var(--color-danger); }
 	.ex-rankstrip { width: 100%; max-width: 340px; margin: 0 auto; }
 
 	/* ── Asset-type reference grid (Assets tab) ──────────────────────────── */

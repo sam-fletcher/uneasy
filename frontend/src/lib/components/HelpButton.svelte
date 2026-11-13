@@ -1,7 +1,11 @@
-<!-- tokens: not migrated -->
 <!--
   Self-contained "?" button + How to play panel. Drop in anywhere (site
   header, a page's own corner) — it owns its open state and needs no props.
+
+  Its sheets rise over whatever column the surrounding page provides
+  ($lib/sheetHost): on the table page that is Play (or the left column when
+  there are two), so Help never darkens the chat. With no host they cover the
+  viewport.
 -->
 <script lang="ts">
 	import '$lib/components/shared/modalShell.css';
@@ -20,7 +24,7 @@
 </script>
 
 <button type="button" class="help-button" onclick={() => open = true} aria-label="How to play & feedback">
-	<HelpGlyph />
+	<HelpGlyph size={20} />
 </button>
 
 <RetinueSheet open={open} onClose={() => open = false}>
@@ -45,16 +49,17 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 44px;
-		height: 44px;
+		width: var(--size-tap);
+		height: var(--size-tap);
 		flex-shrink: 0;
-		color: var(--color-accent);
+		padding: 0;
+		color: var(--color-text-secondary);
 		background: none;
 		border: none;
-		border-radius: 6px;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
-	.help-button:hover { color: var(--color-accent-hover); background: var(--color-surface-2); }
-	.help-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+	.help-button:hover { color: var(--color-text); background: var(--color-surface); }
+	.help-button:focus-visible { outline: 2px solid var(--color-you); outline-offset: 2px; }
 
 </style>
