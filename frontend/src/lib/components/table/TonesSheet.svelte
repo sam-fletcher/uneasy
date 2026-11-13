@@ -295,7 +295,9 @@
 		min-height: var(--size-tap);
 		padding: var(--space-1);
 		border-radius: var(--radius-control);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		/* A tile is a control, so it takes the control border. It used to be a faint
+		   white wash; no token is a translucent edge, and the nearest is this one. */
+		border: 1px solid var(--color-border-control);
 		background: var(--color-neutral);
 		color: var(--white);
 		font-size: var(--text-small);
