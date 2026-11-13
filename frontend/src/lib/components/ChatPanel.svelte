@@ -438,7 +438,15 @@
 	// measurable, land on the "New messages" divider (a quarter down from the
 	// top) if there's unread content, else the bottom. Every render after
 	// that just follows stickToBottom.
-	let didInitialScroll = $state(false);
+	//
+	// `didInitialScroll` is deliberately NOT $state. It is read and written only
+	// here, and as state, writing it re-ran this very effect before the landing
+	// below had happened: that second run still saw stickToBottom === true and
+	// queued a scroll to the bottom, which ran after the landing and undid it. A
+	// reader with a long unread run then always arrived at the bottom, where the
+	// read marker moved two seconds later: the new messages cleared without ever
+	// having been on screen.
+	let didInitialScroll = false;
 	$effect(() => {
 		void posts.length;
 		if (!feedEl) return;
