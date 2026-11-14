@@ -10,3 +10,7 @@ line between them.
 The rulings let a group take at most a thin line between neighbours. Should a hairline separate
 sub-steps inside one open step, or is space alone enough? With no line, a long step reads as one
 block, and it is not clear where one sub-step ends and the next begins.
+
+The owner has since seen the same blur in Clandestinely Liaise and Propose Decree, where a sub-step's heading is
+the same size and colour as its text. `next/plan-type-tiers.md` takes that up, and its design round can answer
+this question too.
