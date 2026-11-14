@@ -15,6 +15,8 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import Notice from '$lib/components/shared/Notice.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 	import { resolveHostMar, type Asset, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import { breakableAssets, playerName } from '../shared';
@@ -125,7 +127,7 @@
 			{:else}
 				{MAR_OPTS.find(o => o.key === legacyOption)?.label ?? 'A Mar to settle'}
 			{/if}
-			{#if total > 1}<span class="muted" style="font-weight:400;"> · {total} mars to settle</span>{/if}
+			{#if total > 1}<span class="taken-count"> · {total} mars to settle</span>{/if}
 		</p>
 
 		{#if legacyOption == null}
@@ -137,12 +139,14 @@
 						class:active={picked === o.key} class:locked={reason != null}
 						disabled={reason != null} aria-pressed={picked === o.key}
 						onclick={() => { picked = picked === o.key ? null : o.key; }}>
-						<span class="choice-badge">{picked === o.key ? '✓' : ''}</span>
 						<span class="choice-text">
 							<span class="choice-title">{o.label}</span>
 							{#if o.desc}<span class="choice-desc">{o.desc}</span>{/if}
 						</span>
 						{#if reason}<span class="choice-lock">{reason}</span>{/if}
+						{#if picked === o.key}
+							<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
+						{/if}
 					</button>
 				{/each}
 			</div>
@@ -174,7 +178,7 @@
 					selectedAssetID={hostMC[0]?.id ?? null}
 					onSelectMarginalia={(mID) => (marginaliaID = mID)}
 				/>
-				{#if breakWarn}<p class="res-warning">{breakWarn}</p>{/if}
+				{#if breakWarn}<Notice tone="warning">{breakWarn}</Notice>{/if}
 			{:else}
 				<p class="choices-note muted">You have nothing left to tear — you can pass the break.</p>
 			{/if}
@@ -200,3 +204,11 @@
 		{/if}
 	</div>
 {/if}
+
+<style>
+	/* The count after the lead line: plain secondary words, not part of the heading. */
+	.taken-count {
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
+	}
+</style>

@@ -93,7 +93,7 @@ test('a guest rolls a make through the UI: the choice lands, they hold an IOU, t
 	const rollID = (await festivity(g, planID)).guest_roll_ids![String(g.ids.bob)];
 	await expectRollOpen(alice, bob, carol);
 	await forceRoll(g, rollID, 'make');
-	await expect(bob.getByText('✓ Make')).toBeVisible();
+	await expect(bob.locator('.outcome-make')).toHaveText('Make');
 	await bob.getByRole('button', { name: 'Spread a new rumor' }).click();
 	await bob.getByPlaceholder('What does the rumor say?').fill(RUMOR);
 	await bob.getByRole('button', { name: 'Submit choice' }).click();

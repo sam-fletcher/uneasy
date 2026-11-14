@@ -5,6 +5,7 @@
 	import '$lib/components/shared/actionButton.css';
 	import { onDestroy } from 'svelte';
 	import { preparePlan } from '$lib/api';
+	import Chip from '$lib/components/shared/Chip.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
 	import FormField from '../FormField.svelte';
 	import { playersExcept } from '../shared';
@@ -90,18 +91,8 @@
 		</FormField>
 		<FormField label="Duel of">
 			<div class="chip-row">
-				<button
-					type="button"
-					class="chip-btn"
-					class:active={prepDuelType === 'arms'}
-					onclick={() => (prepDuelType = 'arms')}
-				>Arms</button>
-				<button
-					type="button"
-					class="chip-btn"
-					class:active={prepDuelType === 'wits'}
-					onclick={() => (prepDuelType = 'wits')}
-				>Wits / Trial</button>
+				<Chip selected={prepDuelType === 'arms'} onclick={() => (prepDuelType = 'arms')}>Arms</Chip>
+				<Chip selected={prepDuelType === 'wits'} onclick={() => (prepDuelType = 'wits')}>Wits / Trial</Chip>
 			</div>
 		</FormField>
 		<label class="form-label">

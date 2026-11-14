@@ -213,96 +213,110 @@
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
 
-		{#if isResolving}
-			<p class="choices-note">
-				{#if amHost}
-					As host: Introduce the event in the chat. Where is it taking place, and
-					what kind of event is it?
-				{:else}
-					Make your entrance in chat, socialize, and roll for a Make — but risk a Mar!
-				{/if}
-			</p>
-			<Buffet tabs={buffetTabs} />
-		{/if}
+		<!-- The event's groups, with a bigger gap between them than inside one. -->
+		<div class="fest-body">
+			{#if isResolving}
+				<p class="ft-prompt">
+					{#if amHost}
+						As host: Introduce the event in the chat. Where is it taking place, and
+						what kind of event is it?
+					{:else}
+						Make your entrance in chat, socialize, and roll for a Make — but risk a Mar!
+					{/if}
+				</p>
+				<Buffet tabs={buffetTabs} />
+			{/if}
 
-		<GuestList {plan} {fest} {players} {currentPlayerID} />
+			<GuestList {plan} {fest} {players} {currentPlayerID} />
 
-		{#if fest.pendingChallenge}
-			<ChallengeBanner
-				planID={plan.id}
-				challenge={fest.pendingChallenge}
-				{players} {currentPlayerID} {mustAccept} {onPlansChanged}
-			/>
-		{/if}
+			{#if fest.pendingChallenge}
+				<ChallengeBanner
+					planID={plan.id}
+					challenge={fest.pendingChallenge}
+					{players} {currentPlayerID} {mustAccept} {onPlansChanged}
+				/>
+			{/if}
 
-		<!-- Your move(s): each control appears only for the player who can use it. -->
-		{#if isResolving && iAmGuest && !amHost && !fest.pendingChallenge && myOutcome == null}
-			<SocializingTurn
-				{plan} {fest} {players} {assets} {currentPlayerID}
-				{myRollID} {myEffectiveOutcome}
-				{difficulty} {blockedByOtherRoll} {activeRollerID} {onPlansChanged}
-			/>
-		{/if}
+			<!-- Your move(s): each control appears only for the player who can use it. -->
+			{#if isResolving && iAmGuest && !amHost && !fest.pendingChallenge && myOutcome == null}
+				<SocializingTurn
+					{plan} {fest} {players} {assets} {currentPlayerID}
+					{myRollID} {myEffectiveOutcome}
+					{difficulty} {blockedByOtherRoll} {activeRollerID} {onPlansChanged}
+				/>
+			{/if}
 
-		{#if isResolving && amStepActor && hostMakesLeft > 0 && !fest.pendingChallenge}
-			<HostChoosing {plan} {fest} {players} {assets} {onPlansChanged} />
-		{/if}
+			{#if isResolving && amStepActor && hostMakesLeft > 0 && !fest.pendingChallenge}
+				<HostChoosing {plan} {fest} {players} {assets} {onPlansChanged} />
+			{/if}
 
-		{#if isResolving && amStepActor && !fest.pendingChallenge
-			&& fest.unchosenHostMars.length + fest.pendingHostMars.length > 0}
-			<HostPendingMar
-				{plan} {players} {assets}
-				unchosenHostMars={fest.unchosenHostMars}
-				pendingHostMars={fest.pendingHostMars}
-				{onPlansChanged}
-			/>
-		{/if}
+			{#if isResolving && amStepActor && !fest.pendingChallenge
+				&& fest.unchosenHostMars.length + fest.pendingHostMars.length > 0}
+				<HostPendingMar
+					{plan} {players} {assets}
+					unchosenHostMars={fest.unchosenHostMars}
+					pendingHostMars={fest.pendingHostMars}
+					{onPlansChanged}
+				/>
+			{/if}
 
-		{#if isResolving && iHaveIOU && !fest.pendingChallenge && !blockedByOtherRoll}
-			<div class="choices-section">
-				<p class="choices-header">Your hold over the host:</p>
-				<InsistFlow {plan} {onPlansChanged} />
-			</div>
-		{/if}
+			{#if isResolving && iHaveIOU && !fest.pendingChallenge && !blockedByOtherRoll}
+				<div class="choices-section">
+					<p class="choices-header">Your hold over the host:</p>
+					<InsistFlow {plan} {onPlansChanged} />
+				</div>
+			{/if}
 
-		{#if centeredNames.length > 0}
-			<p>	</p>
-			<p class="choices-header">
-				Available peers to join a retinue:
-			</p>
-			<ul class="choices-note">
-				{#each centeredNames as name, i (i)}
-					<li>{name}</li>
-				{/each}
-			</ul>
-		{/if}
-
-		{#if isResolving && amStepActor}
-			<div class="complete-section">
-				{#if endError}<ErrorText message={endError} variant="panel" />{/if}
-				<button
-					class="action-btn primary"
-					onclick={onEndEvent}
-					disabled={endBusy || !endable}
-					title={endable ? '' : 'Everyone must settle first: all guests chosen and all Mars inflicted.'}
-				>
-					{endBusy ? '…' : 'End the event'}
-				</button>
-				{#if endable}
-					<EndsNote text="This is the last step: Host Festivity resolves when you end the event." />
-				{:else}
-					<p class="choices-note muted">You can end the event once every guest has settled: all guests chosen and all Mars inflicted.</p>
-				{/if}
-				{#if hostMakesLeft > 0}
-					<p class="choices-note muted">
-						Ending now forfeits {amHost ? 'your' : "the host's"} {hostMakesLeft} unclaimed {hostMakesLeft === 1 ? 'Make' : 'Makes'}.
+			{#if centeredNames.length > 0}
+				<div class="choices-section">
+					<p class="choices-header">
+						Available peers to join a retinue:
 					</p>
-				{/if}
-			</div>
-		{:else if !isResolving}
-			<p class="choices-applied">The festivity has wound down.</p>
-		{/if}
+					<ul class="choices-note">
+						{#each centeredNames as name, i (i)}
+							<li>{name}</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
+			{#if isResolving && amStepActor}
+				<div class="complete-section">
+					{#if endError}<ErrorText message={endError} variant="panel" />{/if}
+					<button
+						class="action-btn primary"
+						onclick={onEndEvent}
+						disabled={endBusy || !endable}
+						title={endable ? '' : 'Everyone must settle first: all guests chosen and all Mars inflicted.'}
+					>
+						{endBusy ? '…' : 'End the event'}
+					</button>
+					{#if endable}
+						<EndsNote text="This is the last step: Host Festivity resolves when you end the event." />
+					{:else}
+						<p class="choices-note muted">You can end the event once every guest has settled: all guests chosen and all Mars inflicted.</p>
+					{/if}
+					{#if hostMakesLeft > 0}
+						<p class="choices-note muted">
+							Ending now forfeits {amHost ? 'your' : "the host's"} {hostMakesLeft} unclaimed {hostMakesLeft === 1 ? 'Make' : 'Makes'}.
+						</p>
+					{/if}
+				</div>
+			{:else if !isResolving}
+				<p class="choices-applied">The festivity has wound down.</p>
+			{/if}
+		</div>
 
 	</ResolvingCard>
 {/if}
 
+<style>
+	/* Groups are told apart by the space between them: bigger than the gap inside
+	   a group, so "The Talk of the Event", the host's Makes and an insisted Mar
+	   read as separate things without a box around any of them. */
+	.fest-body {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-5);
+	}
+</style>

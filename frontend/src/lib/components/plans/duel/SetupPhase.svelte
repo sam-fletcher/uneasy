@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- Duel/SetupPhase.svelte
   Setup phase: who duels (a peer; the player's main character by default) +
   the secret stake-count reveal.
@@ -10,6 +9,7 @@
 <script lang="ts">
 	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import { electChampion, selectStakes, type Asset, type DuelStake, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import { playerName, assetName } from '../shared';
@@ -142,109 +142,113 @@
 	}
 </script>
 
-<!-- Who duels -->
-<div class="choices-section">
-	<p class="choices-header">{heading}</p>
-	{#if amParticipant}
-		{#if myPeers.length === 0}
-			<p class="choices-note muted">You have no peer to send — you fight in person.</p>
-		{:else if changing}
-			<CardPicker
-				label="Choose a peer to duel in your stead"
-				items={myPeers}
-				{players}
-				selected={pendingDuelerID}
-				onSelect={(id) => (pendingDuelerID = id)}
-			/>
-			{#if championError}<ErrorText message={championError} variant="panel" />{/if}
-			<div class="form-row">
-				<button class="action-btn primary" onclick={confirmDueler} disabled={championBusy}>
-					{championBusy ? '…' : 'Confirm'}
-				</button>
-				<button type="button" class="inline-link" onclick={() => (changing = false)}>
-					Cancel
-				</button>
-			</div>
-		{:else}
-			<p class="choices-note">
-				{duelerName(currentPlayerID, myChampionID)} {verbPhrase}.
-				<button type="button" class="inline-link" onclick={openPicker}>
+<div class="setup-groups">
+	<!-- Who duels -->
+	<div class="choices-section">
+		<p class="choices-header">{heading}</p>
+		{#if amParticipant}
+			{#if myPeers.length === 0}
+				<p class="choices-note muted">You have no peer to send — you fight in person.</p>
+			{:else if changing}
+				<CardPicker
+					label="Choose a peer to duel in your stead"
+					items={myPeers}
+					{players}
+					selected={pendingDuelerID}
+					onSelect={(id) => (pendingDuelerID = id)}
+				/>
+				{#if championError}<ErrorText message={championError} variant="panel" />{/if}
+				<div class="step-actions">
+					<button class="action-btn primary" onclick={confirmDueler} disabled={championBusy}>
+						{championBusy ? '…' : 'Confirm'}
+					</button>
+					<button type="button" class="action-btn secondary" onclick={() => (changing = false)}>
+						Cancel
+					</button>
+				</div>
+			{:else}
+				<p class="choices-note">
+					{duelerName(currentPlayerID, myChampionID)} {verbPhrase}.
+				</p>
+				<button type="button" class="action-btn secondary" onclick={openPicker}>
 					Send someone else
 				</button>
-			</p>
-		{/if}
-		<p class="choices-note muted" style="margin:0;">
-			Facing {duelerName(opponentID, opponentChampID)}.
-		</p>
-	{:else}
-		<p class="choices-note muted">
-			{duelerName(plan.preparer_id, duelRes.prepChampID)}
-			vs {duelerName(plan.target_player_id, duelRes.targChampID)}.
-		</p>
-	{/if}
-</div>
-
-<!-- Stakes -->
-<div class="choices-section">
-	<p class="choices-header">
-		Choose assets to stake
-		{#if amParticipant && !iCommitted && effectiveMaxStakes >= 1}
-			<span class="muted">&mdash; pick 1&ndash;{effectiveMaxStakes} {#if effectiveMaxStakes < myMaxStakes}(all you own; esteem allows {myMaxStakes}){/if}</span>
-		{/if}
-	</p>
-	<p class="choices-note">
-		Each staked asset hides a rolled die for the duel and final difficulty result.
-		More dice means more control, but the staked assets could be taken if you lose.
-		All staked assets are leveraged when the duel ends.
-	</p>
-	{#if amParticipant}
-		{#if iCommitted}
-			<p class="choices-note">
-				You've staked {myStakes.length} asset{myStakes.length === 1 ? '' : 's'}.
-				Waiting for your opponent…
-			</p>
-		{:else if effectiveMaxStakes < 1}
-			<p class="res-warning">
-				You have no assets available to stake, so you cannot answer this duel.
+			{/if}
+			<p class="choices-note muted">
+				Facing {duelerName(opponentID, opponentChampID)}.
 			</p>
 		{:else}
-			<CardPicker
-				label="Check the assets you'll stake"
-				items={myStakeableAssets}
-				{players}
-				ownerLabel={stakeableLabel}
-				multi
-				max={effectiveMaxStakes}
-				selectedMulti={stakeSelectionIDs}
-				onSelectMulti={(ids) => (stakeSelectionIDs = ids)}
-			/>
-			{#if stakeError}<ErrorText message={stakeError} variant="panel" />{/if}
-			<button class="action-btn primary"
-				onclick={commitStakes}
-				disabled={stakeBusy || !stakeCountValid}>
-				{stakeBusy ? '…' : `Commit ${stakeSelectionIDs.length} stake${stakeSelectionIDs.length === 1 ? '' : 's'}`}
-			</button>
-			<EndsNote text="The bouts begin as soon as both duellists have committed their stakes." />
+			<p class="choices-note muted">
+				{duelerName(plan.preparer_id, duelRes.prepChampID)}
+				vs {duelerName(plan.target_player_id, duelRes.targChampID)}.
+			</p>
 		{/if}
-	{:else}
-		<p class="choices-note muted">The duellists are choosing their stakes.</p>
-	{/if}
+	</div>
+
+	<!-- Stakes -->
+	<div class="choices-section">
+		<p class="choices-header">
+			Choose assets to stake
+			{#if amParticipant && !iCommitted && effectiveMaxStakes >= 1}
+				<span class="muted">&mdash; pick 1&ndash;{effectiveMaxStakes} {#if effectiveMaxStakes < myMaxStakes}(all you own; esteem allows {myMaxStakes}){/if}</span>
+			{/if}
+		</p>
+		<p class="choices-note">
+			Each staked asset hides a rolled die for the duel and final difficulty result.
+			More dice means more control, but the staked assets could be taken if you lose.
+			All staked assets are leveraged when the duel ends.
+		</p>
+		{#if amParticipant}
+			{#if iCommitted}
+				<p class="choices-note">
+					You've staked {myStakes.length} asset{myStakes.length === 1 ? '' : 's'}.
+					Waiting for your opponent…
+				</p>
+			{:else if effectiveMaxStakes < 1}
+				<Notice tone="warning">
+					You have no assets available to stake, so you cannot answer this duel.
+				</Notice>
+			{:else}
+				<CardPicker
+					label="Check the assets you'll stake"
+					items={myStakeableAssets}
+					{players}
+					ownerLabel={stakeableLabel}
+					multi
+					max={effectiveMaxStakes}
+					selectedMulti={stakeSelectionIDs}
+					onSelectMulti={(ids) => (stakeSelectionIDs = ids)}
+				/>
+				{#if stakeError}<ErrorText message={stakeError} variant="panel" />{/if}
+				<button class="action-btn primary"
+					onclick={commitStakes}
+					disabled={stakeBusy || !stakeCountValid}>
+					{stakeBusy ? '…' : `Commit ${stakeSelectionIDs.length} stake${stakeSelectionIDs.length === 1 ? '' : 's'}`}
+				</button>
+				<EndsNote text="The bouts begin as soon as both duellists have committed their stakes." />
+			{/if}
+		{:else}
+			<p class="choices-note muted">The duellists are choosing their stakes.</p>
+		{/if}
+	</div>
 </div>
 
 <style>
-	.inline-link {
-		background: none;
-		border: none;
-		padding: 0;
-		margin-left: 0.35rem;
-		color: var(--color-accent);
-		font: inherit;
-		font-size: 0.8rem;
-		text-decoration: underline;
-		cursor: pointer;
+	/* Who duels, then the stakes: two groups, with more space between them than
+	   inside either. */
+	.setup-groups {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-5);
 	}
-	.inline-link:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 2px;
+
+	/* Confirm takes the room and Cancel sits beside it. */
+	.step-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
 	}
+	.step-actions > :global(.action-btn) { align-self: stretch; }
+	.step-actions > :global(.action-btn.primary) { flex: 2 1 10rem; }
+	.step-actions > :global(.action-btn.secondary) { flex: 1 1 6rem; }
 </style>

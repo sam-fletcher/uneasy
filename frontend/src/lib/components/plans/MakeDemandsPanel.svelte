@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- MakeDemandsPanel.svelte
   Prep + resolve UI for the Make Demands plan (Tier 3, Power, variable delay).
 
@@ -31,7 +30,10 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
+	import FinishedStep from './shared/FinishedStep.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -186,6 +188,14 @@
 
 	// ── Resolve: draft picker ─────────────────────────────────────────────────
 
+	// The labels read "Title — what it does". A card gives the title a line of its
+	// own and the effect the smaller line under it; a finished pick is the title.
+	function optionParts(opt: DemandOption): { title: string; effect: string } {
+		const [title, ...rest] = DEMAND_OPTION_LABELS[opt].split(' — ');
+		const effect = rest.join(' — ');
+		return { title, effect: effect.charAt(0).toUpperCase() + effect.slice(1) };
+	}
+
 	let pickedOption = $state<DemandOption | null>(null);
 	let draftBusy = $state(false);
 	let resError = $state('');
@@ -287,7 +297,7 @@
 			{:else}
 				<label class="form-label">
 					Target plan:
-					<select bind:value={targetPlanID} class="form-textarea" style="height:auto;">
+					<select bind:value={targetPlanID} class="form-select target-select">
 						<option value={null}>— pick a plan to demand against —</option>
 						{#each targetablePlans as p}
 							<option value={p.id}>
@@ -335,14 +345,19 @@
 				</p>
 
 				{#if draftChoices.length > 0}
-					<ul class="plan-notes" style="padding-left:1rem;">
-						{#each draftChoices as c}
-							<li>
+					<!-- Each pick so far is a finished step: one line, its picker's shape in front. -->
+					<div class="done-steps">
+						{#each draftChoices as c (c.option)}
+							<FinishedStep>
+								{#snippet mark()}
+									<PlayerShape player={players.find(p => p.id === c.player_id)} size={16} />
+								{/snippet}
 								{playerName(players, c.player_id)}
-								picked <em>{DEMAND_OPTION_LABELS[c.option as DemandOption] ?? c.option}</em>
-							</li>
+								picked {(DEMAND_OPTIONS as string[]).includes(c.option)
+									? optionParts(c.option as DemandOption).title : c.option}
+							</FinishedStep>
 						{/each}
-					</ul>
+					</div>
 				{/if}
 
 				{#if !draftComplete}
@@ -354,6 +369,7 @@
 						<div class="choice-list">
 							{#each optionViews as v (v.option)}
 								{@const opt = v.option}
+								{@const parts = optionParts(opt)}
 								<button type="button" class="choice-card"
 									class:active={pickedOption === opt}
 									class:locked={v.disabled}
@@ -361,9 +377,13 @@
 									aria-disabled={v.disabled}
 									onclick={() => { pickedOption = pickAfterTap(pickedOption, v); }}>
 									<span class="choice-text">
-										<span class="choice-title">{DEMAND_OPTION_LABELS[opt]}{#if pickedOption === opt}<span class="choice-tick"> ✓</span>{/if}</span>
+										<span class="choice-title">{parts.title}</span>
+										<span class="choice-desc">{parts.effect}</span>
 										{#if v.reason}<span class="choice-desc">{v.reason}</span>{/if}
 									</span>
+									{#if pickedOption === opt}
+										<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
+									{/if}
 								</button>
 							{/each}
 						</div>
@@ -383,10 +403,10 @@
 						Draft complete. The cross-cutting effects (leverage,
 						retarget, perform-steps, keep-assets) now apply to the target plan.
 					</p>
-					<ul class="plan-notes" style="padding-left:1rem;">
+					<ul class="resolved-so-far-list">
 						{#each DEMAND_OPTIONS as opt}
 							<li>
-								<em>{opt.replace(/_/g, ' ')}</em>:
+								{opt.replace(/_/g, ' ')}:
 								{playerName(players, winners[opt] ?? null)}
 							</li>
 						{/each}
@@ -415,8 +435,11 @@
 								aria-pressed={counterChoice === p.id}
 								onclick={() => { counterChoice = p.id; }}>
 								<span class="choice-text">
-									<span class="choice-title">{PLAN_SHORT[p.plan_type] ?? p.plan_type} (row {p.row_number}){#if counterChoice === p.id}<span class="choice-tick"> ✓</span>{/if}</span>
+									<span class="choice-title">{PLAN_SHORT[p.plan_type] ?? p.plan_type} (row {p.row_number})</span>
 								</span>
+								{#if counterChoice === p.id}
+									<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
+								{/if}
 							</button>
 						{/each}
 						<button type="button" class="choice-card"
@@ -425,8 +448,11 @@
 							onclick={() => { counterChoice = 'defer'; }}>
 							<span class="choice-text">
 								<span class="choice-title">Defer — counter the next plan
-									{playerName(players, plan.preparer_id)} prepares{#if counterTargetablePlans.length === 0}{' '}(no eligible plans yet){/if}{#if counterChoice === 'defer'}<span class="choice-tick"> ✓</span>{/if}</span>
+									{playerName(players, plan.preparer_id)} prepares{#if counterTargetablePlans.length === 0}{' '}(no eligible plans yet){/if}</span>
 							</span>
+							{#if counterChoice === 'defer'}
+								<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
+							{/if}
 						</button>
 					</div>
 					<button class="action-btn primary" onclick={submitCounter}
@@ -450,3 +476,12 @@
 		{/if}
 	</ResolvingCard>
 {/if}
+
+<style>
+	/* The plan list can be long ("Chronicle Histories by otto (row 11)"), so the
+	   select takes the width of the column rather than its longest option. */
+	.target-select {
+		width: 100%;
+		box-sizing: border-box;
+	}
+</style>

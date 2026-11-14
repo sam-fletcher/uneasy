@@ -164,7 +164,7 @@
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			ownStakeLaid={myStakes.length > 0} />
 
-		<p class="choices-note" style="margin:0;">
+		<p class="choices-note">
 			{playerName(players, plan.preparer_id)}
 			vs {playerName(players, plan.target_player_id)}
 			{#if difficulty != null}· difficulty <strong>{difficulty}</strong>{/if}

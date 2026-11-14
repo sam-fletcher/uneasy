@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- Festivity/SocializingTurn.svelte
   The current player's own turn during socializing: roll-or-opt-out, then
   pick a make/mar option once the outcome is known. The make-option
@@ -7,6 +6,8 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import Chip from '$lib/components/shared/Chip.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import { guestRoll, guestChoice, challengeDuel, type Asset, type Plan, type Player } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
@@ -201,7 +202,7 @@
 				Waiting for {playerName(players, activeRollerID)} to finish their roll…
 			</p>
 		{/if}
-		<div class="form-row">
+		<div class="step-actions">
 			<button
 				class="action-btn primary"
 				onclick={onRoll}
@@ -210,7 +211,7 @@
 			>
 				{actionBusy ? '…' : `Roll · difficulty ${difficulty}`}
 			</button>
-			<button class="action-btn" onclick={onOptOut} disabled={actionBusy || blockedByOtherRoll}>
+			<button class="action-btn secondary" onclick={onOptOut} disabled={actionBusy || blockedByOtherRoll}>
 				Opt out
 			</button>
 		</div>
@@ -221,24 +222,22 @@
 		<p class="choices-header">
 			Result:
 			<span class="outcome-{myEffectiveOutcome}">
-				{myEffectiveOutcome === 'make' ? '✓ Make' : '✗ Mar'}
+				{myEffectiveOutcome === 'make' ? 'Make' : 'Mar'}
 			</span>
 			— pick one option:
 		</p>
 		<FormField label="Pick one option">
 			<div class="chip-row">
 				{#each opts as o}
-					<button
-						type="button"
-						class="chip-btn"
-						class:active={pickedChoice === o.key}
+					<Chip
+						selected={pickedChoice === o.key}
 						onclick={() => {
 							pickedChoice = pickedChoice === o.key ? null : o.key;
 							pickedAssetID = null;
 							pickedMargID = null;
 							pickedDuelTargetID = null;
 						}}
-					>{o.label}</button>
+					>{o.label}</Chip>
 				{/each}
 			</div>
 		</FormField>
@@ -292,7 +291,7 @@
 					pickedAssetID = parent?.id ?? null;
 				}}
 			/>
-			{#if breakSelfWarn}<p class="res-warning">{breakSelfWarn}</p>{/if}
+			{#if breakSelfWarn}<Notice tone="warning">{breakSelfWarn}</Notice>{/if}
 		{:else if pickedChoice === 'challenge_duel'}
 			{@const duelTargetPlayers = otherGuests
 				.map(gid => players.find(p => p.id === gid))
@@ -304,7 +303,7 @@
 					onSelect={(p) => (pickedDuelTargetID = pickedDuelTargetID === p.id ? null : p.id)}
 				/>
 				{#if pickedDuelTargetID != null && fest.acceptDuels.includes(pickedDuelTargetID)}
-					<p class="choices-note muted" style="margin:0.25rem 0 0;">
+					<p class="choices-note muted">
 						This challenge must be accepted.
 					</p>
 				{/if}
@@ -319,3 +318,15 @@
 		</button>
 	{/if}
 </div>
+
+<style>
+	/* Roll takes the room and Opt out sits beside it. */
+	.step-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+	.step-actions > :global(.action-btn) { align-self: stretch; }
+	.step-actions > :global(.action-btn.primary) { flex: 2 1 10rem; }
+	.step-actions > :global(.action-btn.secondary) { flex: 1 1 6rem; }
+</style>

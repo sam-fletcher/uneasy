@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- Duel/BoutsPhase.svelte
   Bout loop with a visual tracker: each side's stakes (with their hidden /
   revealed dice) and the dice they've won so far, plus a pending pool for
@@ -6,16 +5,24 @@
   actor's declare/respond picker. Backend mirrors the carry-over logic in
   game.AccumulateDuelDice.
 
-  Mobile-first: the two side panels stack on a narrow viewport and sit
-  side-by-side from 560px up.
+  Mobile-first: the two sides and the set-aside tray stack in one column, in
+  the order the dice flow. Nothing here is boxed except what a player presses (a
+  stake they can pick) and the tray, the duel's one object that holds dice.
 -->
 <script lang="ts">
 	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/statusText.css';
+	import Chip from '$lib/components/shared/Chip.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
+	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import ToneMark from '$lib/components/shared/ToneMark.svelte';
+	import { playerColorByID } from '$lib/playerColor';
 	import { boutDeclare, boutRespond, type Asset, type DuelBout, type DuelStake, type Plan, type Player } from '$lib/api';
 	import FormField from '../FormField.svelte';
+	import DieTile from '../shared/DieTile.svelte';
 	import { playerName, assetName } from '../shared';
-	import { computeAccumulated, type DuelRes } from './shared';
+	import { computeAccumulated, setAsideDice, type DuelRes } from './shared';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { plan, duelRes, players, assets, currentPlayerID, amParticipant, preparerStakes, targetStakes, bouts, myUnresolvedStakes, onPlansChanged, onRefresh }: {
@@ -34,6 +41,8 @@
 	} = $props();
 
 	const accumulated = $derived(computeAccumulated(bouts, plan.preparer_id));
+	// Tied dice waiting in the tray, each with its owner, so its edge can be their colour.
+	const trayDice = $derived(setAsideDice(bouts, plan.preparer_id));
 
 	// Bouts run until the shorter side exhausts its stakes, so the total is
 	// the smaller of the two full stake counts (each bout — win or tie —
@@ -111,6 +120,16 @@
 		return { id: s.id, name, die: s.hidden_die, mine,
 			hidden: s.hidden_die == null, resolved: false, setAside: false, won: null, called };
 	}
+	// What a die's tile says to a screen reader: whose it is and where it stands.
+	function dieLabel(v: StakeView, ownerName: string): string {
+		if (v.resolved) {
+			const how = v.setAside ? 'tied, set aside' : v.won === true ? 'won' : 'lost';
+			return `${ownerName}'s die under ${v.name}, ${how}`;
+		}
+		return v.hidden
+			? `${ownerName}'s hidden die under ${v.name}`
+			: `Your die under ${v.name}`;
+	}
 	const prepViews = $derived(preparerStakes.map(viewStake));
 	const targViews = $derived(targetStakes.map(viewStake));
 
@@ -153,47 +172,51 @@
 	}
 </script>
 
-{#snippet die(value: number | string, kind: 'mine' | 'hidden' | 'aside' | 'won' | 'lost')}
-	<span class="die" class:die-mine={kind === 'mine'} class:die-aside={kind === 'aside'}
-		class:die-hidden={kind === 'hidden'}>{value}</span>
-{/snippet}
-
 {#snippet sideColumn(sidePlayerID: number | null, views: StakeView[], won: number[], isPreparer: boolean)}
 	{@const mine = currentPlayerID != null && sidePlayerID === currentPlayerID}
 	{@const role = mine ? '(you)' : amParticipant ? '(opponent)' : ''}
-	<div class="duel-side" class:is-mine={mine}>
+	{@const color = playerColorByID(sidePlayerID, players)}
+	{@const ownerName = playerName(players, sidePlayerID)}
+	<section class="duel-side" class:is-mine={mine}>
 		<p class="side-name">
-			{playerName(players, sidePlayerID)}
+			<PlayerShape player={players.find(p => p.id === sidePlayerID)} size={12} />
+			<span style:color={color}>{ownerName}</span>
 			{#if role}<span class="side-role">{role}</span>{/if}
 		</p>
 		<div class="stake-list">
-			{#each views as v}
+			{#each views as v (v.id)}
 				{#if isMyTurn && mine && !v.resolved}
-					<button type="button" class="stake-line pick" class:selected={pickedStakeID === v.id}
+					<!-- A stake of mine I can play: a control, so it has the control's border;
+					     picked is the bright gold border and a tick, like any option card. -->
+					<button type="button" class="choice-card stake-line pick" class:active={pickedStakeID === v.id}
 						aria-pressed={pickedStakeID === v.id} onclick={() => togglePick(v.id)}>
-						<span class="check">{pickedStakeID === v.id ? '✓' : ''}</span>
 						<span class="stake-name">{v.name}</span>
-						{@render die(v.die ?? '?', 'mine')}
+						<span class="die"><DieTile face={v.die} {color} label={dieLabel(v, ownerName)} /></span>
+						{#if pickedStakeID === v.id}
+							<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
+						{/if}
 					</button>
 				{:else}
-					<div class="stake-line" class:resolved={v.resolved} class:called={v.called != null}>
+					<div class="stake-line" class:resolved={v.resolved}>
 						<span class="stake-name">{v.name}</span>
 						{#if v.called}
-							<span class="stake-tag call">called {callWord(v.called)}</span>
+							<span class="status-word stake-tag">called {callWord(v.called)}</span>
+						{/if}
+						{#if v.hidden && !v.resolved}
+							<!-- Rolled, but not yours to read. The tile alone looks like a die that
+							     has not been rolled, so the word says which. -->
+							<span class="status-word stake-tag">hidden</span>
 						{/if}
 						{#if v.resolved}
 							{#if v.setAside}
-								{@render die(v.die ?? '·', 'aside')}<span class="stake-tag">tied</span>
+								<span class="status-word stake-tag">tied</span>
 							{:else if v.won === true}
-								{@render die(v.die ?? '·', 'won')}<span class="stake-tag win">won</span>
+								<span class="status-word success stake-tag">won</span>
 							{:else}
-								{@render die(v.die ?? '·', 'lost')}<span class="stake-tag loss">lost</span>
+								<span class="status-word danger stake-tag">lost</span>
 							{/if}
-						{:else if v.hidden}
-							{@render die('?', 'hidden')}
-						{:else}
-							{@render die(v.die ?? '?', 'mine')}
 						{/if}
+						<span class="die"><DieTile face={v.die} {color} label={dieLabel(v, ownerName)} duplicate={v.setAside} /></span>
 					</div>
 				{/if}
 			{/each}
@@ -203,15 +226,12 @@
 				{isPreparer ? 'Dice won for pool' : 'Dice won for interference'}
 			</span>
 			{#if won.length === 0}
-				<span class="muted" style="font-style:normal;">none yet</span>
+				<span class="muted">none yet</span>
 			{:else}
-				{#each won as d}{@render die(d, 'won')}{/each}
+				{#each won as d}<DieTile face={d} {color} label={`${ownerName}'s won die`} />{/each}
 			{/if}
 		</div>
-		<!-- <p class="won-feeds muted">
-			{isPreparer ? 'feeds the actor pool' : 'feeds interference'}
-		</p> -->
-	</div>
+	</section>
 {/snippet}
 
 <div class="choices-section">
@@ -223,13 +243,19 @@
 
 	<div class="duel-tracker">
 		{@render sideColumn(plan.preparer_id, prepViews, accumulated.prep, true)}
-		<div class="set-aside" class:empty={accumulated.pending.length === 0}>
+		<!-- The tray: where tied dice wait for the next bout's winner. -->
+		<div class="set-aside">
 			<span class="won-label">Set aside</span>
 			{#if accumulated.pending.length === 0}
-				<span class="muted" style="font-style:normal;">no tied dice</span>
+				<span class="muted">no tied dice</span>
 			{:else}
-				{#each accumulated.pending as d}{@render die(d, 'aside')}{/each}
-				<span class="muted" style="font-style:normal;">
+				<div class="tray-dice">
+					{#each trayDice as d}
+						<DieTile face={d.die} color={playerColorByID(d.ownerID, players)}
+							label={`${playerName(players, d.ownerID)}'s tied die, set aside`} duplicate />
+					{/each}
+				</div>
+				<span class="muted">
 					{isFinalBout ? "→ this bout's winner — lost if it ties" : "→ next bout's winner"}
 				</span>
 			{/if}
@@ -238,7 +264,9 @@
 	</div>
 
 	{#if openCall}
-		<p class="open-call">
+		<!-- The public call: what the responder must read before choosing. Information,
+		     so an info notice. -->
+		<Notice tone="info">
 			{playerName(players, openCall.declarerID)}
 			opens with <em>{openCallAssetName}</em>, calling
 			{callWord(openCall.declaration)}.
@@ -247,53 +275,16 @@
 			{:else}
 				{playerName(players, openCall.responderID)} must answer.
 			{/if}
-		</p>
+		</Notice>
 	{/if}
 
-	<!-- {#if latestBout && latestBout.resolved_at != null}
-		<p class="choices-note last-bout">
-			Last bout:
-			{playerName(players, latestBout.declarer_id)}
-			declared <strong>{latestBout.declaration}</strong>
-			({latestBout.declarer_die}) vs
-			{playerName(players, latestBout.responder_id)} ({latestBout.responder_die})
-			{#if latestBout.is_match}
-				→ tie, dice set aside
-			{:else if latestBout.winner_id != null}
-				→ <strong>{playerName(players, latestBout.winner_id)}</strong> wins both dice
-			{/if}
-		</p>
-	{/if} -->
-
 	{#if isMyTurn && myUnresolvedStakes.length > 0}
-		<div class="plan-form" style="margin-top:0.5rem;">
-			<!-- {#if boutInProgress}
-				<p class="choices-note">
-					Tap one of your stakes above to answer the challenge. Its hidden
-					die is compared against the declarer's — you can see your own
-					value, but not theirs.
-				</p>
-			{:else}
-				<p class="choices-note">
-					Tap one of your stakes above, then call <em>high</em> or <em>low</em>.
-					Guess right and you win both dice, plus any set aside.
-				</p>
-			{/if} -->
+		<div class="plan-form">
 			{#if !boutInProgress}
 				<FormField label="Will your die be higher or lower than your opponent's?">
 					<div class="chip-row">
-						<button
-							type="button"
-							class="chip-btn"
-							class:active={pickedDeclaration === 'high'}
-							onclick={() => (pickedDeclaration = 'high')}
-						>Higher</button>
-						<button
-							type="button"
-							class="chip-btn"
-							class:active={pickedDeclaration === 'low'}
-							onclick={() => (pickedDeclaration = 'low')}
-						>Lower</button>
+						<Chip selected={pickedDeclaration === 'high'} onclick={() => (pickedDeclaration = 'high')}>Higher</Chip>
+						<Chip selected={pickedDeclaration === 'low'} onclick={() => (pickedDeclaration = 'low')}>Lower</Chip>
 					</div>
 				</FormField>
 			{/if}
@@ -314,169 +305,100 @@
 </div>
 
 <style>
-	/* Always stacked: preparer on top, the set-aside pool, then the target.
-	   The vertical order mirrors the dice flow — tied dice sit literally
-	   between the two players, waiting for the next winner. */
+	/* Always stacked: preparer on top, the set-aside tray, then the target. The
+	   vertical order mirrors the dice flow: tied dice sit literally between the
+	   two players, waiting for the next winner. The sides are sections (a name and
+	   some space), not boxes. */
 	.duel-tracker {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 0.4rem;
-		margin: 0.5rem 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-4);
 	}
 
 	.duel-side {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
-		padding: 0.5rem 0.6rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 6px;
+		gap: var(--space-2);
 	}
-	.duel-side.is-mine { border-color: var(--color-accent); }
 
 	.side-name {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
 		margin: 0;
-		font-size: 0.85rem;
-		color: var(--color-text);
+		font-size: var(--text-body);
 	}
 	.side-role {
-		margin-left: 0.3rem;
-		font-size: 0.72rem;
-		font-weight: 400;
+		font-size: var(--text-small);
 		color: var(--color-text-faint);
 	}
 
 	.stake-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
+		gap: var(--space-2);
 	}
 
+	/* A stake that is not mine to play is a plain line: its name, what has been
+	   said of it, and its die. */
 	.stake-line {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
-	}
-	.stake-line.resolved { opacity: 0.6; }
-
-	/* Selectable variant: my own un-played stakes during my turn. A tap on
-	   the row is the bout choice, replacing the old separate card picker. */
-	.stake-line.pick {
-		width: 100%;
-		min-height: 2.75rem;       /* ≥44px tap target */
-		padding: 0.35rem 0.45rem;
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 5px;
+		gap: var(--space-2);
+		font-size: var(--text-body);
 		color: var(--color-text);
-		cursor: pointer;
-		transition: border-color 0.12s, background 0.12s;
 	}
-	.stake-line.pick:hover { border-color: var(--color-accent); }
-	.stake-line.pick.selected {
-		border-color: var(--color-accent);
-		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
-	}
-	.check {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1rem;
-		height: 1rem;
-		flex-shrink: 0;
-		border: 1px solid var(--color-border);
-		border-radius: 3px;
-		font-size: 0.7rem;
-		line-height: 1;
-		color: var(--color-accent);
-	}
-	.stake-line.pick.selected .check { border-color: var(--color-accent); }
+	.stake-line.resolved .stake-name { color: var(--color-text-secondary); }
+	/* A stake of mine I can pick is the shared option card (planPanel.css); it
+	   only needs its die to sit at the end. */
+	.stake-line.pick { gap: var(--space-3); }
+	.die { display: inline-flex; flex: none; }
 
 	.stake-name {
 		flex: 1;
 		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 	}
 
-	.stake-tag {
-		font-size: 0.68rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: var(--color-text-faint);
-	}
-	.stake-tag.win { color: var(--color-success); }
-	.stake-tag.loss { color: var(--color-danger); }
-	.stake-tag.call { color: var(--color-chip-blue-text); }
-
-	/* The stake under the open declaration — the one the responder is
-	   answering. Outlined, never filled: a fill here would read as "selected",
-	   which is what the responder's own tap means two rows down. */
-	.stake-line.called {
-		padding: 0.25rem 0.4rem;
-		border: 1px solid var(--color-chip-blue-border);
-		border-radius: 5px;
+	/* Where a stake stands: a status word, so small capitals beside its colour. */
+	.stake-tag { flex: none; }
+	/* A stake can carry two ("called higher", "hidden"); a dot between them keeps
+	   them from reading as one phrase. */
+	.stake-tag + .stake-tag::before {
+		content: '·';
+		margin-right: var(--space-2);
 	}
 
-	/* The public call. Blue is this palette's attention colour, and the call is
-	   the one thing the responder must read before choosing. */
-	.open-call {
-		margin: 0.1rem 0 0;
-		padding: 0.45rem 0.6rem;
-		font-size: 0.82rem;
-		line-height: 1.45;
-		color: var(--color-chip-blue-text);
-		background: var(--color-chip-blue-bg);
-		border: 1px solid var(--color-chip-blue-border);
-		border-radius: 5px;
-	}
-	.open-call em { font-style: italic; }
-
-	.die {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 1.4rem;
-		height: 1.4rem;
-		padding: 0 0.2rem;
-		border-radius: 4px;
-		font-size: 0.8rem;
-		font-weight: 600;
-		background: var(--color-surface-gold-dim);
-		border: 1px solid var(--color-border-warm-antique);
-		color: var(--color-chip-gold-text);
-		flex-shrink: 0;
-	}
-	.die-mine { border-color: var(--color-accent); color: var(--color-text); }
-	.die-hidden { color: var(--color-text-faint); font-weight: 400; }
-	.die-aside { border-style: dashed; opacity: 0.85; }
-
-	.won-row, .set-aside {
+	/* The tray is the one box left, since it is an object that holds dice. It keeps
+	   the antique gold as a dashed rim and takes no fill and no fade. */
+	.set-aside {
 		display: flex;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 0.3rem;
-		margin: 0;
-		font-size: 0.82rem;
-	}
-	/* Tied-dice pool, seated between the two stacked player panels. */
-	.set-aside {
-		padding: 0.4rem 0.6rem;
-		background: var(--color-surface-active);
+		gap: var(--space-2);
+		padding: var(--space-3);
 		border: 1px dashed var(--color-border-warm-antique);
-		border-radius: 5px;
+		border-radius: var(--radius-piece);
+		font-size: var(--text-small);
 	}
-	.set-aside.empty { opacity: 0.7; }
+	.tray-dice {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
 
+	.won-row {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		margin: 0;
+		font-size: var(--text-small);
+	}
+	/* A small label over its dice, like "For" and "Against" on the roll. */
 	.won-label {
-		font-size: 0.68rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-accent);
+		font-size: var(--text-label);
+		color: var(--color-text-faint);
 	}
-
+	
 </style>

@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- Festivity/GuestList.svelte — "The Talk of the Event"
   A per-guest scorecard / record of the social occasion: who made a good
   impression (Make), who slipped up (Mar), who got the better of the host
@@ -11,6 +10,8 @@
 -->
 <script lang="ts">
 	import { type Plan, type Player } from '$lib/api';
+	import { playerColorByID } from '$lib/playerColor';
+	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import { playerName } from '../shared';
 	import { MAKE_PHRASE, MAR_PHRASE, earnedHostMakes, type FestRes } from './options';
 
@@ -74,9 +75,12 @@
 				{@const e = entryFor(gid)}
 				<li>
 					<div class="who">
-						{playerName(players, gid)}{#if gid === currentPlayerID}<em>&nbsp;(you)</em>{/if}{#if gid === plan.preparer_id}<em>&nbsp;(host)</em>{/if}
+						<PlayerShape player={players.find(p => p.id === gid)} size={12} />
+						<span>
+							<span style:color={playerColorByID(gid, players)}>{playerName(players, gid)}</span>{#if gid === currentPlayerID}{' '}<span class="who-role">(you)</span>{/if}{#if gid === plan.preparer_id}{' '}<span class="who-role">(host)</span>{/if}
+						</span>
 					</div>
-					<div class="say" class:pending={e.tone === 'pending'}>
+					<div class="say">
 						<span class="verdict"
 							class:outcome-make={e.tone === 'make'}
 							class:outcome-mar={e.tone === 'mar'}
@@ -89,35 +93,39 @@
 </div>
 
 <style>
+	/* One line per guest, with a thin rule between neighbours: a list, not boxes.
+	   The rows are told apart by their shape and name, as everywhere a player is
+	   drawn; the verdict is plain words, coloured only where it is a result. */
 	.fest-scorecard {
 		list-style: none;
-		margin: 0.25rem 0 0;
+		margin: 0;
 		padding: 0;
 	}
 	.fest-scorecard li {
-		padding: 0.4rem 0;
-		border-bottom: 1px solid var(--color-border-warm);
+		padding: var(--space-2) 0;
+		border-bottom: 1px solid var(--color-border);
 	}
 	.fest-scorecard li:last-child {
 		border-bottom: none;
 	}
 	.who {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
 		overflow-wrap: anywhere;
 	}
-	.who em {
+	.who-role {
 		color: var(--color-text-faint);
-		font-style: normal;
-		font-size: 0.85em;
+		font-size: var(--text-small);
 	}
 	.say {
-		font-size: 0.9rem;
-		margin-top: 0.1rem;
+		margin-top: var(--space-1);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--color-text-secondary);
 	}
 	.verdict:not(.outcome-make):not(.outcome-mar) {
-		color: var(--color-text-muted);
-	}
-	.say.pending .verdict {
-		font-style: italic;
+		color: var(--color-text-secondary);
 	}
 	.detail {
 		color: var(--color-text-faint);
