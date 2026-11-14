@@ -42,7 +42,7 @@ const LAW = 'No private armies within the capital.';
 
 /** The proposed text under debate, as the panel shows it (not the prep note above it). */
 const debated = (page: Page) =>
-	page.locator('.choices-header', { hasText: 'Proposed decree being debated:' }).locator('+ p.plan-notes');
+	page.locator('.choices-header', { hasText: 'Proposed decree being debated:' }).locator('+ p.ft-prompt');
 
 /** Tick a card in a CardPicker (assets are chosen by checkbox). */
 async function pickCard(page: Page, name: string) {
@@ -98,11 +98,19 @@ test('preparation: the decree is written in the plan form and must not be blank'
 		})
 		.toBe('Salt may be traded freely.');
 
-	// And the server won't take a blank decree from anyone calling it directly.
-	const blank = await g.ctx.bob.request.post(`/api/tables/${g.gameID}/prepare-plan`, {
-		data: { plan_type: 'propose_decree', preparation_notes: '' },
-	});
-	expect(blank.status()).toBe(400);
+	// And the server won't take a blank decree from anyone calling it directly. The
+	// plan commits before the focus passes (to bob, who is the one asked), so the plan
+	// can be on the table a moment before bob may call the route at all: he is refused
+	// with 403 until the pass lands, then refused with 400 for the blank. A blank
+	// decree never creates a plan, so asking again is harmless.
+	await expect
+		.poll(async () => {
+			const blank = await g.ctx.bob.request.post(`/api/tables/${g.gameID}/prepare-plan`, {
+				data: { plan_type: 'propose_decree', preparation_notes: '' },
+			});
+			return blank.status();
+		})
+		.toBe(400);
 });
 
 test('council: text is finalized first, lower-ranked players join or decline, then the signatory may close', async ({ browser }) => {
@@ -130,7 +138,7 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	await alice.getByRole('button', { name: 'Open the debate' }).click();
 	// The proposed law now shows to everyone, live.
 	await expect(bob.getByText('Proposed decree being debated:')).toBeVisible();
-	for (const page of [alice, bob, carol]) await expect(debated(page)).toHaveText(`"${LAW}"`);
+	for (const page of [alice, bob, carol]) await expect(debated(page)).toHaveText(`“${LAW}”`);
 	expect((await act(g, 'alice', planID, 'start-debate', { text: LAW })).status()).toBe(409);
 
 	// The signatory can't close the debate while anyone is undecided.

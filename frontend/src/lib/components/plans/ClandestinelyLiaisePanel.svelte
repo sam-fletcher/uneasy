@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- ClandestinelyLiaisePanel.svelte
   Prep + resolve UI for Clandestinely Liaise (Tier 2, Knowledge, variable delay).
 
@@ -35,6 +34,8 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Chip from '$lib/components/shared/Chip.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -426,8 +427,9 @@
 				/>
 			</FormField>
 			<p class="choices-note muted">
-				A liaison is a meeting between two specific peers, one from each of you. 
-			</p><p class="choices-note muted">
+				A liaison is a meeting between two specific peers, one from each of you.
+			</p>
+			<p class="choices-note muted">
 				Tip: discuss the choice with the other player in the chat first.
 			</p>
 			<CardPicker
@@ -456,7 +458,7 @@
 					placeholder="Where do the two peers meet? Will they share a meal, meet under a bridge, or something more intimate?" required></textarea>
 			</label>
 			<p class="choices-note muted">
-				Once prepared, you and your partner each reveal 
+				Once prepared, you and your partner each reveal
 				a die face to set the delay (average rounded up).
 			</p>
 			{#if !readOnly}
@@ -472,23 +474,19 @@
 
 {:else if mode === 'delayReveal' && plan}
 	<!-- Delay reveal — the plan is pending at row 0 until both faces are in. -->
-	<!-- No panel header here — the page-level WaitingOnBar already names the
-	     plan ("Clandestinely Liaise — delay reveal") and who we're waiting on. -->
+	<!-- No panel header here — the page draws the open step's heading above this
+	     (a delay reveal has no plan card to draw it in). -->
 	<div class="plan-panel pending">
 		{#if plan.preparation_notes}
-			<p class="plan-notes">"{plan.preparation_notes}"</p>
+			<p class="plan-notes">“{plan.preparation_notes}”</p>
 		{/if}
 		{#if preparerMeetingPeer || partnerMeetingPeerAsset}
-			<p class="cl-meeting-peers">
-				<span class="cl-peer">
-					{playerName(players, plan.preparer_id)}'s
-					<em>{preparerMeetingPeer?.name ?? '?'}</em>
-				</span>
-				<span class="cl-peer-sep">meets</span>
-				<span class="cl-peer">
-					{playerName(players, clState.partnerID)}'s
-					<em>{partnerMeetingPeerAsset?.name ?? '?'}</em>
-				</span>
+			<p class="ft-prompt cl-meeting-peers">
+				{playerName(players, plan.preparer_id)}'s
+				<em>{preparerMeetingPeer?.name ?? '?'}</em>
+				meets
+				{playerName(players, clState.partnerID)}'s
+				<em>{partnerMeetingPeerAsset?.name ?? '?'}</em>
 			</p>
 		{/if}
 		<!-- Everyone sees the line, participant or not: the faces are chosen rather
@@ -530,14 +528,16 @@
 		<!-- Phase 1: Together At Last ─────────────────────────────── -->
 		{:else if clState.phase === 'together_at_last'}
 			<div class="choices-section">
-				<p class="choices-header">Together at Last</p>
-				<p class="choices-note">
-					{playerName(players, plan.preparer_id)} and
-					{playerName(players, clState.partnerID)} — set the scene of your
-					meeting together in the chat. Where are you? What are you doing?
-					Are you sharing a meal, meeting under a bridge under the cover
-					of night, or perhaps something more intimate?
-				</p>
+				<div class="titled">
+					<p class="choices-header">Together at Last</p>
+					<p class="ft-prompt">
+						{playerName(players, plan.preparer_id)} and
+						{playerName(players, clState.partnerID)} — set the scene of your
+						meeting together in the chat. Where are you? What are you doing?
+						Are you sharing a meal, meeting under a bridge under the cover
+						of night, or perhaps something more intimate?
+					</p>
+				</div>
 				{#if canAdvance}
 					<p class="choices-note muted">
 						{#if standingIn}
@@ -563,11 +563,13 @@
 		<!-- Phase 2: Secrets We Keep ──────────────────────────────── -->
 		{:else if clState.phase === 'secrets_we_keep'}
 			<div class="choices-section">
-				<p class="choices-header">Secrets We Keep</p>
-				<p class="choices-note">
-					Each of you nominates one of your own assets to hold the secret of
-					this meeting.
-				</p>
+				<div class="titled">
+					<p class="choices-header">Secrets We Keep</p>
+					<p class="ft-prompt">
+						Each of you nominates one of your own assets to hold the secret of
+						this meeting.
+					</p>
+				</div>
 				{#if amLockedOut}
 					<!-- A demand handed this seat to someone else; say so rather than
 					     offering a form the server would refuse. -->
@@ -592,7 +594,7 @@
 					{/if}
 				{:else}
 					{#if actingForPreparerSeat}
-						<p class="choices-note">
+						<p class="ft-prompt">
 							You hold {playerName(players, plan.preparer_id)}'s side of this meeting —
 							pick one of {playerName(players, plan.preparer_id)}'s assets.
 						</p>
@@ -619,17 +621,19 @@
 		<!-- Phase 3: Things We Share ──────────────────────────────── -->
 		{:else if clState.phase === 'things_we_share'}
 			<div class="choices-section">
-				<p class="choices-header">Things We Share</p>
-				<p class="choices-note">
-					Pick one option. Picks are revealed once both players have submitted.
-				</p>
+				<div class="titled">
+					<p class="choices-header">Things We Share</p>
+					<p class="ft-prompt">
+						Pick one option. Picks are revealed once both players have submitted.
+					</p>
+				</div>
 				{#if amLockedOut}
 					<p class="choices-note">{holderName} is making your pick for you.</p>
 				{:else if iShared}
 					<p class="choices-note">You've submitted. Waiting for your partner…</p>
 				{:else}
 					{#if actingForPreparerSeat}
-						<p class="choices-note">
+						<p class="ft-prompt">
 							You hold {playerName(players, plan.preparer_id)}'s side of this meeting —
 							choose for them, from their partner's assets.
 						</p>
@@ -637,23 +641,21 @@
 					<FormField label="Pick one">
 						<div class="chip-row">
 							{#each SHARE_OPTIONS as opt}
-								<button
-									type="button"
-									class="chip-btn"
-									class:active={shareChoiceKey === opt.key}
+								<Chip
+									selected={shareChoiceKey === opt.key}
 									onclick={() => {
 										shareChoiceKey = shareChoiceKey === opt.key ? null : opt.key;
 										shareAssetID = null;
 										shareMargID = null;
 										shareUpdateText = '';
 									}}
-								>{opt.label}</button>
+								>{opt.label}</Chip>
 							{/each}
 						</div>
 						{#if shareChoiceKey}
 							{@const activeOpt = SHARE_OPTIONS.find(o => o.key === shareChoiceKey)}
 							{#if activeOpt}
-								<p class="choices-note muted" style="margin:0.25rem 0 0;">{activeOpt.hint}</p>
+								<p class="choices-note muted">{activeOpt.hint}</p>
 							{/if}
 						{/if}
 					</FormField>
@@ -667,7 +669,7 @@
 								your partner's meeting peer no longer exists. Pick another option.
 							</p>
 						{:else}
-							<p class="choices-note">
+							<p class="ft-prompt">
 								{isUpdate ? 'Update' : 'Break'}
 								<em>{partnerMeetingPeer?.name}</em> —
 								choose which marginalia to {isUpdate ? 'rewrite' : 'tear'}:
@@ -691,7 +693,7 @@
 										placeholder="The rewritten marginalia…" maxlength={TEXT_LIMITS.MARGINALIA}></textarea>
 								{/if}
 							{/if}
-							{#if !isUpdate && shareBreakWarn}<p class="res-warning">{shareBreakWarn}</p>{/if}
+							{#if !isUpdate && shareBreakWarn}<Notice tone="warning">{shareBreakWarn}</Notice>{/if}
 						{/if}
 					{:else if shareChoiceKey && SHARE_NEEDS_PICKER.has(shareChoiceKey)}
 						{@const candidates = otherParticipantAssets.filter(a => {
@@ -724,11 +726,13 @@
 		<!-- Phase 4: When Will I See You Again ────────────────────── -->
 		{:else if clState.phase === 'when_will_i_see_you_again'}
 			<div class="choices-section">
-				<p class="choices-header">When will I see you again?</p>
-				<p class="choices-note">
-					Reveal a die face (1–6) to choose how many rows until the next liaison. 
-					If either of you picks 0, no follow-up is scheduled.
-				</p>
+				<div class="titled">
+					<p class="choices-header">When will I see you again?</p>
+					<p class="ft-prompt">
+						Reveal a die face (1–6) to choose how many rows until the next liaison.
+						If either of you picks 0, no follow-up is scheduled.
+					</p>
+				</div>
 				{#if amLockedOut}
 					<p class="choices-note">{holderName} is revealing a face for you.</p>
 				{:else if clState.redelayRevealID != null && currentPlayerID != null}
@@ -764,32 +768,11 @@
 {/if}
 
 <style>
-	/* The delay-reveal scene caption ("Under a bridge") is centred to match the
-	   meeting-peers summary below it. Scoped to this component, so it only
-	   affects the delay-reveal notes. */
-	.plan-notes {
-		text-align: center;
-	}
-
-	/* Meeting-peers summary in the delay-reveal play area: who is bringing whom
-	   to the liaison. Stacked and centred, with "meets" on its own line. */
-	.cl-meeting-peers {
+	/* A phase's title and the sentence under it read as one block, so they sit
+	   close; the controls below sit a full step gap away. */
+	.titled {
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		text-align: center;
-		gap: 0.15rem;
-		/* Extra bottom margin separates the meeting summary from the reveal
-		   input ("Pick a die face…") / waiting copy that follows. */
-		margin: 0.35rem 0 1.5rem;
-		font-size: 0.9rem;
-		color: var(--color-text);
-	}
-	.cl-peer em {
-		color: var(--color-accent);
-	}
-	.cl-peer-sep {
-		color: var(--color-text-muted);
-		font-style: italic;
+		gap: var(--space-1);
 	}
 </style>

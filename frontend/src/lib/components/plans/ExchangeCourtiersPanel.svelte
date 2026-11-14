@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- ExchangeCourtiersPanel.svelte
   Prep + resolve UI for the Exchange Courtiers plan.
   Resolve flow: fair trade → dice roll → make/mar choices → messy break
@@ -337,9 +336,7 @@
 	</fieldset>
 	<!-- Outside the disabled fieldset so its toggle/tabs stay interactive in
 	     read-only viewer mode. -->
-	<div class="ec-prep-buffet">
-		<Buffet tabs={EC_BUFFET_TABS} />
-	</div>
+	<Buffet tabs={EC_BUFFET_TABS} />
 
 {:else if plan}
 	{@const isTarget = plan.target_player_id != null && currentPlayerID === plan.target_player_id}
@@ -392,7 +389,7 @@
 							You have no peers for {playerName(players, plan.target_player_id)} to
 							request in trade.
 						</p>
-						<button class="action-btn secondary" onclick={() => onFTDecline(plan)} disabled={ftDecideBusy}>
+						<button class="action-btn primary" onclick={() => onFTDecline(plan)} disabled={ftDecideBusy}>
 							{ftDecideBusy ? '…' : 'Proceed to dice roll'}
 						</button>
 					{:else}
@@ -445,18 +442,16 @@
 			{/if}
 
 		{:else if rollActive && !choicesDone}
-			<div class="ec-stakes">
-				<ul class="ec-stakes-list">
+			<ul class="ec-stakes-list">
+				<li>
+					On a make: {playerName(players, plan.preparer_id)} takes <em>{assetName(assets, plan.target_asset_id)}</em>.
+				</li>
+				{#if ftAssetID != null}
 					<li>
-						On a make: {playerName(players, plan.preparer_id)} takes <em>{assetName(assets, plan.target_asset_id)}</em>.
+						On a mar: {playerName(players, plan.target_player_id)} takes <em>{assetName(assets, ftAssetID)}</em>.
 					</li>
-					{#if ftAssetID != null}
-						<li>
-							On a mar: {playerName(players, plan.target_player_id)} takes <em>{assetName(assets, ftAssetID)}</em>.
-						</li>
-					{/if}
-				</ul>
-			</div>
+				{/if}
+			</ul>
 			<p class="ft-prompt muted">Dice roll in progress…</p>
 
 		{:else if rollOutcome != null && !choicesDone && choiceActor}
@@ -551,7 +546,7 @@
 							onSelectMarginalia={(mID) => (riposteMargID = mID)}
 						/>
 						<div class="ft-actions">
-							<button class="action-btn secondary" onclick={() => submitRiposte(plan, riposteMargID)}
+							<button class="action-btn primary" onclick={() => submitRiposte(plan, riposteMargID)}
 								disabled={!riposteMargID || riposteBusy}>
 								{riposteBusy ? '…' : 'Break, then surrender'}
 							</button>
@@ -594,21 +589,14 @@
 {/if}
 
 <style>
-	/* Space the prep-mode reference off the form above it. */
-	.ec-prep-buffet {
-		margin-top: 0.75rem;
-	}
 	/* At-a-glance stakes shown while the roll is open, so players can gauge how
 	   much to leverage. */
-	.ec-stakes {
-		margin: 0.9rem 0;
-		font-size: 0.85rem;
-	}
 	.ec-stakes-list {
-		margin: 0.25rem 0 0;
-		padding-left: 1.1rem;
+		margin: 0;
+		padding-left: var(--space-4);
+		font-size: var(--text-small);
 	}
 	.ec-stakes-list li {
-		margin: 0.2rem 0;
+		margin: var(--space-1) 0;
 	}
 </style>
