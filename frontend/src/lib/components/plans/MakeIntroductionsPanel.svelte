@@ -39,6 +39,7 @@
 	import FormField from './FormField.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Chip from '$lib/components/shared/Chip.svelte';
 
 	const MI_MAR_OPTIONS = [
 		{ key: 'other_retinue',  label: 'Another retinue' },
@@ -314,6 +315,8 @@
 		return marOutcomes.find(o => o.draft_id === draftID) ?? null;
 	}
 	const unresolvedDrafts = $derived(drafts.filter(d => !outcomeFor(d.id)));
+	// The peers that already have a fate, for the recap above the next one's form.
+	const settledDrafts = $derived(drafts.filter(d => outcomeFor(d.id)));
 	const allPeersDone = $derived(
 		drafts.length > 0 && drafts.every(d => outcomeFor(d.id)?.done),
 	);
@@ -408,7 +411,7 @@
 	/** How a resolved peer's fate reads back in the recap list. */
 	function marOutcomeLabel(o: { outcome: string; done: boolean }): string {
 		const label = MI_MAR_OPTIONS.find(x => x.key === o.outcome)?.label ?? o.outcome;
-		return o.done ? `${label} ✓` : `${label} (awaiting marginalia)`;
+		return o.done ? label : `${label} (awaiting marginalia)`;
 	}
 </script>
 
@@ -417,16 +420,9 @@
 		<div class="plan-form">
 			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 			<FormField label="Number of peers">
-				<div class="chip-row">
+				<div class="chip-row count-chips">
 					{#each [1, 2, 3, 4] as n}
-						<button
-							type="button"
-							class="chip-btn"
-							class:active={miPeerCount === n}
-							onclick={() => (miPeerCount = n)}
-						>
-							{n}
-						</button>
+						<Chip selected={miPeerCount === n} onclick={() => (miPeerCount = n)}>{n}</Chip>
 					{/each}
 				</div>
 			</FormField>
@@ -497,7 +493,7 @@
 
 		{:else if needsPeerNaming && isPreparer}
 			<div class="mi-naming">
-				<p class="form-hint">
+				<p class="ft-prompt">
 					Name each of the {miPeerCountTarget}
 					{miPeerCountTarget === 1 ? 'peer' : 'peers'} you're introducing.
 					Once you finalize, the dice will roll — you'll describe whoever
@@ -584,12 +580,13 @@
 				</p>
 			{:else}
 				<div class="mi-mar">
-					{#each drafts as d (d.id)}
-						{@const o = outcomeFor(d.id)}
-						{#if o}
-							<p class="choices-applied">{d.name} — {marOutcomeLabel(o)}</p>
-						{/if}
-					{/each}
+					{#if settledDrafts.length > 0}
+						<div class="recap">
+							{#each settledDrafts as d (d.id)}
+								<p class="choices-applied">{d.name} — {marOutcomeLabel(outcomeFor(d.id)!)}</p>
+							{/each}
+						</div>
+					{/if}
 
 					{#each myAuthorDrafts as d (d.id)}
 						{@const o = outcomeFor(d.id)}
@@ -624,10 +621,10 @@
 							<div class="chip-row">
 								{#each MI_MAR_OPTIONS as opt (opt.key)}
 									{@const used = usedOutcomes.has(opt.key)}
-									<button type="button" class="chip-btn" class:active={marOutcome === opt.key}
-										class:used
+									<Chip selected={marOutcome === opt.key}
 										aria-disabled={used ? true : undefined}
-										onclick={() => pickOutcome(opt.key)}>{opt.label}</button>
+										onclick={() => pickOutcome(opt.key)}
+									><span class:struck={used}>{opt.label}</span></Chip>
 								{/each}
 							</div>
 							{#if usedNotice}
@@ -689,3 +686,31 @@
 		{/if}
 	</ResolvingCard>
 {/if}
+
+<style>
+	/* The naming form and the mar's fates are each one step: a column of groups
+	   with the step's gap between them. */
+	.mi-naming,
+	.mi-mar {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+
+	/* One list, one block: the settled peers' lines sit close together, a full step
+	   gap above the form for the next peer. */
+	.recap {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+
+	/* An outcome already handed out is struck through as well as faint, so it
+	   reads as taken without colour. (The chip's own aria-disabled look makes it
+	   faint.) */
+	.struck { text-decoration: line-through; }
+
+	/* A single digit is a short word, so the count chips are held to the tap
+	   width. The chip is a child component's element, hence :global. */
+	.count-chips :global(.chip) { min-width: var(--size-tap); }
+</style>
