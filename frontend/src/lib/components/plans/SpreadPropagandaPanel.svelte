@@ -28,6 +28,7 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import Stepper from './shared/Stepper.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
@@ -589,7 +590,7 @@
 								breakAssetID = parent?.id ?? null;
 							}}
 						/>
-						{#if breakWarn}<p class="res-warning">{breakWarn}</p>{/if}
+						{#if breakWarn}<Notice>{breakWarn}</Notice>{/if}
 						{#if preparerBreakable.length === 0}
 							<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
 							<button class="action-btn primary"

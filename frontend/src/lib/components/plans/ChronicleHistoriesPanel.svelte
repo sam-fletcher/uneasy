@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- ChronicleHistoriesPanel.svelte
   Prep + resolve UI for Chronicle Histories (Tier 1, Knowledge).
 
@@ -44,6 +43,8 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Chip from '$lib/components/shared/Chip.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -391,7 +392,7 @@
 		{#if invokePhaseClosed && invokedArtifacts.length > 0}
 			<div class="choices-section">
 				<p class="choices-header">Invoked artifacts ({invokedArtifacts.length})</p>
-				<ul class="plan-notes" style="margin:0;padding-left:1.25rem;">
+				<ul class="plan-notes chp-list">
 					{#each invokedArtifacts as a}
 						<li>{a.name} <span class="muted">({playerName(players, a.owner_id)})</span></li>
 					{/each}
@@ -455,11 +456,8 @@
 							<FormField label="Choose an option">
 								<div class="chip-row">
 									{#each OPTIONS as opt}
-										<button
-											type="button"
-											class="chip-btn"
-											class:active={makeOption === opt.key}
-											class:unavailable={opt.key === 'break_artifact' && !canBreak}
+										<Chip
+											selected={makeOption === opt.key}
 											aria-disabled={opt.key === 'break_artifact' && !canBreak}
 											title={opt.key === 'break_artifact' && !canBreak ? breakHint : undefined}
 											onclick={() => {
@@ -468,7 +466,7 @@
 												makeAssetID = null;
 												makeMargID = null;
 											}}
-										>{opt.label}</button>
+										>{opt.label}</Chip>
 									{/each}
 								</div>
 							</FormField>
@@ -488,7 +486,7 @@
 										makeAssetID = parent?.id ?? null;
 									}}
 								/>
-								{#if makeBreakWarn}<p class="res-warning">{makeBreakWarn}</p>{/if}
+								{#if makeBreakWarn}<Notice>{makeBreakWarn}</Notice>{/if}
 							{:else if makeOption === 'invoke_another'}
 								<CardPicker
 									label="Artifact to invoke"
@@ -585,20 +583,17 @@
 						<FormField label="Your choice">
 							<div class="chip-row">
 								{#each OPTIONS as opt}
-									<button
-										type="button"
-										class="chip-btn"
-										class:active={marSelected === opt.key}
-											class:unavailable={opt.key === 'break_artifact' && !canBreak}
-											aria-disabled={opt.key === 'break_artifact' && !canBreak}
-											title={opt.key === 'break_artifact' && !canBreak ? breakHint : undefined}
+									<Chip
+										selected={marSelected === opt.key}
+										aria-disabled={opt.key === 'break_artifact' && !canBreak}
+										title={opt.key === 'break_artifact' && !canBreak ? breakHint : undefined}
 										onclick={() => {
 											if (opt.key === 'break_artifact' && !canBreak) return;
 											marSelected = marSelected === opt.key ? '' : opt.key;
 											marAssetID = null;
 											marMargID = null;
 										}}
-									>{opt.label}</button>
+									>{opt.label}</Chip>
 								{/each}
 							</div>
 						</FormField>
@@ -617,7 +612,7 @@
 									marAssetID = parent?.id ?? null;
 								}}
 							/>
-							{#if marBreakWarn}<p class="res-warning">{marBreakWarn}</p>{/if}
+							{#if marBreakWarn}<Notice>{marBreakWarn}</Notice>{/if}
 						{:else if marSelected === 'invoke_another'}
 							<CardPicker
 								label="Artifact to invoke"
@@ -661,7 +656,7 @@
 						{/each}
 					</ul>
 				{:else}
-					<ul class="plan-notes" style="margin:0;padding-left:1.25rem;">
+					<ul class="plan-notes chp-list">
 						{#each marEntries as e}
 							<li>{playerName(players, e.playerID)}: {optionLabel(e.choice)}</li>
 						{/each}
@@ -669,7 +664,7 @@
 				{/if}
 
 				{#if amChoiceActor}
-					<p class="complete-note" style="margin-top:0.5rem;">
+					<p class="complete-note chp-after">
 						{#if allMarSubmitted}
 							Every player has chosen. The scene stays open — play it out in the chat, and
 							when it has found its ending, wrap it.
@@ -692,3 +687,11 @@
 		{/if}
 	</ResolvingCard>
 {/if}
+
+<style>
+	/* A list of invoked artifacts or of submitted choices: the indent a list needs,
+	   and no margin, as the plan's other lists have. */
+	.plan-notes.chp-list { margin: 0; padding-left: var(--space-4); }
+	/* A note after a list sits a step lower, so it reads as the list's own line. */
+	.complete-note.chp-after { margin-top: var(--space-2); }
+</style>

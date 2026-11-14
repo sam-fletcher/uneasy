@@ -283,7 +283,7 @@ test('make: breaking the last marginalia destroys the artifact, and a torn line 
 	await chooseOption(alice, OPT.break);
 	await pickMarginalia(alice, "carol's artifact", marg.text);
 	// A one-line artifact torn means destroyed — the picker warns before the pick commits.
-	await expect(alice.locator('.res-warning')).toBeVisible();
+	await expect(alice.locator('.plan-panel.resolving .notice[data-tone="warning"]')).toBeVisible();
 	await alice.getByPlaceholder('Describe this beat of the scene').fill('Her relic crumbles.');
 	await alice.getByRole('button', { name: 'Submit choice' }).click();
 	await expect(alice.getByText('1 of 2 choices remaining')).toBeVisible();
