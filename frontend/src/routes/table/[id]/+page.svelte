@@ -56,7 +56,6 @@
 	import PaneTabs from '$lib/components/table/PaneTabs.svelte';
 	import RecordTabs from '$lib/components/table/RecordTabs.svelte';
 	import TonesSheet from '$lib/components/table/TonesSheet.svelte';
-	import WarEntry from '$lib/components/table/WarEntry.svelte';
 	import {
 		leftPaneOf, panesShown, tabBarFor, paneMarksFor,
 		type PaneId, type PaneMarkState, type RecordTab,
@@ -1012,8 +1011,7 @@
 		</ShellColumn>
 
 		<!-- Play ────────────────────────────────────────────────────────────────
-		     The way into wars sits at the top, unchanged, until the war piece
-		     replaces it. The open step's heading is drawn by the phase view. -->
+		     The war bands and the open step's heading are drawn by the phase view. -->
 		<ShellColumn
 			pane="play"
 			label="Play"
@@ -1030,7 +1028,6 @@
 					{#if game.phase !== 'main_event' && phaseHeading}
 						<div class="phase-heading"><StepHeading heading={phaseHeading} /></div>
 					{/if}
-					<WarEntry />
 				{/if}
 
 				<!--
@@ -1326,7 +1323,7 @@
 	}
 
 	/* The play column's content. The open step's heading (outside the main
-	   event) and WarEntry sit above the phase view in it, so they share the column's width and not the other panes'.
+	   event) sits above the phase view in it, so it shares the column's width and not the other panes'.
 	   A named query container: components inside adapt to the COLUMN's width via
 	   @container column (…), never to the viewport (docs/STYLE_GUIDE.md "Layout
 	   widths"). */

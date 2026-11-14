@@ -1,7 +1,9 @@
 <!-- MakeWar/CostOfBattle.svelte
-  Cost-of-battle pointer (whose turn it is), the active payer's picker,
-  and the late-joiner entry-payment picker. All three are tied to the same
-  refresh cycle and `BattleCostForm` sub-component.
+  What is owed this row (every payer and the opponent they owe, in the order
+  they pay), the active payer's picker, and the late-joiner entry-payment
+  picker. All three are tied to the same refresh cycle and `BattleCostForm`
+  sub-component. Whose turn it is to pay is the open step's heading, drawn by
+  the page, so it is not repeated here.
 -->
 <script lang="ts">
 	import {
@@ -9,10 +11,12 @@
 		type Asset, type Player, type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
 	import EndsNote from '../shared/EndsNote.svelte';
+	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import { playerColor } from '$lib/playerColor';
 	import BattleCostForm, { type BattleSubmission } from './BattleCostForm.svelte';
 	import { assetsWithIntactMarginalia, ownerUnleveragedAssets, playerName } from '../shared';
 
-	let { war, planID, players, assets, currentPlayerID, myPart, amFullParticipant, begun, onChanged, setError }: {
+	let { war, planID, players, assets, currentPlayerID, myPart, amFullParticipant, settledInPlay = false, onChanged, setError }: {
 		war: WarStateResponse;
 		planID: number;
 		players: Player[];
@@ -20,10 +24,9 @@
 		currentPlayerID: number | null;
 		myPart: WarParticipantInfo | null;
 		amFullParticipant: boolean;
-		/** The war has a row: its delay reveal is over. Before that nothing can
-		 *  be owed, so "nothing outstanding" would only be noise between the
-		 *  delay vote and the sides. */
-		begun: boolean;
+		/** In a war's sheet while the play area is settling this war: leave what is
+		 *  owed and the payer's form there, and keep only the late joiner's entry. */
+		settledInPlay?: boolean;
 		onChanged: () => Promise<void> | void;
 		setError: (msg: string) => void;
 	} = $props();
@@ -109,33 +112,33 @@
 	}
 </script>
 
-{#if war.status === 'active' && war.outstanding_costs.length > 0}
-	<div class="choices-section">
-		<p class="choices-header">Cost of battle — row {war.current_row}</p>
+{#if !settledInPlay && war.status === 'active' && war.outstanding_costs.length > 0}
+	<div class="owed">
 		{#if peaceOnTable}
-			<p class="choices-note">
+			<p class="owed-note">
 				Peace terms are on the table — the cost of battle waits on the vote.
 			</p>
-		{:else if activePayerID != null}
-			<p class="choices-note">
-				{itsMyCostTurn ? 'It is YOUR turn to pay cost.'
-					: `Waiting on ${playerName(players, activePayerID)} to pay cost of battle.`}
-			</p>
 		{/if}
-		<p class="choices-note muted">
-			Outstanding (payer → opponent), in reverse-power order:
-			{#each war.outstanding_costs as k, i}
-				{i > 0 ? '; ' : ''}{playerName(players, k.payer_id)} → {playerName(players, k.opponent_id)}
+		<!-- Who pays is the open step's heading ("Your move — pay the cost of battle"),
+		     so it is not said again here. What the heading can't carry is the whole
+		     list: every payer and the opponent they owe, in the order they pay. -->
+		<div class="owed-label">Owed this row, in order</div>
+		<ul class="owed-list">
+			{#each war.outstanding_costs as k (`${k.payer_id}-${k.opponent_id}`)}
+				<li class="owed-line">
+					{@render person(k.payer_id)}
+					<span class="owed-to">against</span>
+					{@render person(k.opponent_id)}
+				</li>
 			{/each}
-		</p>
+		</ul>
 	</div>
-{:else if war.status === 'active' && begun}
-	<p class="choices-note muted">No outstanding cost-of-battle this row.</p>
 {/if}
 
-{#if itsMyCostTurn && amFullParticipant}
-	<div class="choices-section">
-		<p class="choices-header">Your cost of battle</p>
+{#if !settledInPlay && itsMyCostTurn && amFullParticipant}
+	<!-- The heading above ("Your move — pay the cost of battle") is the visible
+	     title, so the group is named for a screen reader instead of repeating it. -->
+	<div class="choices-section" role="group" aria-label="Your cost of battle">
 		<BattleCostForm
 			mode="cost"
 			formKey={planID}
@@ -178,3 +181,54 @@
 		{/if}
 	</div>
 {/if}
+
+<!-- A player as the table knows them everywhere: their shape, then their name
+     in their colour. -->
+{#snippet person(id: number)}
+	{@const p = players.find(pl => pl.id === id) ?? null}
+	<span class="person" style:color={p ? playerColor(p) : undefined}>
+		<PlayerShape player={p} size={12} />
+		<span>{playerName(players, id)}</span>
+	</span>
+{/snippet}
+
+<style>
+	.owed {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.owed-note {
+		margin: 0;
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+	.owed-label {
+		font-size: var(--text-label);
+		color: var(--color-text-faint);
+	}
+	.owed-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	/* A line, with a hairline above it, like a side's members. */
+	.owed-line {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-1) var(--space-2);
+		min-height: 2rem;
+		padding: var(--space-1) 0;
+		border-top: 1px solid var(--color-border);
+		font-size: var(--text-small);
+	}
+	.owed-to { color: var(--color-text-secondary); }
+	.person {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+</style>

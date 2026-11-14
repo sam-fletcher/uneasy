@@ -30,6 +30,73 @@ const WAR_GATE_KINDS: ReadonlySet<string> = new Set([
 	'await_surrender_claim',
 ]);
 
+/** What the row is waiting for when the war costs are being settled by a vote, in
+ *  the same lower-case grammar as lib/waitingOn.ts's step labels. */
+export const PEACE_VOTE_LABEL = 'vote on the peace proposal';
+/** The same, when one war is at a vote and another is at a payment. */
+export const SETTLE_WARS_LABEL = 'settle the costs of war';
+
+/**
+ * The step label to use in place of "pay the cost of battle" when that is not what
+ * the table is doing.
+ *
+ * A war under an open peace proposal waits on its voters, not its payers, but the
+ * row state is still `await_battle_cost`, and the label is read off the kind alone,
+ * so without this a voter's heading says "Your move — pay the cost of battle".
+ *
+ * Two wars can owe on the same row. The row state names only one of them, and not
+ * a stable one, while `acting_player_ids` covers all of them. So this reads every war
+ * that is blocking the row, never the one the row state happens to name:
+ *   - no blocking war has a proposal open: null (the payment label stands);
+ *   - every blocking war has one: the vote label, for everyone;
+ *   - a mix: the viewer's own business if it is only one kind (a vote, or a
+ *     payment), and otherwise a label that is true of both.
+ */
+export function peaceVoteLabel(
+	rowState: RowState | null | undefined,
+	wars: WarStateResponse[],
+	viewerID: number | null,
+): string | null {
+	if (rowState?.kind !== 'await_battle_cost') return null;
+	const blocking = wars.filter(w => w.status === 'active' && w.outstanding_costs.length > 0);
+	const voting = blocking.filter(w => w.open_proposal != null);
+	if (voting.length === 0) return null;
+	if (voting.length === blocking.length) return PEACE_VOTE_LABEL;
+
+	const votes = viewerID != null && voting.some(w => w.open_proposal!.awaiting.includes(viewerID));
+	const pays = viewerID != null && blocking.some(
+		w => w.open_proposal == null && w.outstanding_costs[0].payer_id === viewerID,
+	);
+	if (votes && !pays) return PEACE_VOTE_LABEL;
+	if (pays && !votes) return null;
+	return SETTLE_WARS_LABEL;
+}
+
+/**
+ * Which war's sheet stays open when the live wars change. The one that was open,
+ * if its war is still live; otherwise none. The caller stores the result, so a war
+ * that drops out of the list (it ended, or the list failed to load and came back
+ * empty) closes its sheet for good: a later good list that holds the same war must
+ * not open it again unasked.
+ */
+export function keepOpenWar(openID: number | null, livePlanIDs: readonly number[]): number | null {
+	return openID != null && livePlanIDs.includes(openID) ? openID : null;
+}
+
+/**
+ * Does a war panel in the play-area takeover need the war's name above it? Not when
+ * one band sits over one panel and already names it. Yes when two wars owe at once
+ * (each panel must say which) or when the war has no band (it has just ended and
+ * left a surrender claim).
+ */
+export function nameWarInTakeover(
+	planID: number,
+	takeoverPlanIDs: readonly number[],
+	bandPlanIDs: ReadonlySet<number>,
+): boolean {
+	return takeoverPlanIDs.length > 1 || !bandPlanIDs.has(planID);
+}
+
 /**
  * One entry per war. The list a client holds should never repeat a war, but a
  * response read mid-surrender once did (the war was in both the "active" and
