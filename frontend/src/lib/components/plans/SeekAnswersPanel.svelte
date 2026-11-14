@@ -49,7 +49,6 @@
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -522,21 +521,14 @@
 					</button>
 				{/if}
 			</fieldset>
-			{#if !canNarrate}
-				<p class="ft-prompt muted">
-					{playerName(players, plan.preparer_id)} is researching…
-				</p>
-			{/if}
 
-		{:else if rollActive && !choicesDone}
-			<p class="ft-prompt muted">Dice roll in progress…</p>
-
+		<!-- While the dice are out the roll is the open step and carries its own
+		     heading, so there is nothing to say until it lands. -->
 		{:else if rollOutcome != null && !choicesDone}
 			<!-- Option-picking. The choice actor (preparer, or a perform_steps
 			     demand winner acting in their place) picks; everyone else sees the
 			     same option list greyed out. -->
 			{@const canPick = amChoiceActor}
-			{@const choiceActorName = playerName(players, resolutionActorID(plan, plans))}
 			<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!canPick} disabled={!canPick}>
 				<div class="choices-section">
 					<p class="choices-header">
@@ -567,11 +559,6 @@
 					{/if}
 				</div>
 			</fieldset>
-			{#if !canPick}
-				<p class="ft-prompt muted">
-					{choiceActorName} is choosing make/mar options…
-				</p>
-			{/if}
 
 		{:else if pendingQuestion != null && pendingQuestion.target_id === currentPlayerID}
 			<!-- The questioned player answers truthfully — or vetoes, if they
@@ -845,28 +832,9 @@
 							onclick={() => onComplete(plan)} disabled={resBusy}>
 							{resBusy ? '…' : 'Complete plan'}
 						</button>
-					{:else if subflowsDone}
-						<p class="ft-prompt muted">
-							Waiting for {playerName(players, plan.preparer_id)} to complete the plan…
-						</p>
 					{/if}
 				</fieldset>
-				{#if !canSubflow}
-					<p class="ft-prompt muted">
-						{#if pendingQuestion != null}
-							Waiting for {playerName(players, pendingQuestion.target_id)} to answer
-							{playerName(players, plan.preparer_id)}'s question…
-						{:else}
-							{playerName(players, resolutionActorID(plan, plans))} is resolving Seek Answers…
-						{/if}
-					</p>
-				{/if}
 			</div>
-
-		{:else}
-			<p class="ft-prompt muted">
-				{playerName(players, resolutionActorID(plan, plans))} is resolving Seek Answers…
-			</p>
 		{/if}
 	</ResolvingCard>
 {/if}

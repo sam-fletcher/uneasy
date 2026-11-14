@@ -223,10 +223,46 @@ describe('Propose Decree', () => {
 		};
 		expectTitled(as({ debate_started: false }, PREPARER, null), 'Finalize your decree');
 		expectTitled(as({}, OTHER, null, { rankings: RANKS as never, assets: [{ id: 1, owner_id: OTHER, name: 'Ring', asset_type: 'artifact', is_destroyed: false, is_leveraged: false, marginalia: [] }] as never }), 'Join the council?');
-		expectTitled(as({ outcome: 'mar', amendment_order: [OTHER], amended_by: [] }, OTHER, 'mar'), 'Amend the law (your turn)');
 		expectTitled(as({ outcome: 'make' }, PREPARER, 'make'), "Signatory's Addendum");
-		expectTitled(as({ outcome: 'make', addendum_placed: true }, PREPARER, 'make'), 'Enact the law');
 		expectTitled(as({}, OTHER, null), 'Proposed decree being debated:');
+	});
+
+	it('a step whose title the heading says word for word has no title', () => {
+		// "Your move — amend the law" / "— enact the law" (plans/stepLabels/propose_decree).
+		const as = (over: Record<string, unknown>, seat: number, rollOutcome: 'make' | 'mar') => {
+			const plan = {
+				id: 9, plan_type: 'propose_decree', status: 'resolving', preparer_id: PREPARER, preparation_notes: 'x',
+				resolution_data: JSON.stringify({
+					propose_decree: { signatory_id: PREPARER, signatory_player_ids: [PREPARER], debate_started: true, law_text: 'No private armies.', ...over },
+				}),
+			};
+			return clean(render(ProposeDecreePanel, {
+				props: { ctx: ctxFor({ plans: [plan] as never, currentPlayerID: seat, rollOutcome }), plan: plan as never, mode: 'resolve' },
+			}).body);
+		};
+		const amend = as({ outcome: 'mar', amendment_order: [OTHER], amended_by: [] }, OTHER, 'mar');
+		expect(amend).toContain('Rewrite the law');
+		expect(amend).not.toMatch(/class="choices-header[^"]*">\s*Amend the law/);
+		const enact = as({ outcome: 'make', addendum_placed: true }, PREPARER, 'make');
+		expect(enact).toContain('The law above takes effect');
+		expect(enact).not.toMatch(/class="choices-header[^"]*">\s*Enact the law/);
+	});
+
+	it('says nothing about who places the addendum or enacts: the heading does', () => {
+		const plan = {
+			id: 9, plan_type: 'propose_decree', status: 'resolving', preparer_id: PREPARER, preparation_notes: 'x',
+			resolution_data: JSON.stringify({
+				propose_decree: { signatory_id: PREPARER, signatory_player_ids: [PREPARER], debate_started: true, outcome: 'make', law_text: 'x' },
+			}),
+		};
+		const body = (extra: Record<string, unknown>) => {
+			const p = { ...plan, resolution_data: JSON.stringify({ propose_decree: { ...JSON.parse(plan.resolution_data).propose_decree, ...extra } }) };
+			return clean(render(ProposeDecreePanel, {
+				props: { ctx: ctxFor({ plans: [p] as never, currentPlayerID: OTHER, rollOutcome: 'make' }), plan: p as never, mode: 'resolve' },
+			}).body);
+		};
+		expect(body({})).not.toContain('to place the addendum');
+		expect(body({ addendum_placed: true })).not.toContain('to enact the law');
 	});
 
 	it('the addendum is plain text after the law, not italic', () => {
@@ -321,13 +357,16 @@ describe('Clandestinely Liaise delay reveal', () => {
 
 
 describe('Clandestinely Liaise phases', () => {
+	// The open step's heading says the phase ("Your move — secrets we keep",
+	// plans/stepLabels/clandestinely_liaise), word for word, so the panel has no
+	// title for it: just the phase's own sentence.
 	const PHASES: [string, string][] = [
 		['together_at_last', 'Together at Last'],
 		['secrets_we_keep', 'Secrets We Keep'],
 		['things_we_share', 'Things We Share'],
 		['when_will_i_see_you_again', 'When will I see you again?'],
 	];
-	it.each(PHASES)('%s: the title and its sentence share one block', (phase, title) => {
+	it.each(PHASES)('%s: the sentence stands alone, with no title above it', (phase, title) => {
 		const plan = {
 			id: 9, plan_type: 'clandestinely_liaise', status: 'resolving', preparer_id: PREPARER, preparation_notes: 'x',
 			resolution_data: JSON.stringify({ liaise: { phase, partner_id: OTHER, preparer_peer_id: 20, partner_peer_id: 21 } }),
@@ -335,6 +374,9 @@ describe('Clandestinely Liaise phases', () => {
 		const body = render(ClandestinelyLiaisePanel, {
 			props: { ctx: ctxFor({ plans: [plan] as never, currentPlayerID: PREPARER }), plan: plan as never, mode: 'resolve' },
 		}).body;
-		expectTitled(body, title);
+		const html = clean(body);
+		const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		expect(html).not.toMatch(new RegExp(`class="choices-header[^"]*">\\s*${escaped}`));
+		expect(html).toMatch(/<div class="choices-section[^"]*"><p class="ft-prompt/);
 	});
 });

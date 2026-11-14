@@ -4,8 +4,11 @@ import ExchangeCourtiersPanel from './ExchangeCourtiersPanel.svelte';
 import { MAR_OPTIONS } from './shared';
 import type { PlanContext } from './types';
 
-// Every seat that isn't acting must be told, in the third person, who the plan
-// is waiting on; only the actual addressee sees second-person wording.
+// A seat that isn't acting is told in the third person what the plan holds, and
+// only the actual addressee sees second-person wording. Who the plan is waiting on
+// at each step after the roll is the open step's heading's to say ("Waiting on sol
+// — choose how to respond to the mar", from plans/stepLabels), so the panel prints
+// no line for it.
 
 const PREPARER = 1;
 const TARGET = 2;
@@ -73,17 +76,19 @@ describe('after the offer', () => {
 
 describe('after the roll', () => {
 	const declined = { fair_trade_asset_id: 6, fair_trade_accepted: false };
-	it('tells the target the preparer is choosing on a make', () => {
-		expect(text(renderFor(TARGET, declined, 'make'))).toContain('Waiting for ravi to say how the trade went');
-	});
-	it('tells the preparer the target is choosing on a mar', () => {
-		expect(text(renderFor(PREPARER, declined, 'mar'))).toContain('Waiting for sol to choose how to respond');
-	});
-	it('tells a bystander the target is choosing on a mar', () => {
-		expect(text(renderFor(BYSTANDER, declined, 'mar'))).toContain('Waiting for sol to choose how to respond');
-	});
-	it('tells a bystander the preparer is choosing on a make', () => {
-		expect(text(renderFor(BYSTANDER, declined, 'make'))).toContain('Waiting for ravi to say how the trade went');
+	// The seats that do not choose get no picker, and no line about who does: the
+	// heading says it. (The old lines were "Waiting for ravi to say how the trade went"
+	// and "Waiting for sol to choose how to respond".)
+	it.each([
+		['the target on a make', TARGET, 'make'],
+		['the preparer on a mar', PREPARER, 'mar'],
+		['a bystander on a mar', BYSTANDER, 'mar'],
+		['a bystander on a make', BYSTANDER, 'make'],
+	] as const)('says nothing to %s about who is choosing', (_, seat, outcome) => {
+		const t = text(renderFor(seat, declined, outcome));
+		expect(t).not.toContain('Waiting for');
+		expect(t).not.toContain('You beat the difficulty');
+		expect(t).not.toContain('choose how you respond');
 	});
 });
 
@@ -122,10 +127,11 @@ describe('commit marker', () => {
 			expect(t).toContain('choose how you respond');
 			expect(t).not.toContain('Resolving…');
 		});
-		it('the roll still on screen: a dice wait for every seat, no picker', () => {
+		it('the roll still on screen: what is at stake, no picker, and no dice wait (the roll has its own heading)', () => {
 			for (const seat of [PREPARER, TARGET, BYSTANDER]) {
 				const t = text(renderFor(seat, declined, 'make', ASSETS, { rollActive: true }));
-				expect(t).toContain('Dice roll in progress');
+				expect(t).toContain('On a make:');
+				expect(t).not.toContain('Dice roll in progress');
 				expect(t).not.toContain('You beat the difficulty');
 			}
 		});
@@ -148,7 +154,7 @@ describe('commit marker', () => {
 			const t = text(renderFor(TARGET, messy, 'make', ASSETS, MARKED));
 			expect(t).toContain('The exchange was messy');
 			expect(t).toContain('Exchange Courtiers resolves when you submit');
-			expect(text(renderFor(PREPARER, messy, 'make', ASSETS, MARKED))).toContain('Waiting for sol to break a marginalia');
+			expect(text(renderFor(PREPARER, messy, 'make', ASSETS, MARKED))).not.toContain('Waiting for sol to break a marginalia');
 		});
 		it('riposte mar: the preparer breaks or surrenders, and the note says it is the last step', () => {
 			const riposte = { ...declined, riposte_allowed: true };

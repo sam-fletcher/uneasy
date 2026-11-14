@@ -385,9 +385,10 @@ describe('the Make Demands draft', () => {
 		expect(perform).toContain('aria-disabled="false"');
 	});
 
-	it('shows the player who is not up a wait and no option cards', () => {
+	it('shows the player who is not up no option cards, and no line about who is (the heading says it)', () => {
 		const body = draft(CAROL);
-		expect(body).toContain('Waiting for bob to pick');
+		expect(body).not.toContain('Waiting for bob to pick');
+		expect(body).not.toContain('Your turn to pick');
 		expect(body).not.toContain('choice-card');
 	});
 });

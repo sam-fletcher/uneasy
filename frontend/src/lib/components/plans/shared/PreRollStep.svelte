@@ -14,8 +14,10 @@
   draft never held starts blank. Pre-filling spares a retype; the blank field and
   the "change whatever has changed" note keep the moment from being a bare "Next".
 
-  Non-actors get a one-line wait; the caller shows the draft (or the secret's
-  placeholder) itself, since only it knows whether the draft is public.
+  Non-actors get nothing from this component: the open step's heading already says
+  whose move it is ("Waiting on alice — state the rumor"). The caller shows the draft
+  (or the secret's placeholder) itself, since only it knows whether the draft is
+  public.
 -->
 <script module lang="ts">
 	export interface PreRollField {
@@ -41,15 +43,11 @@
 		/** Whether the viewer performs the step. */
 		canAct: boolean;
 		busy?: boolean;
-		/** Who performs it, for the waiting line. */
-		actorName: string;
-		/** e.g. "is stating the rumor" — completes "{actorName} …". */
-		waitingVerb: string;
 		submitLabel?: string;
 		onSubmit: (values: Record<string, string>) => void;
 	}
 	let {
-		title, prompt, fields, canAct, busy = false, actorName, waitingVerb,
+		title, prompt, fields, canAct, busy = false,
 		submitLabel = 'Post & open the roll', onSubmit,
 	}: Props = $props();
 
@@ -96,6 +94,4 @@
 			{busy ? '…' : submitLabel}
 		</button>
 	</div>
-{:else}
-	<p class="ft-prompt muted">{actorName} {waitingVerb}…</p>
 {/if}

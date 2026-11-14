@@ -93,7 +93,6 @@
 	const actorID = $derived(plan ? resolutionActorID(plan, plans) : null);
 	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
 	const isActor = $derived(actorID != null && currentPlayerID === actorID);
-	const actorName = $derived(playerName(players, actorID));
 
 	// Prep state
 	let miPeerCount = $state(1);
@@ -485,10 +484,6 @@
 						</button>
 					</div>
 				</div>
-			{:else}
-				<p class="ft-prompt muted">
-					{actorName} is welcoming a delayed newcomer…
-				</p>
 			{/if}
 
 		{:else if needsPeerNaming && isPreparer}
@@ -532,14 +527,8 @@
 				</div>
 			</div>
 
-		{:else if needsPeerNaming && !isPreparer}
-			<p class="ft-prompt muted">
-				{playerName(players, plan.preparer_id)} is naming the new peers…
-			</p>
-
-		{:else if rollActive && !choicesDone}
-			<p class="ft-prompt muted">Dice roll in progress…</p>
-
+		<!-- While the dice are out the roll is the open step and carries its own
+		     heading, so there is nothing to say until it lands. -->
 		{:else if rollOutcome === 'make'}
 			<!-- The make has one option, so the server applies it when the dice land and
 			     the arrival forms start immediately; the last arrival ends the plan. -->
@@ -567,18 +556,10 @@
 						</button>
 					</div>
 				</div>
-			{:else}
-				<p class="ft-prompt muted">
-					{actorName} is welcoming the new peers…
-				</p>
 			{/if}
 
 		{:else if rollOutcome === 'mar'}
-			{#if !marPending}
-				<p class="ft-prompt muted">
-					{actorName} is resolving the marred introductions…
-				</p>
-			{:else}
+			{#if marPending}
 				<div class="mi-mar">
 					{#if settledDrafts.length > 0}
 						<div class="recap">
@@ -673,12 +654,6 @@
 						<p class="ft-prompt muted">
 							Every newcomer is settled. The plan resolves as soon as the others have
 							written the marginalia they owe.
-						</p>
-					{/if}
-
-					{#if !isActor && myAuthorDrafts.length === 0}
-						<p class="ft-prompt muted">
-							{actorName} is resolving the marred introductions…
 						</p>
 					{/if}
 				</div>

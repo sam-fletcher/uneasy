@@ -84,8 +84,8 @@
 	font-size: var(--text-small);
 }
 
-/* Quiet lines: "Dice roll in progress…", "otto is resolving…". Secondary, not
-   faint, and not italic: they say what the game is waiting for. */
+/* Quiet lines: a wait that says more than the heading does ("Waiting for sol to
+   agree to give up Dame Orr…"). Secondary, not faint, and not italic. */
 .muted {
 	color: var(--color-text-secondary);
 	font-size: var(--text-small);

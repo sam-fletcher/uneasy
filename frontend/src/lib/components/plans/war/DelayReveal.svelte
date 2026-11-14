@@ -23,10 +23,8 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">Vote for the war's delay</p>
 	<p class="choices-note">
 		The row delay is the average of each participant's choice, rounded up.
-		Other players may join either side below.
 	</p>
 	<!-- Everyone sees the line, participant or not: the faces are chosen rather
 	     than rolled, so overflowing row 13 is a decision the table is making. -->

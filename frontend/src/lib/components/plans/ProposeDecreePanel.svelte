@@ -551,14 +551,11 @@
 				</div>
 			{/if}
 
-		<!-- Roll in progress / just resolved — passing the decree is automatic
-		     (the outcome is whatever the dice say), so there's no gate here: the
-		     server records it on roll resolution and the law-writing sub-flow
-		     opens below. This branch only covers the brief in-flight window. ── -->
-		{:else if (rollActive || rollOutcome != null) && !outcomeApplied}
-			<p class="ft-prompt muted">
-				{rollOutcome == null ? 'Dice roll in progress…' : 'Recording the result…'}
-			</p>
+		<!-- Passing the decree is automatic (the outcome is whatever the dice say), so
+		     there's no gate between the roll and the law-writing sub-flow below: the
+		     server records it as the dice land. While they are out the roll is the
+		     open step and carries its own heading; the moment after is too short to
+		     say anything about. -->
 
 		<!-- Decree passed: (mar) amendments → addendum (enacts) → complete ──── -->
 		{:else if outcomeApplied}
@@ -591,12 +588,9 @@
 				{#if rollOutcome === 'mar' && !amendmentsDone}
 					{#if myAmendTurn}
 						<div class="plan-form">
-							<div class="titled">
-								<p class="choices-header">Amend the law (your turn)</p>
-								<p class="ft-prompt">
-									Rewrite the law's text. The next council member amends your version.
-								</p>
-							</div>
+							<p class="ft-prompt">
+								Rewrite the law's text. The next council member amends your version.
+							</p>
 							<label class="form-label">
 								<textarea rows={3} bind:value={amendDraft} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
 									placeholder="The amended law…"></textarea>
@@ -652,10 +646,6 @@
 							</button>
 							<EndsNote text={`This places the addendum. ${playerName(players, resolutionActorID(plan, plans))} enacts the law next.`} />
 						</div>
-					{:else}
-						<p class="choices-note muted">
-							Waiting for {playerName(players, addendumActorID)} to place the addendum…
-						</p>
 					{/if}
 				{/if}
 
@@ -664,16 +654,13 @@
 				{#if awaitingEnact}
 					{#if amChoiceActor}
 						<div class="plan-form">
-							<div class="titled">
-								<p class="choices-header">Enact the law</p>
-								<p class="ft-prompt">
-									{#if isMakeEnact}
-										The law above takes effect. Name the resource it creates for you.
-									{:else}
-										The law above takes effect (no resource on a mar).
-									{/if}
-								</p>
-							</div>
+							<p class="ft-prompt">
+								{#if isMakeEnact}
+									The law above takes effect. Name the resource it creates for you.
+								{:else}
+									The law above takes effect (no resource on a mar).
+								{/if}
+							</p>
 							{#if isMakeEnact}
 								<AssetCreationForm
 									{gameID}
@@ -692,18 +679,9 @@
 							</button>
 							<EndsNote text="This is the last step: Propose Decree resolves when you enact the law." />
 						</div>
-					{:else}
-						<p class="choices-note muted">
-							Waiting for {playerName(players, plan ? resolutionActorID(plan, plans) : null)} to enact the law…
-						</p>
 					{/if}
 				{/if}
 			</div>
-
-		{:else if !amChoiceActor && !outcomeApplied}
-			<p class="ft-prompt muted">
-				{playerName(players, resolutionActorID(plan, plans))} is resolving Propose Decree…
-			</p>
 		{/if}
 
 	</ResolvingCard>

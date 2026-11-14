@@ -54,7 +54,6 @@
 	const rankings = $derived(ctx.rankings);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
 	const onRollCreated = $derived(ctx.onRollCreated);
@@ -426,18 +425,13 @@
 						disabled={preRollBusy || !sceneText.trim()}>
 						{preRollBusy ? '…' : 'Set the scene & gather your dice'}
 					</button>
-				{:else}
-					<p class="ft-prompt muted">
-						{playerName(players, plan.preparer_id)} is setting the scene…
-					</p>
 				{/if}
 			</div>
 		{/if}
 
-		{#if rollActive && rollOutcome == null}
-			<p class="ft-prompt muted">Dice roll in progress…</p>
-
-		{:else if rollOutcome === 'make'}
+		<!-- While the dice are out the roll is the open step and carries its own
+		     heading, so there is nothing to say here until it lands. -->
+		{#if rollOutcome === 'make'}
 			<div class="choices-section">
 				<p class="choices-header">
 					Result: <span class="outcome-make">✓ Make</span>
@@ -513,11 +507,6 @@
 							{/if}
 						</div>
 					</fieldset>
-					{#if !amChoiceActor}
-						<p class="ft-prompt muted">
-							{playerName(players, resolutionActorID(plan, plans))} is choosing options…
-						</p>
-					{/if}
 				{/if}
 
 				{#if makeStarted}

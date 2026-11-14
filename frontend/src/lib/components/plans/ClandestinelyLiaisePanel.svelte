@@ -523,21 +523,19 @@
 				{playerName(players, plan.preparer_id)} meets. The liaison begins once they have.
 			</p>
 		{:else if !amParticipant && !amPreparer && !amPartner}
-			<p class="ft-prompt muted">A clandestine liaison is underway.</p>
+			<!-- A bystander has nothing to do or to read here: the heading says whose
+			     move it is and which phase the liaison is in. -->
 
 		<!-- Phase 1: Together At Last ─────────────────────────────── -->
 		{:else if clState.phase === 'together_at_last'}
 			<div class="choices-section">
-				<div class="titled">
-					<p class="choices-header">Together at Last</p>
-					<p class="ft-prompt">
-						{playerName(players, plan.preparer_id)} and
-						{playerName(players, clState.partnerID)} — set the scene of your
-						meeting together in the chat. Where are you? What are you doing?
-						Are you sharing a meal, meeting under a bridge under the cover
-						of night, or perhaps something more intimate?
-					</p>
-				</div>
+				<p class="ft-prompt">
+					{playerName(players, plan.preparer_id)} and
+					{playerName(players, clState.partnerID)} — set the scene of your
+					meeting together in the chat. Where are you? What are you doing?
+					Are you sharing a meal, meeting under a bridge under the cover
+					of night, or perhaps something more intimate?
+				</p>
 				{#if canAdvance}
 					<p class="choices-note muted">
 						{#if standingIn}
@@ -563,13 +561,10 @@
 		<!-- Phase 2: Secrets We Keep ──────────────────────────────── -->
 		{:else if clState.phase === 'secrets_we_keep'}
 			<div class="choices-section">
-				<div class="titled">
-					<p class="choices-header">Secrets We Keep</p>
-					<p class="ft-prompt">
-						Each of you nominates one of your own assets to hold the secret of
-						this meeting.
-					</p>
-				</div>
+				<p class="ft-prompt">
+					Each of you nominates one of your own assets to hold the secret of
+					this meeting.
+				</p>
 				{#if amLockedOut}
 					<!-- A demand handed this seat to someone else; say so rather than
 					     offering a form the server would refuse. -->
@@ -621,12 +616,9 @@
 		<!-- Phase 3: Things We Share ──────────────────────────────── -->
 		{:else if clState.phase === 'things_we_share'}
 			<div class="choices-section">
-				<div class="titled">
-					<p class="choices-header">Things We Share</p>
-					<p class="ft-prompt">
-						Pick one option. Picks are revealed once both players have submitted.
-					</p>
-				</div>
+				<p class="ft-prompt">
+					Pick one option. Picks are revealed once both players have submitted.
+				</p>
 				{#if amLockedOut}
 					<p class="choices-note">{holderName} is making your pick for you.</p>
 				{:else if iShared}
@@ -726,13 +718,10 @@
 		<!-- Phase 4: When Will I See You Again ────────────────────── -->
 		{:else if clState.phase === 'when_will_i_see_you_again'}
 			<div class="choices-section">
-				<div class="titled">
-					<p class="choices-header">When will I see you again?</p>
-					<p class="ft-prompt">
-						Reveal a die face (1–6) to choose how many rows until the next liaison.
-						If either of you picks 0, no follow-up is scheduled.
-					</p>
-				</div>
+				<p class="ft-prompt">
+					Reveal a die face (1–6) to choose how many rows until the next liaison.
+					If either of you picks 0, no follow-up is scheduled.
+				</p>
 				{#if amLockedOut}
 					<p class="choices-note">{holderName} is revealing a face for you.</p>
 				{:else if clState.redelayRevealID != null && currentPlayerID != null}
@@ -767,12 +756,3 @@
 	</ResolvingCard>
 {/if}
 
-<style>
-	/* A phase's title and the sentence under it read as one block, so they sit
-	   close; the controls below sit a full step gap away. */
-	.titled {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-1);
-	}
-</style>

@@ -6,6 +6,12 @@ import type { PlanContext } from './types';
 // A Make Demands perform_steps win hands the whole resolution to the winner and
 // locks the preparer out (the server 403s them). The arrival form must follow
 // the winner, or a winner-driven plan shows no way forward.
+//
+// A seat that is not acting gets no form and no line about who is: the open step's
+// heading names who the table waits on and the step ("Waiting on sol — describe
+// each arrival", from plans/stepLabels). The lines this panel used to print for it
+// ("sol is welcoming the new peers…", "ravi is naming the new peers…", "… is
+// resolving the marred introductions…") must stay gone.
 
 const PREPARER = 1;
 const WINNER = 2;
@@ -69,10 +75,10 @@ describe('MakeIntroductionsPanel with a perform_steps winner', () => {
 		expect(renderFor(WINNER)).toContain('They arrive');
 	});
 
-	it('shows the preparer a wait on the winner, not a form', () => {
+	it('shows the preparer no form, and no line about the winner', () => {
 		const body = renderFor(PREPARER);
 		expect(body).not.toContain('They arrive');
-		expect(body).toContain('sol is welcoming the new peers');
+		expect(body).not.toContain('welcoming the new peers');
 	});
 });
 
@@ -81,10 +87,10 @@ describe('MakeIntroductionsPanel pre-roll naming with a perform_steps winner', (
 		expect(renderFor(PREPARER, NAMING)).toContain('Name peers &amp; roll');
 	});
 
-	it('shows the winner a wait on the preparer, not the form', () => {
+	it('shows the winner no form, and no line about the preparer', () => {
 		const body = renderFor(WINNER, NAMING);
 		expect(body).not.toContain('Name peers');
-		expect(body).toContain('ravi is naming the new peers');
+		expect(body).not.toContain('naming the new peers');
 	});
 });
 
@@ -93,10 +99,10 @@ describe('MakeIntroductionsPanel mar fates with a perform_steps winner', () => {
 		expect(renderFor(WINNER, MAR)).toContain('Resolve peer');
 	});
 
-	it('shows the preparer a wait on the winner', () => {
+	it('shows the preparer no form, and no line about the winner', () => {
 		const body = renderFor(PREPARER, MAR);
 		expect(body).not.toContain('Resolve peer');
-		expect(body).toContain('sol is resolving the marred introductions');
+		expect(body).not.toContain('resolving the marred introductions');
 	});
 });
 
@@ -124,16 +130,16 @@ describe('MakeIntroductionsPanel commit marker', () => {
 			expect(body).not.toContain('Dice roll in progress');
 		});
 
-		it('mar, bystander: waits on the actor, no dice wait', () => {
+		it('mar, bystander: no form, no line about the actor, no dice wait', () => {
 			const body = marAs(WINNER);
-			expect(body).toContain('ravi is resolving the marred introductions');
+			expect(body).not.toContain('resolving the marred introductions');
 			expect(body).not.toContain('Resolve peer');
 			expect(body).not.toContain('Dice roll in progress');
 		});
 
-		it('mar, bystander, roll still on screen: the same wait', () => {
+		it('mar, bystander, roll still on screen: the same', () => {
 			const body = marAs(WINNER, { rollActive: true });
-			expect(body).toContain('ravi is resolving the marred introductions');
+			expect(body).not.toContain('resolving the marred introductions');
 			expect(body).not.toContain('Dice roll in progress');
 		});
 
@@ -154,9 +160,9 @@ describe('MakeIntroductionsPanel commit marker', () => {
 			expect(body).not.toContain('Dice roll in progress');
 		});
 
-		it('make, bystander: waits on the actor', () => {
+		it('make, bystander: no form, and no line about the actor', () => {
 			const body = renderFor(WINNER, { ...MAKE, noWinner: true });
-			expect(body).toContain('ravi is welcoming the new peers');
+			expect(body).not.toContain('welcoming the new peers');
 			expect(body).not.toContain('They arrive');
 		});
 	});
@@ -164,25 +170,26 @@ describe('MakeIntroductionsPanel commit marker', () => {
 	describe('not committed (dice rolling or just landed, nothing applied yet)', () => {
 		const DICE = { choices: [], marker: {} };
 
-		it('mar landing, roll on screen: a dice wait for every viewer, no fate form', () => {
+		it('mar landing, roll on screen: no fate form, and no dice wait (the roll has its own heading)', () => {
 			for (const id of [PREPARER, WINNER]) {
 				const body = renderFor(id, { ...MAR, ...DICE, mi: { peer_count: 2, drafts: DRAFTS }, rollActive: true, noWinner: true });
-				expect(body).toContain('Dice roll in progress');
+				expect(body).not.toContain('Dice roll in progress');
 				expect(body).not.toContain('Resolve peer');
 			}
 		});
 
-		it('make landing, roll on screen: a dice wait, no arrival form', () => {
+		it('make landing, roll on screen: no arrival form, and no dice wait', () => {
 			const body = renderFor(PREPARER, {
 				...MAKE, ...DICE, mi: { peer_count: 1, drafts: [DRAFTS[0]] }, rollActive: true, noWinner: true,
 			});
-			expect(body).toContain('Dice roll in progress');
+			expect(body).not.toContain('Dice roll in progress');
 			expect(body).not.toContain('They arrive');
 		});
 
-		it('mar outcome known, roll gone, nothing applied: waits on the actor', () => {
+		it('mar outcome known, roll gone, nothing applied: no form, no line about the actor', () => {
 			const body = renderFor(WINNER, { ...MAR, ...DICE, mi: { peer_count: 2, drafts: DRAFTS }, noWinner: true });
-			expect(body).toContain('ravi is resolving the marred introductions');
+			expect(body).not.toContain('resolving the marred introductions');
+			expect(body).not.toContain('Resolve peer');
 			expect(body).not.toContain('Dice roll in progress');
 		});
 

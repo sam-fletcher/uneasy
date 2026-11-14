@@ -42,7 +42,6 @@
 	const rankings = $derived(ctx.rankings);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -194,7 +193,7 @@
 		{:else if duelRes.phase === 'roll'}
 			<RollPhase
 				{plan} {duelRes} {players} {assets} {currentPlayerID}
-				{stakes} {bouts} {activeRoll} {rollActive} {rollOutcome}
+				{stakes} {bouts} {activeRoll} {rollOutcome}
 				{onPlansChanged}
 			/>
 

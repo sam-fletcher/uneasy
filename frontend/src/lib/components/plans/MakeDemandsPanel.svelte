@@ -43,7 +43,6 @@
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const currentRow = $derived(ctx.currentRow);
 	const plans = $derived(ctx.plans);
-	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
@@ -334,10 +333,9 @@
 			: 'unknown target'}
 		<p class="choices-note">Targeting: {targetSummary}</p>
 
-		{#if rollActive}
-			<p class="ft-prompt muted">Dice roll in progress…</p>
-
-		{:else if rollOutcome === 'make'}
+		<!-- While the dice are out the roll is the open step and carries its own heading,
+		     so there is nothing to say until it lands. -->
+		{#if rollOutcome === 'make'}
 			<!-- ── Draft picker ───────────────────────────────────────────── -->
 			<div class="choices-section">
 				<p class="choices-header">
@@ -362,7 +360,6 @@
 
 				{#if !draftComplete}
 					{#if amNextPicker}
-						<p class="choices-note">Your turn to pick.</p>
 						{#if allRemainingInert}
 							<p class="choices-note">None of what's left does anything against this plan — pick whichever.</p>
 						{/if}
@@ -393,10 +390,6 @@
 						</button>
 						<EndsNote show={draftChoices.length === 3}
 							text="This is the last pick: the draft ends and Make Demands resolves when you submit." />
-					{:else}
-						<p class="ft-prompt muted">
-							Waiting for {playerName(players, nextPickerID)} to pick…
-						</p>
 					{/if}
 				{:else}
 					<p class="choices-note">
@@ -417,7 +410,6 @@
 		{:else if rollOutcome === 'mar'}
 			<!-- ── Counter-demand picker ──────────────────────────────────── -->
 			<div class="choices-section">
-				<p class="choices-header">Counter-demand</p>
 				{#if counterPlaced}
 					<p class="choices-note">
 						Counter-demand recorded. Awaiting completion of this demand plan.
@@ -460,11 +452,6 @@
 						{counterBusy ? '…' : 'Place counter-demand'}
 					</button>
 					<EndsNote text="This is the last step: Make Demands resolves when you submit." />
-				{:else}
-					<p class="ft-prompt muted">
-						Waiting for {targetPlan ? playerName(players, targetPlan.preparer_id) : 'the target'}
-						to place a counter-demand…
-					</p>
 				{/if}
 			</div>
 		{/if}

@@ -452,7 +452,6 @@
 					</li>
 				{/if}
 			</ul>
-			<p class="ft-prompt muted">Dice roll in progress…</p>
 
 		{:else if rollOutcome != null && !choicesDone && choiceActor}
 			<MakeMarPicker
@@ -517,10 +516,6 @@
 						</button>
 						<EndsNote text="This is the last step: Exchange Courtiers resolves when you submit." />
 					</div>
-				{:else}
-					<p class="ft-prompt muted">
-						Waiting for {playerName(players, plan.target_player_id)} to break a marginalia…
-					</p>
 				{/if}
 
 			{:else if ripostePending}
@@ -571,19 +566,6 @@
 				     shows in the brief window before the resolved state arrives. -->
 				<p class="ft-prompt muted">Resolving…</p>
 			{/if}
-
-		{:else if !choiceActor}
-			<!-- Everyone but the chooser: the target on a mar, else the make actor
-			     (the preparer, or a perform_steps winner standing in). -->
-			<p class="ft-prompt muted">
-				{#if rollOutcome === 'mar'}
-					Waiting for {playerName(players, plan.target_player_id)} to choose how to respond to the mar…
-				{:else if rollOutcome === 'make'}
-					Waiting for {playerName(players, resolutionActorID(plan, plans))} to say how the trade went…
-				{:else}
-					Dice roll in progress…
-				{/if}
-			</p>
 		{/if}
 	</ResolvingCard>
 {/if}

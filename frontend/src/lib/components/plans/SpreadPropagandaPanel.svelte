@@ -59,7 +59,6 @@
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -318,7 +317,6 @@
 	// perform_steps win — the winner, in their place (the server refuses the
 	// preparer every one of them). The retinue and assets are still the
 	// PREPARER's, so copy that says "your" has to say whose when they aren't.
-	const stepActorName = $derived(plan ? playerName(players, resolutionActorID(plan, plans)) : '');
 	const whose = $derived(isPreparer || !plan ? 'your' : `${playerName(players, plan.preparer_id)}'s`);
 	const whoHas = $derived(isPreparer || !plan ? 'You have' : `${playerName(players, plan.preparer_id)} has`);
 
@@ -451,8 +449,6 @@
 				}]}
 				canAct={isPreparer}
 				busy={preRollBusy}
-				actorName={playerName(players, plan.preparer_id)}
-				waitingVerb="is about to say how they're spreading their message"
 				onSubmit={(v) => submitPreRoll(plan, v)}
 			/>
 			{#if isCounter && isPreparer}
@@ -467,9 +463,8 @@
 						: 'Declining ends this counter-propaganda with no effect.'} />
 			{/if}
 
-		{:else if rollActive && !choicesDone}
-			<p class="ft-prompt muted">Dice roll in progress…</p>
-
+		<!-- While the dice are out the roll is the open step and carries its own
+		     heading, so there is nothing to say until it lands. -->
 		{:else if rollOutcome === 'mar' && !choicesDone && amChoiceActor}
 			<div class="choices-section">
 				<p class="choices-header">
@@ -615,21 +610,8 @@
 					<button class="action-btn primary" onclick={() => onComplete(plan)} disabled={resBusy}>
 						{resBusy ? '…' : 'Complete plan'}
 					</button>
-				{:else if preparerActionPending && !amChoiceActor}
-					<p class="ft-prompt muted">
-						Waiting for {stepActorName} to {artifactPending && !marEffectsPending ? 'author the artifact' : 'face the fallout'}…
-					</p>
-				{:else if !preparerActionPending && !isPreparer}
-					<p class="ft-prompt muted">
-						Waiting for {playerName(players, plan.preparer_id)} to complete the plan…
-					</p>
 				{/if}
 			</div>
-
-		{:else if !amChoiceActor && !choicesDone}
-			<p class="ft-prompt muted">
-				{playerName(players, resolutionActorID(plan, plans))} is resolving Spread Propaganda…
-			</p>
 		{/if}
 	</ResolvingCard>
 {/if}
