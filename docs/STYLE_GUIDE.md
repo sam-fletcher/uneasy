@@ -606,7 +606,7 @@ Reuse before writing new CSS — these live in
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `HelpDisclosure.svelte` | the collapsible "? How X works" panel: a `tapRow.css` row with the help mark and a caret, and its body below. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
-| `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), `TonesSheet`, and the war stopgap `WarEntry`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
+| `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), and `TonesSheet`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`, `clock`, `war`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below. The newer marks have a component of their own that adds the size, colour rule and label |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
@@ -721,6 +721,39 @@ contrast floor.
 option cards and warnings with (`.chip-btn`, `.player-chip`, `.choice-card`,
 `.res-warning`). Each is built from the shared recipes' tokens, and a test holds the chips
 to agreeing with `chip.css`; a panel that moves to `<Chip>` or `<Notice>` drops its name.
+
+### The war band
+
+A war goes on across rows after its plan has resolved, so each war that is planned or
+under way has a one-line **band** at the top of Play, above the open step's heading.
+Pressing it opens that war's panel as a sheet over Play. The pieces are in `plans/war/`
+and on `/dev/styleguide` under "The war band":
+
+| piece | what it is |
+|---|---|
+| `WarBand.svelte` | the band: the barbute, the war's name in red, "under way" or "planned", and the arrow (it opens a sheet; the caret expands in place). A 44px raised button with a red border and no red fill |
+| `WarBands.svelte` | one band per live war, and the sheet the pressed one opens. The open sheet is kept as a plan id and cleared when its war leaves the list, so a war that ends under it closes it for good |
+| `WarSheet.svelte` | the shell's sheet with a title in war's red and the barbute, a line on when the war began and what being in it costs, then the panel |
+| `WarName.svelte` | the war's name as a plain label, where no band names it: the delay vote, a claim left by a war that has just ended, and each panel when two wars owe at once |
+| `lib/warText.ts` | the wording, as pure tested functions: the war's name, each side's leader, the lede, the entry cost and the three choices |
+
+**Names.** A war is "otto’s war on Wren": the declarer and the first player they named,
+plus "and others" if there were more. Each side is called after its leader, so the
+choices read "Join otto", "Join Wren" and "Stay out".
+
+**Joining is a pick and then a commit**, as aid or interfere is. A chip picks, the cost
+of that pick shows under the chips, and the single main button, labelled with what it
+will do ("Join otto’s side"), sends it. The button is greyed out until something is
+picked. The chips take no meaning colour, and the cost is ordinary secondary text. A
+side's members are plain lines of shape and name, with any debt in words ("joining, owes
+entry").
+
+**Controls on the sheet take the raised-twice fill**, since the sheet is itself a raised
+surface (`WarSheet` sets this for the chips and secondary buttons inside it).
+
+**While a cost or a claim holds up the row** the war still takes over the play area, with
+the band above. A sheet opened then does not repeat the payment form or the vote: it shows
+the sides and a line saying to close the sheet and settle it in the play area.
 
 ### The styleguide
 
