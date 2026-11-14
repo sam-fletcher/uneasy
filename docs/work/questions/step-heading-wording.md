@@ -1,16 +1,10 @@
 ---
-title: "Step heading wording: 'the next step', and 'Your move' naming no one else"
+title: "Step heading wording: 'Your move' naming no one else"
 ---
 
 The heading of the open step is built from who the game waits on and a phrase for the step
-(`lib/waitingOn.ts`). Two things in it are mine, not yours:
+(`lib/waitingOn.ts`). One thing in it is mine, not yours:
 
-- **A plan that is simply "being resolved" is headed "the next step"** ("Your move — the next step").
-  The server knows only that the plan is resolving, not which of its own steps it is on; the plan's
-  panel knows ("What have you learned?", "Result: Make"), and those lines sit directly under the
-  heading. So the heading is correct but vague for those plans. The fix is to let each panel name its
-  own step to the frame (a small hook), which belongs with the plan-panel pieces. Is "the next step" an
-  acceptable stopgap until then, or would you rather it say something else (the plan's name, say)?
 - **When you are one of several the game waits on, the heading says only "Your move — …" and names
   nobody else.** The old Waiting On bar read "Waiting On: You, otto"; that list is gone, and the only
   place the others still show is the clock on their chips on the player row. This is a design call, not a
