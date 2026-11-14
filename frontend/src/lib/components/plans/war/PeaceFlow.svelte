@@ -51,7 +51,7 @@
 	<p class="choices-note">
 		Accepted by:
 		{#if proposal.votes.filter(v => v.accepted).length === 0}
-			<em>nobody yet</em>
+			nobody yet
 		{:else}
 			{proposal.votes.filter(v => v.accepted)
 				.map(v => playerName(players, v.player_id)).join(', ')}
@@ -68,7 +68,7 @@
 				onclick={() => castVote(true)} disabled={voteBusy}>
 				{voteBusy ? '…' : 'Accept'}
 			</button>
-			<button class="action-btn"
+			<button class="action-btn secondary"
 				onclick={() => castVote(false)} disabled={voteBusy}>
 				{voteBusy ? '…' : 'Reject'}
 			</button>

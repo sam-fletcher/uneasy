@@ -13,6 +13,13 @@
   `war/`: PrepForm, DelayReveal, WarStatus, CostOfBattle, PeaceFlow,
   SurrenderClaims. The parent owns the war-state fetch and refresh
   lifecycle; children receive a slice + `onChanged` callback that re-fetches.
+
+  It draws no card and no title of its own. The war is named where it is
+  reached: by its band at the top of Play, by the title of the sheet the band
+  opens, or by `war/WarName` where neither is on screen. What the declarer wrote
+  is a finished-step line, as in every other plan, and the rest is the war's own
+  steps in the order a player has to act on them. The open step's heading is the
+  page's (MainEventView), so there is exactly one.
 -->
 <script lang="ts">
 	import './planPanel.css';
@@ -25,7 +32,10 @@
 		type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
 	import { warPanelHidden } from '$lib/warGate';
+	import { useSettledInPlay } from './war/sheetContext';
 	import { playerName, parseResolutionData, finaleSlotSpent } from './shared';
+	import FinishedStep from './shared/FinishedStep.svelte';
+	import LogMark from '../LogMark.svelte';
 
 	import PrepForm from './war/PrepForm.svelte';
 	import DelayReveal from './war/DelayReveal.svelte';
@@ -124,6 +134,21 @@
 	const shouldHide = $derived(isWarView && warPanelHidden(plan, war));
 
 	const setActionError = (msg: string) => { actionError = msg; };
+
+	// In a war's sheet while the play area is settling this war (a cost, a vote or a
+	// claim is holding up the row): those forms stay in the play area, and the sheet
+	// says so. See war/sheetContext.ts.
+	const settledInPlay = useSettledInPlay();
+	const holdsRow = $derived(
+		war != null && (war.status === 'ended'
+			? war.open_claims.length > 0
+			: war.outstanding_costs.length > 0 || war.open_proposal != null),
+	);
+	const pointToPlay = $derived(settledInPlay() && holdsRow);
+
+	// What the declarer wrote, as a finished-step line. A long one opens in place.
+	const LONG_NOTE = 40;
+	const notes = $derived((plan?.preparation_notes ?? '').trim());
 </script>
 
 {#if mode === 'prep'}
@@ -131,17 +156,21 @@
 
 {:else if plan && !shouldHide}
 	<div class="plan-panel resolving">
-		<div class="plan-header">
-			<span class="plan-badge resolving-badge">
-				{war?.status === 'ended' ? 'War (ended)'
-					: war?.status === 'active' ? 'War — ongoing'
-					: 'War — pending'}
-			</span>
-			<span class="plan-title">Make War</span>
-			<span class="plan-preparer">by {playerName(players, plan.preparer_id)}</span>
-		</div>
-		{#if plan.preparation_notes}
-			<p class="plan-notes">"{plan.preparation_notes}"</p>
+		{#if notes}
+			<div class="done-steps">
+				{#if notes.length > LONG_NOTE}
+					<FinishedStep>
+						{#snippet mark()}<LogMark family="marginalia" />{/snippet}
+						{preparerName}: “{notes}”
+						{#snippet detail()}<p class="step-quote">“{notes}”</p>{/snippet}
+					</FinishedStep>
+				{:else}
+					<FinishedStep>
+						{#snippet mark()}<LogMark family="marginalia" />{/snippet}
+						{preparerName}: “{notes}”
+					</FinishedStep>
+				{/if}
+			</div>
 		{/if}
 		{#if warError}<ErrorText message={warError} variant="panel" />{/if}
 		{#if actionError}<ErrorText message={actionError} variant="panel" />{/if}
@@ -164,7 +193,13 @@
 		     claim blocks the row, and on a phone the Sides block alone is most of a
 		     screen — Accept / Reject and the payment form used to sit below it, out
 		     of sight. Sides (review, joining) goes last. -->
-		{#if proposal}
+		{#if pointToPlay}
+			<p class="holds-row">
+				This war is holding up the row. Close this sheet to settle it in the play area.
+			</p>
+		{/if}
+
+		{#if proposal && !pointToPlay}
 			<PeaceFlow
 				{proposal}
 				planID={plan.id}
@@ -176,7 +211,7 @@
 			/>
 		{/if}
 
-		{#if myClaims.length > 0}
+		{#if myClaims.length > 0 && !pointToPlay}
 			<SurrenderClaims
 				claims={myClaims}
 				planID={plan.id}
@@ -196,20 +231,30 @@
 				{currentPlayerID}
 				{myPart}
 				{amFullParticipant}
-				begun={plan.row_number != null}
+				settledInPlay={pointToPlay}
 				onChanged={refreshWar}
 				setError={setActionError}
 			/>
 
 			<WarStatus
 				{war}
-				planID={plan.id}
+				{plan}
 				{players}
 				{currentPlayerID}
 				{amParticipant}
+				begun={plan.row_number != null}
 				onChanged={refreshWar}
 				setError={setActionError}
 			/>
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.holds-row {
+		margin: 0;
+		font-size: var(--text-small);
+		line-height: 1.5;
+		color: var(--color-text-secondary);
+	}
+</style>
