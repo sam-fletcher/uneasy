@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- Festivity/InsistFlow.svelte
   Renders when the current player holds an IOU from rolling make. The book
   (p.61) lets them "insist that the host choose one option from the mar list at
@@ -38,7 +37,7 @@
 		You only get one, so pick your moment.
 	</p>
 	{#if error}<ErrorText message={error} variant="panel" />{/if}
-	<button class="action-btn" onclick={insist} disabled={busy}>
+	<button class="action-btn secondary" onclick={insist} disabled={busy}>
 		{busy ? '…' : 'Insist the host take a Mar'}
 	</button>
 </div>
@@ -47,6 +46,6 @@
 	.insist-flow {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: var(--space-3);
 	}
 </style>

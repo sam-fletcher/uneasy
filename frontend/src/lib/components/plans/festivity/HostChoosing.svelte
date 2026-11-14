@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- Festivity/HostChoosing.svelte
   The host's extra-makes control — their spoils for hosting (one make) plus one
   per guest who marred or opted out. Host-only (the parent renders it only for
@@ -12,6 +11,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import Chip from '$lib/components/shared/Chip.svelte';
 	import { hostChoice, type Asset, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import AssetCreationForm from '../../AssetCreationForm.svelte';
@@ -129,22 +129,20 @@
 
 <div class="choices-section">
 	<p class="choices-header">
-		Your extra Makes <span class="muted" style="font-weight:400;">· {taken} of {earned} taken</span>
+		Your extra Makes <span class="taken-count">· {taken} of {earned} taken</span>
 	</p>
 	{#if remaining > 0}
 		<FormField label="Take a Make — pick one">
 			<div class="chip-row">
 				{#each MAKE_OPTS as o}
-					<button
-						type="button"
-						class="chip-btn"
-						class:active={hostPickedChoice === o.key}
+					<Chip
+						selected={hostPickedChoice === o.key}
 						onclick={() => {
 							hostPickedChoice = hostPickedChoice === o.key ? null : o.key;
 							hostAssetID = null;
 							hostDuelTargetID = null;
 						}}
-					>{o.label}</button>
+					>{o.label}</Chip>
 				{/each}
 			</div>
 		</FormField>
@@ -181,7 +179,7 @@
 					onSelect={(p) => (hostDuelTargetID = hostDuelTargetID === p.id ? null : p.id)}
 				/>
 				{#if hostDuelTargetID != null && fest.acceptDuels.includes(hostDuelTargetID)}
-					<p class="choices-note muted" style="margin:0.25rem 0 0;">
+					<p class="choices-note muted">
 						This challenge must be accepted.
 					</p>
 				{/if}
@@ -195,3 +193,11 @@
 		</button>
 	{/if}
 </div>
+
+<style>
+	/* The count after the lead line: plain secondary words, not part of the heading. */
+	.taken-count {
+		color: var(--color-text-secondary);
+		font-size: var(--text-small);
+	}
+</style>
