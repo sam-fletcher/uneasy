@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- TargetPlanDemandOverlay.svelte
   Cross-cutting Stage 4 UI rendered at the top of every per-plan resolve view
   (except Make Demands itself and Make War, which can't be a demand target).
@@ -17,6 +16,7 @@
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
+	import LogMark from '../../LogMark.svelte';
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
 	import { parseLiaiseData } from '$lib/plans/resolutionData/liaise';
 	import {
@@ -267,62 +267,68 @@
 
 {#if demand && draftComplete}
 	<div class="demand-banner">
-		<p class="demand-banner-header">
-			Demand in effect from
-			{playerName(players, demand.preparer_id)}
-		</p>
-		<ul class="demand-winners">
-			{#if winners.perform_steps != null && winners.perform_steps !== plan.preparer_id}
-				<li>
-					{#if amPerformStepsWinner}
-						You will submit this plan's make/mar choices
-						in {playerName(players, plan.preparer_id)}'s place.
-					{:else}
-						{playerName(players, winners.perform_steps)}
-						will submit this plan's make/mar choices in
-						{playerName(players, plan.preparer_id)}'s place.
-					{/if}
-				</li>
-			{/if}
-			{#if keepAssetsLive && winners.keep_assets != null && winners.keep_assets !== plan.preparer_id}
-				<li>
-					Any assets this plan would have given
-					{playerName(players, plan.preparer_id)}
-					go to {playerName(players, winners.keep_assets)} instead.
-				</li>
-			{/if}
-			{#if winners.control_leverage != null && winners.control_leverage !== plan.preparer_id}
-				<li>
-					{#if targetRolls}
-						{playerName(players, winners.control_leverage)}
-						controls leverage of {playerName(players, plan.preparer_id)}'s
-						assets on this plan's roll.
-					{:else}
-						{playerName(players, winners.control_leverage)}
-						drew leverage control, but {PLAN_SHORT[plan.plan_type]} has no roll
-						of its own — that option had no effect here.
-					{/if}
-				</li>
-			{/if}
-			{#if winners.keep_or_change_target != null && winners.keep_or_change_target !== plan.preparer_id}
-				<li>
-					{#if !retargetable}
-						{playerName(players, winners.keep_or_change_target)}
-						drew the choice to keep or change a plan's target, but
-						{PLAN_SHORT[plan.plan_type]} isn't aimed at anything a demand could
-						redirect — that option had no effect here.
-					{:else}
-						{playerName(players, winners.keep_or_change_target)}
-						decides whether this plan keeps or changes its target{retargetHoldsRoll
-							&& !retargetFinalized && !rollClosed
-							? ', and the roll waits until they say'
-							: retargetHoldsPlan && !retargetFinalized && !aimClosed
-								? ', and the plan waits until they say'
-								: ''}.
-					{/if}
-				</li>
-			{/if}
-		</ul>
+		<!-- What the demand does to this plan: plain rules, so no box and no colour. -->
+		<div class="demand-summary">
+			<p class="demand-banner-header">
+				<span class="demand-mark" aria-hidden="true"><LogMark family="demand" /></span>
+				<span>
+					Demand in effect from
+					{playerName(players, demand.preparer_id)}
+				</span>
+			</p>
+			<ul class="demand-winners">
+				{#if winners.perform_steps != null && winners.perform_steps !== plan.preparer_id}
+					<li>
+						{#if amPerformStepsWinner}
+							You will submit this plan's make/mar choices
+							in {playerName(players, plan.preparer_id)}'s place.
+						{:else}
+							{playerName(players, winners.perform_steps)}
+							will submit this plan's make/mar choices in
+							{playerName(players, plan.preparer_id)}'s place.
+						{/if}
+					</li>
+				{/if}
+				{#if keepAssetsLive && winners.keep_assets != null && winners.keep_assets !== plan.preparer_id}
+					<li>
+						Any assets this plan would have given
+						{playerName(players, plan.preparer_id)}
+						go to {playerName(players, winners.keep_assets)} instead.
+					</li>
+				{/if}
+				{#if winners.control_leverage != null && winners.control_leverage !== plan.preparer_id}
+					<li>
+						{#if targetRolls}
+							{playerName(players, winners.control_leverage)}
+							controls leverage of {playerName(players, plan.preparer_id)}'s
+							assets on this plan's roll.
+						{:else}
+							{playerName(players, winners.control_leverage)}
+							drew leverage control, but {PLAN_SHORT[plan.plan_type]} has no roll
+							of its own — that option had no effect here.
+						{/if}
+					</li>
+				{/if}
+				{#if winners.keep_or_change_target != null && winners.keep_or_change_target !== plan.preparer_id}
+					<li>
+						{#if !retargetable}
+							{playerName(players, winners.keep_or_change_target)}
+							drew the choice to keep or change a plan's target, but
+							{PLAN_SHORT[plan.plan_type]} isn't aimed at anything a demand could
+							redirect — that option had no effect here.
+						{:else}
+							{playerName(players, winners.keep_or_change_target)}
+							decides whether this plan keeps or changes its target{retargetHoldsRoll
+								&& !retargetFinalized && !rollClosed
+								? ', and the roll waits until they say'
+								: retargetHoldsPlan && !retargetFinalized && !aimClosed
+									? ', and the plan waits until they say'
+									: ''}.
+						{/if}
+					</li>
+				{/if}
+			</ul>
+		</div>
 
 		<!-- ── Retarget picker ─────────────────────────────────────────── -->
 		{#if showRetargetForm}
@@ -456,42 +462,62 @@
 {/if}
 
 <style>
+	/* The demand's effect on this plan, then the Make Demands winner's own forms.
+	   No box, fill or border anywhere: it is a run of groups with space between. */
 	.demand-banner {
-		border: 1px solid var(--color-warning-ink);
-		background: var(--parchment-50);
-		padding: 0.75rem;
-		margin-bottom: 0.75rem;
-		border-radius: 4px;
-		/* The card-face fill is the app's one light ground, so it needs the ink
-		   colour set with it — inherited text is tuned for dark panels and lands
-		   at about 1.1:1 here. Same pairing as .res-warning in planPanel.css. */
-		color: var(--color-bg);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-5);
 	}
-	/* planPanel.css's muted-note grey is likewise a dark-panel colour; re-ink it
-	   to the warm faint token, which clears AA on this fill. */
-	.demand-banner .choices-note,
-	.demand-banner :global(.ends-note) {
-		color: var(--color-text-faint-warm);
+	.demand-summary {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
 	}
+	/* The lead names the demand, with the demand's own mark (the log's) in front. */
 	.demand-banner-header {
-		margin: 0 0 0.5rem 0;
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-2);
+		margin: 0;
+		font-size: var(--text-body);
 	}
+	.demand-mark {
+		display: flex;
+		align-items: center;
+		flex: none;
+		height: 1lh;
+		color: var(--color-text-secondary);
+	}
+	.demand-mark :global(svg) {
+		display: block;
+		width: 16px;
+		height: 16px;
+	}
+	/* What the demand does is a statement of the rules, so it is plain secondary text. */
 	.demand-winners {
-		margin: 0 0 0.5rem 0;
-		padding-left: 1.25rem;
-		font-size: 0.95em;
+		margin: 0;
+		padding-left: var(--space-5);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--color-text-secondary);
 	}
+	.demand-winners li + li { margin-top: var(--space-2); }
+
 	.demand-form {
-		margin-top: 0.75rem;
-		padding-top: 0.5rem;
-		border-top: 1px dashed var(--parchment-300);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
 	}
-	/* Wraps to one button per line in a narrow column, so both stay full-width
-	   targets on a phone rather than shrinking to sit side by side. */
+	/* The step's buttons: the main one takes the room and the other sits beside
+	   it when there is space. Each is 12rem at least, so in a phone column they
+	   stack and both stay full-width targets. */
 	.demand-actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.5rem;
-		margin-top: 0.5rem;
+		gap: var(--space-2);
 	}
+	.demand-actions > :global(.action-btn) { align-self: stretch; }
+	.demand-actions > :global(.action-btn.primary) { flex: 2 1 12rem; }
+	.demand-actions > :global(.action-btn.secondary) { flex: 1 1 12rem; }
 </style>
