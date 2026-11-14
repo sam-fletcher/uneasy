@@ -173,6 +173,7 @@
 			rowState,
 			activeRoll,
 			maxRefresh,
+			plans,
 			currentPlayerID,
 		});
 		// A peace vote is the same row state as a payment, so it carries the same

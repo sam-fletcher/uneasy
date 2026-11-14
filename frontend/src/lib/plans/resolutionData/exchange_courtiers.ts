@@ -3,7 +3,13 @@
 import type { Plan } from '$lib/api';
 import { parseResolutionData } from '$lib/components/plans/shared';
 
+/** Where the resolution is (game.ExchangeCourtiersPhase). Absent on a plan that has
+ *  not written one yet, which is the opening fair-trade step. */
+export type ECPhase = 'fair_trade' | 'roll' | 'messy_break' | 'riposte' | 'done';
+
 export interface ExchangeCourtiersResolutionData {
+	/** The server's resolution cursor: the one thing that says which step is open. */
+	phase?: ECPhase;
 	fair_trade_asset_id?: number | null;
 	fair_trade_accepted?: boolean | null;
 	messy_break_required?: boolean;

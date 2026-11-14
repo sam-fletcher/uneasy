@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { DiceRoll, RowState, RowStateKind } from '$lib/api';
+import type { DiceRoll, Plan, RowState, RowStateKind } from '$lib/api';
 import {
 	mainEventWaitingOn, type MainEventWaitingOnInput, type Waitee,
 	shakeUpWaitingOn, type ShakeUpWaitingOnInput,
@@ -407,5 +407,129 @@ describe('finale_row_complete', () => {
 		);
 		expect(got.waitees).toEqual([]);
 		expect(got.stepLabel).toBeUndefined();
+	});
+});
+
+
+// ── A resolving plan names its own open step ─────────────────────────────────
+// The server only knows a plan is resolving. The row state names the plan
+// (plan_id), and the plan says which of its steps is open (plans/stepLabels), so
+// the heading reads "Your move — place the addendum", not "the next step".
+
+describe('a plan\'s own step', () => {
+	const decree = (data: Record<string, unknown>): Plan =>
+		({
+			id: 9, plan_type: 'propose_decree', status: 'resolving', preparer_id: 3,
+			resolution_data: JSON.stringify({ propose_decree: data }),
+		}) as Plan;
+
+	it('plan_resolving takes its label from the plan the row names', () => {
+		const got = mainEventWaitingOn(input({
+			rowState: rowState('plan_resolving', { plan_id: 9, acting_player_ids: [3] }),
+			plans: [decree({ outcome: 'make', debate_started: true })],
+		}));
+		expect(playerIDs(got.waitees)).toEqual([3]);
+		expect(got.stepLabel).toBe('place the addendum');
+	});
+
+	it('reads the acting set where one phase has two asks', () => {
+		const plans = [decree({ signatory_id: 4, debate_started: true })];
+		const open = (acting: number[]) =>
+			mainEventWaitingOn(input({ rowState: rowState('plan_resolving', { plan_id: 9, acting_player_ids: acting }), plans })).stepLabel;
+		expect(open([5])).toBe('join or decline the council');
+		expect(open([4])).toBe('end the debate');
+	});
+
+	it('reads only the plan\'s own roll, not another plan\'s', () => {
+		const duel = {
+			id: 9, plan_type: 'propose_duel', status: 'resolving', preparer_id: 3, target_player_id: 4,
+			resolution_data: JSON.stringify({ duel: { phase: 'roll' } }),
+		} as Plan;
+		const rowStateFor = rowState('plan_resolving', { plan_id: 9, acting_player_ids: [3] });
+		const own = roll({ plan_id: 9, outcome: 'mar', stage: 'resolved' });
+		const other = roll({ plan_id: 12, outcome: 'mar', stage: 'resolved' });
+		expect(mainEventWaitingOn(input({ rowState: rowStateFor, plans: [duel], activeRoll: own })).stepLabel)
+			.toBe('take the stakes or spare them');
+		expect(mainEventWaitingOn(input({ rowState: rowStateFor, plans: [duel], activeRoll: other })).stepLabel)
+			.toBe('the next step');
+	});
+
+	it('a plan still pending has no step yet, whatever its data says', () => {
+		const rs = rowState('plan_pending', { plan_id: 9, acting_player_ids: [3] });
+		expect(mainEventWaitingOn(input({ rowState: rs, plans: [{ ...decree({}), status: 'pending' } as Plan] })).stepLabel)
+			.toBe('the next step');
+	});
+
+	it('falls back to "the next step" when the plan cannot say', () => {
+		const rs = rowState('plan_resolving', { plan_id: 9, acting_player_ids: [3] });
+		// Not loaded yet, or not the one the row names.
+		expect(mainEventWaitingOn(input({ rowState: rs })).stepLabel).toBe('the next step');
+		expect(mainEventWaitingOn(input({ rowState: rs, plans: [{ ...decree({}), id: 10 }] })).stepLabel).toBe('the next step');
+		// A moment with no step for a player (the dice landed, the result is not recorded yet).
+		expect(mainEventWaitingOn(input({
+			rowState: rs, plans: [decree({ debate_started: true })], activeRoll: roll({ plan_id: 9, outcome: 'make', stage: 'resolved' }),
+		})).stepLabel).toBe('the next step');
+	});
+
+	it('a Liaise phase kind names the phase, and keeps "the liaison" without the plan', () => {
+		const liaise = {
+			id: 9, plan_type: 'clandestinely_liaise', status: 'resolving', preparer_id: 3,
+			resolution_data: JSON.stringify({ liaise: { phase: 'things_we_share' } }),
+		} as Plan;
+		const rs = rowState('liaise_resolving', { plan_id: 9, acting_player_ids: [3, 4] });
+		expect(mainEventWaitingOn(input({ rowState: rs, plans: [liaise] })).stepLabel).toBe('things we share');
+		expect(mainEventWaitingOn(input({ rowState: rs })).stepLabel).toBe('the liaison');
+	});
+
+	it('an Exchange Courtiers target\'s kind names the ask, and keeps its own label without the plan', () => {
+		const courtiers = {
+			id: 9, plan_type: 'exchange_courtiers', status: 'resolving', preparer_id: 3, target_player_id: 4,
+			resolution_data: JSON.stringify({ exchange_courtiers: { phase: 'messy_break' } }),
+		} as Plan;
+		const rs = rowState('await_courtier_response', { plan_id: 9, acting_player_ids: [4] });
+		expect(mainEventWaitingOn(input({ rowState: rs, plans: [courtiers] })).stepLabel).toBe('break a marginalia');
+		expect(mainEventWaitingOn(input({ rowState: rs })).stepLabel).toBe('respond to the exchange');
+	});
+
+	it('a Seek Answers question names the question alone, or the question and the picks when both are open', () => {
+		const seek = {
+			id: 9, plan_type: 'seek_answers', status: 'resolving', preparer_id: 3,
+			resolution_data: JSON.stringify({
+				make_mar_choices: [{ option: 'ask_question' }, { option: 'declare_truth' }],
+				seek_answers: { pre_roll_done: true, pending_question: { target_id: 4, question: 'Why?', vetoable: false } },
+			}),
+		} as Plan;
+		const at = (acting: number[]) =>
+			mainEventWaitingOn(input({ rowState: rowState('await_question_answer', { plan_id: 9, acting_player_ids: acting }), plans: [seek] })).stepLabel;
+		expect(at([4])).toBe('answer the question');
+		expect(at([4, 3])).toBe('the question and the picks');
+		// Not loaded yet: the kind's own label.
+		expect(mainEventWaitingOn(input({ rowState: rowState('await_question_answer', { acting_player_ids: [4, 3] }) })).stepLabel)
+			.toBe('answer the question');
+	});
+
+	it('a Make Introductions mar names the newcomers when the actor and an author are both owed', () => {
+		const mi = (outcomes: unknown[]) => ({
+			id: 9, plan_type: 'make_introductions', status: 'resolving', preparer_id: 3,
+			resolution_data: JSON.stringify({
+				choice_auto_applied: true,
+				make_introductions: { peer_count: 2, mar_pending: true, mar_outcomes: outcomes },
+			}),
+		}) as Plan;
+		const rs = rowState('await_introductions_marginalia', { plan_id: 9, acting_player_ids: [3, 4] });
+		const author = { draft_id: 'a', outcome: 'other_retinue', author_player_id: 4, done: false };
+		expect(mainEventWaitingOn(input({ rowState: rs, plans: [mi([author])] })).stepLabel).toBe('the newcomers');
+		expect(mainEventWaitingOn(input({ rowState: rs, plans: [mi([author, { ...author, draft_id: 'b' }])] })).stepLabel)
+			.toBe('describe a newcomer');
+		expect(mainEventWaitingOn(input({ rowState: rs })).stepLabel).toBe('describe a newcomer');
+	});
+
+	it('leaves every kind that is not a plan\'s own umbrella to its own label', () => {
+		// The plan is named but is not asked: these kinds already say one thing each.
+		const got = mainEventWaitingOn(input({
+			rowState: rowState('await_duel_bout', { plan_id: 9, acting_player_ids: [4] }),
+			plans: [decree({ outcome: 'make', debate_started: true })],
+		}));
+		expect(got.stepLabel).toBe('the bout');
 	});
 });
