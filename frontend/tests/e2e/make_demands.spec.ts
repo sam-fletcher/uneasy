@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { expectWaitingOn, stepHeading, waitingOnNames } from './helpers';
+import { expectHeading, expectWaitingOn, stepHeading, waitingOnNames } from './helpers';
 import * as H from './helpers/make_demands';
 
 // Regression specs for what the 12-plan UX audit and the Make Demands audit
@@ -101,9 +101,9 @@ test('the draft: duds are greyed with a reason while a live option remains, and 
 	const second = first === 'alice' ? 'bob' : 'alice';
 	const [pick, other] = [pages[first], pages[second]];
 
-	await expect(pick.getByText('Your turn to pick.')).toBeVisible();
-	await expect(other.getByText(`Waiting for ${first} to pick…`)).toBeVisible();
-	await expect(pages.carol.getByText(`Waiting for ${first} to pick…`)).toBeVisible();
+	await expectHeading(pick, 'Your move — draft pick');
+	await expectHeading(other, `Waiting on ${first} — draft pick`);
+	await expectHeading(pages.carol, `Waiting on ${first} — draft pick`);
 	await expect(pages.carol.locator('.choice-card')).toHaveCount(0);
 	await expect(other.locator('.choice-card')).toHaveCount(0);
 
@@ -132,7 +132,7 @@ test('the draft: duds are greyed with a reason while a live option remains, and 
 	await expect.poll(async () => draftOf(f)).toEqual([[first, 'control_leverage']]);
 
 	// The second picker takes the other live option; now only duds remain.
-	await expect(other.getByText('Your turn to pick.')).toBeVisible();
+	await expectHeading(other, 'Your move — draft pick');
 	await card(other, 'Perform steps').click();
 	await other.getByRole('button', { name: 'Pick option' }).click();
 	await expect.poll(async () => (await draftOf(f)).length).toBe(2);
@@ -388,7 +388,7 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 		await expectWaitingOn(p, ['bob'], who);
 	}
 	await expectWaitingOn(bob, ['bob'], 'bob');
-	await expect(carol.getByText('bob is choosing make/mar options…')).toBeVisible();
+	await expectHeading(carol, 'Waiting on bob — choose the options');
 	await expect(carol.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 
 	// Only bob can act: alice, though it is her plan, is refused.
@@ -423,7 +423,7 @@ test('perform steps: the preparer sees a wait line, not a picker she cannot subm
 	const f = await H.seedMD({ target: 'seek_answers' });
 	await performStepsOpen(f);
 	const { alice } = await H.openPages(browser, f);
-	await expect(alice.getByText('bob is choosing make/mar options…')).toBeVisible();
+	await expectHeading(alice, 'Waiting on bob — choose the options');
 	await expect(alice.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 });
 
@@ -437,7 +437,7 @@ test('a marred demand: the target preparer places the counter-demand, the demand
 	// Only alice — whose plan was demanded against — is asked.
 	await expect(alice.getByText('The demand was marred. You may place a free counter-demand')).toBeVisible();
 	for (const p of [bob, carol]) {
-		await expect(p.getByText('Waiting for alice to place a counter-demand…')).toBeVisible();
+		await expectHeading(p, 'Waiting on alice — the counter-demand');
 		await expect(p.getByRole('button', { name: 'Place counter-demand' })).toHaveCount(0);
 	}
 	await expect(bob.getByRole('button', { name: 'Complete plan' })).toHaveCount(0);

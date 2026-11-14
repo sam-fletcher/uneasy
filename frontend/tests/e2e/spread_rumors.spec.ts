@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, expectHeading } from './helpers';
 import { E2E } from './baseUrl';
 import { expectRollOpen } from './helpers/roll_open';
 
@@ -241,7 +241,7 @@ test('make: pre-roll narration opens the roll; a take needs consent, a repeat re
 	// The preparer states the rumor and how it spreads; nobody else can, and no
 	// roll exists until she does.
 	await expect(alice.getByText('Spread the rumor', { exact: true })).toBeVisible({ timeout: 10_000 });
-	await expect(bob.getByText('is about to state the rumor')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — state the rumor');
 	const early = await t.alice.request.get(`/api/tables/${t.gameID}/rolls/active`);
 	expect((await early.json()).roll ?? null).toBeNull();
 
@@ -262,7 +262,7 @@ test('make: pre-roll narration opens the roll; a take needs consent, a repeat re
 
 	// Alice drives the picker; bob and cara see it inert and are told who is choosing.
 	await expect(more(alice, TAKE)).toBeEnabled({ timeout: 10_000 });
-	await expect(bob.getByText('alice is choosing options…')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — choose the options');
 	await expect(more(bob, TAKE)).toHaveCount(1);
 	await expect(more(bob, TAKE)).toBeDisabled();
 
@@ -394,8 +394,8 @@ test('mar: the target-asset owner is the actor, writes the counter-rumor, and th
 	// the preparer, who used to be named for the whole mar branch.
 	await expect(bob.getByText('The rumor backfires')).toBeVisible({ timeout: 10_000 });
 	expect(await actingIDs(t.alice.request, t.gameID)).toEqual([t.players.bob]);
-	await expect(alice.getByText('bob is writing the rumor that spreads instead…')).toBeVisible();
-	await expect(cara.getByText('bob is writing the rumor that spreads instead…')).toBeVisible();
+	await expectHeading(alice, 'Waiting on bob — write the counter-rumor');
+	await expectHeading(cara, 'Waiting on bob — write the counter-rumor');
 	// The counter-rumor is about alice's main character, and says so.
 	await expect(bob.getByText("alice's main character", { exact: true }).first()).toBeVisible();
 
@@ -415,7 +415,7 @@ test('mar: the target-asset owner is the actor, writes the counter-rumor, and th
 	// The table reads the counter-rumor; the failed rumor is not what spreads.
 	await expect(alice.locator('.rumor-quote', { hasText: COUNTER })).toBeVisible({ timeout: 10_000 });
 	await expect(alice.getByText('The rumor that backfired')).toBeVisible();
-	await expect(cara.getByText('bob is choosing options…')).toBeVisible();
+	await expectHeading(cara, 'Waiting on bob — choose the options');
 
 	// Bob picks a take and a leverage. The take is from the PREPARER's assets.
 	await more(bob, 'Take an asset from alice').click();
@@ -490,7 +490,6 @@ test('mar: a zero-pick commit closes the counter-rumor and hands the wait on', a
 
 	// The panel no longer asks anyone for options.
 	await expect(alice.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
-	await expect(alice.getByText('bob is choosing options…')).toHaveCount(0);
 
 });
 

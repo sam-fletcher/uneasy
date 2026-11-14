@@ -91,6 +91,16 @@ export function stepHeading(page: Page) {
 }
 
 /**
+ * The open step's heading, word for word: "Waiting on alice — place the addendum",
+ * "Your move — the roll". The plan names its own step (plans/stepLabels), so this is
+ * where a spec says which step it expects the table to be on. It replaced the
+ * "alice is resolving X…" and "Dice roll in progress…" lines the panels used to print.
+ */
+export async function expectHeading(page: Page, text: string | RegExp): Promise<void> {
+  await expect(stepHeading(page)).toHaveText(text);
+}
+
+/**
  * Who the game is waiting on, as the player row says it: a clock on each chip
  * the game waits on (bright gold on your own). The chip's accessible name carries
  * the same words ("— your move", "— their move"), so this reads the names, not

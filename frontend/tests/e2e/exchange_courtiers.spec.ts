@@ -1,5 +1,5 @@
 import { test, expect, type APIResponse, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, expectHeading } from './helpers';
 import {
 	seedECGame, runScene, prepareEC, resolveEC, openAll, offerTrade, declineAndForce,
 	ownerOf, planStatus, expectPlanLog, closeContextsAfterEach, PEER, type ECOptions,
@@ -243,8 +243,8 @@ test('make: the targeted peer transfers, the target owes a messy break, then it 
 	// The peer moved; the target now owes a break on one of alice's assets.
 	await expect.poll(() => ownerOf(g, g.peers.bob)).toBe(g.ids.alice);
 	await expect(bob.getByText("The exchange was messy. You may break one of alice's marginalia")).toBeVisible();
-	await expect(alice.getByText('Waiting for bob to break a marginalia…')).toBeVisible();
-	await expect(carol.getByText('Waiting for bob to break a marginalia…')).toBeVisible();
+	await expectHeading(alice, 'Waiting on bob — break a marginalia');
+	await expectHeading(carol, 'Waiting on bob — break a marginalia');
 	expect(await planStatus(g, planID)).toBe('resolving');
 
 	// bob breaks the sole marginalia on alice's courtier (destroying it).
@@ -365,20 +365,19 @@ test('after the offer, a bystander is not addressed as the one who asked', async
 });
 
 // Regression (audit Tier 6): a non-acting seat is always told who the plan is
-// waiting on. Pinned by shape (a wait line naming the actor), not wording.
+// waiting on, and for what. The open step's heading says it.
 test('every seat that is not acting is told who the plan is waiting on', async ({ browser }) => {
 	const { g, planID } = await resolvingGame(browser, { easyTarget: true });
 	const { alice, bob, carol } = await openAll(g);
-	const waitLine = (page: Page, who: string) => page.locator('.ft-prompt').filter({ hasText: who });
 
-	// A bystander before the offer: waiting on bob.
-	await expect(waitLine(carol, 'bob')).toBeVisible();
+	// A bystander before the offer: waiting on bob, who owes the offer.
+	await expectHeading(carol, 'Waiting on bob — propose a fair trade');
 
 	// The preparer while the target chooses the mar response: waiting on bob.
 	await offerTrade(g, planID);
 	await declineAndForce(g, planID, 1); // difficulty 2, result 1: a mar by 1
 	await expect(bob.getByRole('button', { name: 'Apply choices' })).toBeVisible();
-	await expect(waitLine(alice, 'bob')).toBeVisible();
+	await expectHeading(alice, 'Waiting on bob — choose how to respond to the mar');
 });
 
 test('the target is told the preparer is choosing, during a make', async ({ browser }) => {
@@ -387,7 +386,7 @@ test('the target is told the preparer is choosing, during a make', async ({ brow
 	await offerTrade(g, planID);
 	await declineAndForce(g, planID, 2); // difficulty 2, result 2: a make
 	await expect(alice.getByRole('button', { name: 'Apply choices' })).toBeVisible();
-	await expect(bob.locator('.ft-prompt').filter({ hasText: 'alice' })).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — say how the trade went');
 });
 
 // Regression (audit Tier 6): Riposte is described to its chooser, the target;

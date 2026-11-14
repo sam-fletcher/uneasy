@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { cleanupGameAfterEach, expectWaitingOn } from './helpers';
+import { cleanupGameAfterEach, expectWaitingOn, stepHeading } from './helpers';
 import { E2E } from './baseUrl';
 import * as H from './helpers/make_demands';
 import {
@@ -249,8 +249,8 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	const bobConfidant = g.peers.bob;
 	expect(assets.find(a => a.id === aliceConfidant)!.secret_count).toBe(0);
 
-	// Positive first: the bystander's table is live and shows the liaison under way.
-	await expect(carol.getByText('A clandestine liaison is underway.')).toBeVisible({ timeout: 10_000 });
+	// Positive first: the bystander's table is live, and the heading says what the pair is on.
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — secrets we keep$/, { timeout: 10_000 });
 	await expect(section(alice, 'Secrets we keep')).toBeVisible();
 	const framesBefore = carolFrames.length;
 
@@ -320,7 +320,7 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	await keepSecretInPanel(bob, 'Bob Confidant');
 	await expect(section(alice, 'Things we share')).toBeVisible({ timeout: 10_000 });
 	await expect(section(bob, 'Things we share')).toBeVisible();
-	await expect(carol.getByText('A clandestine liaison is underway.')).toBeVisible();
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — things we share$/);
 	for (const site of ['list', 'one', 'record'] as const) {
 		expect(await pickAt(site, 'carol'), `${site}: still public once the phase moves on`).toBe(aliceConfidant);
 	}
@@ -358,8 +358,8 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	const artifact = (await fetchAssets(g)).find(a => a.name === "alice's artifact")!;
 	expect(artifact.owner_id).toBe(g.ids.alice);
 
-	// The bystander watches: a wait line and no controls.
-	await expect(carol.getByText('A clandestine liaison is underway.')).toBeVisible({ timeout: 10_000 });
+	// The bystander watches: the heading says what the pair is on, and there are no controls.
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — things we share$/, { timeout: 10_000 });
 	await expect(carol.getByRole('button', { name: 'Submit share choice' })).toHaveCount(0);
 	await expect(section(alice, 'Things we share')).toBeVisible();
 
@@ -390,7 +390,7 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	expect((await asset(g, artifact.id, 'carol')).owner_id, 'the gift changed hands').toBe(g.ids.bob);
 	expect((await asset(g, g.peers.alice, 'carol')).is_destroyed, "alice's own Confidant is untouched").toBe(false);
 	await expectLogged(g, 'from their partner as a gift.', 'carol');
-	await expect(carol.getByText('A clandestine liaison is underway.')).toBeVisible();
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — when will I see you again\?$/);
 
 	// Both reveal 0: no follow-up, and the plan resolves as a make by itself.
 	for (const page of [alice, bob]) {
@@ -412,16 +412,16 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	expect(ended, 'the resolution line follows it').toBeGreaterThan(parted);
 	expect(log.some(b => b.includes('Clandestinely Liaise succeeded')), 'the custom line replaces the tautology').toBe(false);
 
-	// Nobody is left owing the liaison anything; the bystander's wait line is gone.
-	await expect(carol.getByText('A clandestine liaison is underway.')).toHaveCount(0);
-	await expect(alice.getByText('When will I see you again?')).toHaveCount(0);
+	// Nobody is left owing the liaison anything; the heading no longer names its last phase.
+	await expect(stepHeading(carol)).not.toContainText('when will I see you again');
+	await expect(stepHeading(alice)).not.toContainText('when will I see you again');
 });
 
 test('outcomes: update rewrites the meeting peer, and a parting delay schedules the next meeting', async ({ browser }) => {
 	const g = await seedLiaise(browser, 'share');
 	track(g.gameID);
 	const { alice, carol } = await openAll(g);
-	await expect(carol.getByText('A clandestine liaison is underway.')).toBeVisible({ timeout: 10_000 });
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — things we share$/, { timeout: 10_000 });
 
 	const aliceShare = await chooseShare(alice, "Update partner's meeting peer");
 	await pickCard(aliceShare, 'Bob Confidant');
@@ -533,7 +533,7 @@ test('parting: one player revealing 0 cancels the follow-up for both', async ({ 
 	track(g.gameID);
 	const { carol } = await openAll(g);
 	await expect(section(carol, 'When will I see you again?')).toHaveCount(0); // a bystander is shown no reveal
-	await expect(carol.getByText('A clandestine liaison is underway.')).toBeVisible({ timeout: 10_000 });
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — when will I see you again\?$/, { timeout: 10_000 });
 
 	await post(g, 'alice', `/api/plans/${g.planID}/redelay-reveal`, { face: 3 }, 200);
 	expect((await fetchPlan(g, 'carol')).status, 'one face in: still open').toBe('resolving');

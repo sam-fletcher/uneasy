@@ -87,7 +87,7 @@ test('a guest rolls a make through the UI: the choice lands, they hold an IOU, t
 
 	await bob.getByRole('button', { name: 'Roll · difficulty 2' }).click();
 	await expect.poll(async () => Object.keys((await festivity(g, planID)).guest_roll_ids ?? {})).toEqual([String(g.ids.bob)]);
-	await expect(bob.getByText('Rolling… resolve the dice above.')).toBeVisible();
+	await expectRollOpen(bob);
 
 	// The dice land on a make; bob is offered the make list.
 	const rollID = (await festivity(g, planID)).guest_roll_ids![String(g.ids.bob)];
