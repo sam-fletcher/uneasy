@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- SpreadRumorsPanel.svelte
   Prep + resolve UI for Spread Rumors (Tier 1, Esteem).
 
@@ -21,6 +20,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
+	import '$lib/components/shared/tapRow.css';
 	import {
 		preparePlan, makeChoice, completePlan,
 		breakTarget, requestTakeConsent, respondTakeConsent, hideSource, forfeitSpreadRumorsStep,
@@ -41,6 +41,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import Stepper from './shared/Stepper.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
@@ -619,7 +620,7 @@
 						: 'What are people starting to say?'}></textarea>
 			</label>
 
-			<label class="sr-secret-toggle">
+			<label class="tap-row sr-secret-toggle">
 				<input type="checkbox" bind:checked={prepKeepSecret} disabled={readOnly} />
 				<span>
 					Keep it secret for now
@@ -683,7 +684,7 @@
 			     though it were the rumor. After it, the STATED rumor is. -->
 			{#if preRollDone && srData.rumor_text}
 				<p class="rumor-label">{rollOutcome === 'mar' ? 'The rumor that backfired' : 'The rumor, as stated'}</p>
-				<blockquote class="rumor-quote">{srData.rumor_text}</blockquote>
+				<p class="rumor-quote">“{srData.rumor_text}”</p>
 				{#if srData.how_spread}
 					<p class="rumor-target">How it's spreading: {srData.how_spread}</p>
 				{/if}
@@ -697,11 +698,11 @@
 				<!-- (The preparer's own draft is not repeated here: it is already in the
 				     field below, where they are about to restate it.) -->
 				<p class="rumor-label">{preRollDone ? 'Rumor' : 'As prepared — a draft, restated before the roll'}</p>
-				<blockquote class="rumor-quote">{plan.preparation_notes}</blockquote>
+				<p class="rumor-quote">“{plan.preparation_notes}”</p>
 			{/if}
 			{#if srData.counter_rumor_text}
 				<p class="rumor-label">The rumor that spreads instead</p>
-				<blockquote class="rumor-quote">{srData.counter_rumor_text}</blockquote>
+				<p class="rumor-quote">“{srData.counter_rumor_text}”</p>
 			{/if}
 			{#if plan.target_asset_id && rollOutcome !== 'mar'}
 				<p class="rumor-target">
@@ -793,7 +794,7 @@
 				{/if}
 
 				<!-- The callout: the one thing the victim actually decides. -->
-				<div class="consent-box">
+				<div class="consent-group">
 					<p class="choices-header">Consent needed</p>
 					<p class="choices-note">
 						{playerName(players, pendingConsent.requested_by)} wants to take
@@ -848,7 +849,7 @@
 				<p class="choices-note">
 					Selected: <strong>{takeSelected.length}</strong> / {k}
 				</p>
-				<div class="form-actions" style="display:flex;gap:0.5rem;">
+				<div class="form-actions start">
 					<button class="action-btn primary"
 						onclick={() => onRequestConsent(plan, rollOutcome!)}
 						disabled={choicesBusy || takeSelected.length !== k}>
@@ -966,7 +967,7 @@
 								btAssetID = parent?.id ?? null;
 							}}
 						/>
-						{#if btWarn}<p class="res-warning">{btWarn}</p>{/if}
+						{#if btWarn}<Notice>{btWarn}</Notice>{/if}
 						{#if isActor}
 							{#if btMarginaliaAssets.length === 0}
 								<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
@@ -1077,82 +1078,70 @@
 {/if}
 
 <style>
-	/* The rumor as a pull-quote — in-world prose, set apart from the action UI.
-	   A muted left bar distinguishes it from the accent bar on the consent box. */
-	.rumor-summary { display: flex; flex-direction: column; gap: 0.3rem; }
+	/* The rumor as the table heard it, in quotation marks. Quoted player text is
+	   not styled (the style guide keeps italic for asset names), so it is body
+	   text with no margin of its own. */
+	.rumor-summary { display: flex; flex-direction: column; gap: var(--space-2); }
 	.rumor-label {
-		font-size: 0.7rem;
+		font-size: var(--text-label);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: var(--color-text-faint);
 		margin: 0;
 	}
-	.rumor-quote {
-		margin: 0;
-		padding: 0.1rem 0 0.1rem 0.7rem;
-		border-left: 3px solid var(--color-border-strong);
-		font-family: var(--font-serif);
-		font-style: italic;
-		font-size: 0.95rem;
-		line-height: 1.4;
-		color: var(--color-text);
-	}
+	.rumor-quote { margin: 0; }
 	.rumor-target {
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
-	/* Take-asset consent callout shown to the victim. A single left accent bar
-	   marks it as the actionable block — no nested boxes, and the type scale
-	   reuses the shared .choices-header / .choices-note sizes. */
-	.consent-box {
-		border: 1px solid var(--color-border);
-		border-left: 3px solid var(--color-accent);
-		border-radius: 6px;
-		background: var(--color-surface-2);
-		padding: 0.6rem 0.75rem;
+	/* The take-asset consent, shown to the victim: a group in the open step, not a
+	   box. Its heading says what is asked; the group only needs space around it. */
+	.consent-group {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: var(--space-2);
 	}
 	.consent-assets {
 		margin: 0;
-		padding-left: 1.2rem;
-		font-size: 0.85rem;
+		padding-left: var(--space-4);
+		font-size: var(--text-small);
 	}
-	.consent-box .form-actions button { min-height: 44px; }
 
-	/* Secondary (no-consent) effects listed above the callout. */
+	/* Secondary (no-consent) effects listed above the consent. A rule, not a result. */
 	.effect-fyi {
 		margin: 0;
-		padding-left: 1.2rem;
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
+		padding-left: var(--space-4);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 		line-height: 1.4;
 	}
 
-	/* Tappable "keep it secret" row: ≥44px target, generous hit area on mobile. */
+	/* "Keep it secret": a checkbox and its words, not a box. The row is the shared
+	   tap row (tapRow.css: at least 44px, a hairline under it). Its hover and
+	   focus are written here because tapRow's are for buttons and links, and a
+	   label takes focus through its checkbox. The checkbox is the default one the
+	   rest of the app uses. */
 	.sr-secret-toggle {
-		display: flex;
 		align-items: flex-start;
-		gap: 0.6rem;
-		min-height: 44px;
-		padding: 0.5rem 0.6rem;
-		border: 1px solid var(--color-border);
-		border-radius: 6px;
-		background: var(--color-surface-2);
+		gap: var(--space-3);
 		cursor: pointer;
 	}
+	.sr-secret-toggle:hover { background: var(--color-surface); }
+	.sr-secret-toggle:focus-within {
+		outline: 2px solid var(--color-you);
+		outline-offset: -2px;
+	}
 	.sr-secret-toggle input[type='checkbox'] {
-		width: 1.15rem;
-		height: 1.15rem;
-		margin-top: 0.15rem;
+		width: 1.25rem;
+		height: 1.25rem;
+		margin: 0;
 		flex: none;
 		cursor: pointer;
 	}
-	.sr-secret-toggle span { display: flex; flex-direction: column; gap: 0.15rem; }
-	.sr-secret-toggle small { color: var(--color-text-muted); line-height: 1.35; }
+	.sr-secret-toggle span { display: flex; flex-direction: column; gap: var(--space-1); }
+	.sr-secret-toggle small { color: var(--color-text-secondary); line-height: 1.35; }
 
 	/* Choices-applied list styling */
 </style>
