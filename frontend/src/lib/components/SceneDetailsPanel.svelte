@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!--
 	SceneDetailsPanel.svelte
 
@@ -10,6 +9,12 @@
 
 	Each present character is rendered as an expandable AssetCardSelectable
 	in display-only mode so anyone can review marginalia mid-scene.
+
+	Drawn as the redesign's play steps are: no box and no tint, just small
+	headings and the scene's own words, with the step gap between groups. The
+	step's heading ("Your move — the scene", "Waiting on otto — the scene") is
+	drawn by the page above this panel, so none is drawn here. The only boxes
+	are the game pieces (the cards) and the buttons.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -27,7 +32,9 @@
 	import { playerColor } from '$lib/playerColor';
 	import { useSecretCounts } from '$lib/secretCountsContext';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
+	import LogMark from './LogMark.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 
 	interface Props {
 		gameID: string | number;
@@ -151,16 +158,20 @@
 
 <section class="scene-details">
 	{#if scene.prompt}
-		<div class="prompt">
-			<span class="prompt-label">Prompt</span>
-			<p>{scene.prompt}</p>
+		<div class="group">
+			<h3 class="label">Prompt</h3>
+			<p class="prompt">{scene.prompt}</p>
 		</div>
 	{/if}
 
+	<!-- Where and when, then whose scene it is. The place wears the house
+	     scene mark (the quotation marks the Public Record and the chat use for
+	     a scene) in place of the 📍 emoji, which fell back to a different
+	     system font on every platform. -->
 	<header class="scene-header">
-		<div class="loc-time">
-			<span class="loc">
-				📍
+		<p class="place">
+			<span class="place-mark"><LogMark family="scene" /></span>
+			<span class="place-name">
 				{#if locationAsset}
 					{locationAsset.name}
 				{:else if scene.location_custom}
@@ -169,27 +180,28 @@
 					Unknown
 				{/if}
 			</span>
-			<!-- A turn-scene carries a chip XOR a note; a plan-scene neither, so
-			     render nothing rather than an empty slot. Printing both is what
-			     made a note-only scene read "Moments later — at night" before
-			     migration 054 — a duration the player never picked. -->
-			{#if scene.time_elapsed}
-				<span class="time">{timeLabels[scene.time_elapsed]}</span>
-			{:else if scene.time_note}
-				<span class="time"><em>{scene.time_note}</em></span>
-			{/if}
-		</div>
-		<div class="focus-line">
+		</p>
+		<!-- A turn-scene carries a chip XOR a note; a plan-scene neither, so
+		     render nothing rather than an empty slot. Printing both is what
+		     made a note-only scene read "Moments later — at night" before
+		     migration 054 — a duration the player never picked. -->
+		{#if scene.time_elapsed}
+			<p class="time">{timeLabels[scene.time_elapsed]}</p>
+		{:else if scene.time_note}
+			<p class="time">{scene.time_note}</p>
+		{/if}
+		<p class="focus-line">
 			Focus:
+			<PlayerShape player={focusPlayer} />
 			<span class="focus-name" style:color={colorFor(scene.focus_player_id)}>
 				{focusPlayer?.display_name ?? 'Unknown'}
 			</span>
-		</div>
+		</p>
 	</header>
 
 	{#if locationAsset}
-		<div class="block">
-			<h3>Location</h3>
+		<div class="group">
+			<h3 class="label">Location</h3>
 			<AssetCardSelectable
 				asset={locationAsset}
 				ownerColor={colorFor(locationAsset.owner_id)}
@@ -198,8 +210,8 @@
 		</div>
 	{/if}
 
-	<div class="block">
-		<h3>Present</h3>
+	<div class="group">
+		<h3 class="label">Present</h3>
 		<div class="peer-list">
 			{#if focusMainCharacter}
 				<div class="peer-row">
@@ -229,7 +241,7 @@
 							{#if lbl.claimable && !isFocusPlayer && currentPlayerID != null}
 								<button
 									type="button"
-									class="claim-btn"
+									class="action-btn secondary claim-btn"
 									onclick={() => claim(p.peer_asset_id)}
 									disabled={busyAssetID === p.peer_asset_id}
 								>
@@ -245,6 +257,7 @@
 	</div>
 
 	{#if isFocusPlayer}
+		<!-- The step's one main button. -->
 		<div class="end-bar">
 			<button
 				type="button"
@@ -262,94 +275,104 @@
 </section>
 
 <style>
+	/* A run of groups with the step gap between them: no frame, no tint. The
+	   page's scene panel is the scroller, so this doesn't scroll on its own; the
+	   bottom space keeps the last control off the tab bar. */
 	.scene-details {
 		display: flex;
 		flex-direction: column;
-		gap: 0.7rem;
-		padding: 0.4rem 0.2rem 0.6rem;
-		overflow-y: auto;
-		min-height: 0;
+		gap: var(--space-4);
+		padding-bottom: var(--space-4);
+		flex-shrink: 0;
 	}
 
-	.prompt {
-		background: var(--color-surface-active);
-		border: 1px solid var(--color-border-warm);
-		border-left: 3px solid var(--color-accent);
-		border-radius: 5px;
-		padding: 0.5rem 0.65rem;
-	}
-	.prompt-label {
-		display: block;
-		font-size: 0.7rem;
-		color: var(--color-accent);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		margin-bottom: 0.15rem;
-	}
-	.prompt p {
-		margin: 0;
-		font-family: var(--font-serif);
-		font-size: 1rem;
-		color: var(--color-text);
-		line-height: 1.5;
-	}
-
-	.scene-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 0.5rem;
-		flex-wrap: wrap;
-	}
-
-	.loc-time {
+	/* A group: a small heading, then what it holds, a closer gap apart. */
+	.group {
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
-		font-size: 0.88rem;
+		gap: var(--space-2);
+		min-width: 0;
+	}
+
+	/* The small heading over a group (Prompt, Location, Present): label size,
+	   capitals, secondary. The game's gold is for the step's own heading, which
+	   the page draws above this panel. */
+	.label {
+		margin: 0;
+		font-size: var(--text-label);
+		font-weight: 400;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
 		color: var(--color-text-secondary);
 	}
-	.time { font-size: 0.82rem; color: var(--color-text-tertiary-warm); }
 
-	.focus-line { font-size: 0.82rem; color: var(--color-text-muted); }
-
-	.block { display: flex; flex-direction: column; gap: 0.4rem; }
-	.block h3 {
+	/* The prompt, as step text. */
+	.prompt {
 		margin: 0;
-		font-size: 0.78rem;
-		color: var(--color-accent);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		font-size: var(--text-body);
+		line-height: 1.5;
+		color: var(--color-text);
 	}
 
-	.peer-list { display: flex; flex-direction: column; gap: 0.4rem; }
+	/* Where, when and whose: three short lines, the place at step-text size and
+	   the other two a step down. */
+	.scene-header {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.scene-header p { margin: 0; }
+
+	.place {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		font-size: var(--text-body);
+		color: var(--color-text);
+	}
+	/* The scene mark, in the same slot the record gives it: 16px, faint. */
+	.place-mark {
+		display: flex;
+		flex: none;
+		width: 16px;
+		height: 16px;
+		color: var(--color-text-faint);
+	}
+	.place-name { min-width: 0; }
+
+	.time,
+	.focus-line {
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+	.focus-line {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
+	}
+
+	/* A card and its button are one row, closer together than the rows are to
+	   each other, so "Take over" reads as the tail of the card above it and not
+	   of the next one. */
+	.peer-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
 
 	.peer-row {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: var(--space-2);
 	}
 
-	.claim-btn {
-		align-self: flex-end;
-		padding: 0.4rem 0.7rem;
-		min-height: 36px;
-		border-radius: 5px;
-		border: 1px solid var(--color-accent);
-		background: var(--color-surface-gold-dim);
-		color: var(--color-accent);
-		font-size: 0.82rem;
-		cursor: pointer;
-	}
-	.claim-btn:hover { background: var(--color-accent); color: var(--color-bg); }
-	.claim-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+	/* The button sits at its card's far edge. The house secondary button, 44px. */
+	.claim-btn { align-self: flex-end; }
 
 	.end-bar {
 		display: flex;
-		gap: 0.6rem;
+		flex-wrap: wrap;
+		gap: var(--space-3);
 		align-items: center;
-		padding-top: 0.4rem;
-		border-top: 1px solid var(--color-surface-2);
 	}
-
 </style>
