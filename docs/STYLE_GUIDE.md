@@ -780,9 +780,41 @@ because you want that shape.
   someone else takes it, with nothing to fill in and no turn to lose. That
   means writing copy the whole table can read: a body that only ever says
   "you decide…" about controls a watcher can't touch is a sign the copy
-  needs widening, not that the panel needs hiding. Where the screen greys
-  out for watchers (scene setup's read-only mirror), the disclosure stays at
-  full brightness — it is the one thing there they can still operate.
+  needs widening, not that the panel needs hiding. Where a screen mirrors
+  someone else's controls (scene setup's read-only form), the disclosure is
+  not disabled along with them — it is the one thing there a watcher can
+  still operate.
+
+### Scenes
+
+Scene setup (`SceneSetupForm.svelte`) and the scene's panel (`SceneDetailsPanel.svelte`)
+are the Play pane's two scene steps. They were never mocked up, so they apply the rules
+above as written; the questions those rules left open are in `docs/work/questions/`. The page
+draws the step's heading above both ("Your move — set the scene", "Waiting on otto — the
+scene"), so neither draws one.
+
+- **A small heading, then words, not a panel.** The prompt, Where, When, Who else is here,
+  Location and Present are each a label (12px, capitals, secondary) with the group's content
+  under it. The prompt's words are step text (16px, main colour). There is no box, wash or
+  rule around any of it; the step gap (16px) separates the groups and 8px separates a label
+  from what it heads. A label is secondary, since the game's gold belongs to the step's heading.
+- **Controls come from the recipes.** The six durations are compact `Chip`s (three to a line
+  on a phone, wrapping without a width query); a place and a time can also be typed, in
+  a 44px field on the raised surface with the control border and 16px type. A typed place
+  and a picked holding are alternatives, as are a typed time and a chip: choosing one clears
+  the other, and the picked card or chip is the only thing that wears the selected border.
+  Holdings and peers are the shared asset cards. A scene's one main button is "Begin Scene"
+  (greyed until a place and a time are chosen) or, for the focus player, "End Scene"; "Take over"
+  is a secondary button at the far edge of the peer it claims.
+- **The scene header** names the place beside the scene mark (`LogMark` family `scene`, the
+  mark the Public Record and the chat give a scene), the time in plain words (a chip's label
+  or the typed note, never both, never italic), and the focus player as their shape and their
+  name in their colour.
+- **Watchers see the same form, not a dimmed one.** The setup form mirrors the focus player's
+  draft with every control disabled, and each control draws its own disabled look. The help
+  row is not disabled.
+- **The page scrolls them.** Neither panel is a scroller of its own, and neither pads
+  itself beyond the space that keeps its last control off the tab bar.
 
 ### Pages outside a game
 
