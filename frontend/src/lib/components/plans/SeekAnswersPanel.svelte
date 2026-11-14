@@ -37,6 +37,7 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
+	import Notice from '$lib/components/shared/Notice.svelte';
 	import Stepper from './shared/Stepper.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
@@ -579,7 +580,7 @@
 				<p class="choices-header">
 					{playerName(players, plan.preparer_id)} asks you a question:
 				</p>
-				<blockquote class="q-quote">{pendingQuestion.question}</blockquote>
+				<p class="q-quote">“{pendingQuestion.question}”</p>
 				<label class="form-label">
 					Your truthful answer:
 					<textarea rows={3} bind:value={answerText} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
@@ -669,7 +670,7 @@
 									brAssetID = parent?.id ?? null;
 								}}
 							/>
-							{#if brWarn}<p class="res-warning">{brWarn}</p>{/if}
+							{#if brWarn}<Notice>{brWarn}</Notice>{/if}
 							{#if canSubflow}
 								{#if brResourcesWithMarginalia.length === 0}
 									<p class="choices-note muted">No resource can be broken — this pick has no valid target.</p>
@@ -759,7 +760,7 @@
 									Waiting for {playerName(players, pendingQuestion.target_id)} to answer
 									{#if pendingQuestion.vetoable}or veto{' '}{/if}{canSubflow ? 'your' : 'the'} question:
 								</p>
-								<blockquote class="q-quote">{pendingQuestion.question}</blockquote>
+								<p class="q-quote">“{pendingQuestion.question}”</p>
 							{:else}
 								{#if askVetoedTargetID != null}
 									<p class="choices-note muted">
@@ -813,7 +814,7 @@
 									maAssetID = parent?.id ?? null;
 								}}
 							/>
-							{#if maWarn}<p class="res-warning">{maWarn}</p>{/if}
+							{#if maWarn}<Notice>{maWarn}</Notice>{/if}
 							{#if canSubflow}
 								{#if penaltyResources.length === 0}
 									<p class="choices-note muted">None of your resources can be broken — this penalty can't be applied.</p>
@@ -873,4 +874,9 @@
 <style>
 	/* .resolve-mirror-wrap / .resolved-so-far now live in planPanel.css — three
 	   panels share them (Seek Answers, Chronicle Histories, Spread Rumors). */
+
+	/* The question put to a player, in quotation marks. Quoted player text is not
+	   styled (the style guide keeps italic for asset names), so it is body text
+	   with no margin of its own: the same as the rumor in Spread Rumors. */
+	.q-quote { margin: 0; }
 </style>
