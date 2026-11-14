@@ -153,7 +153,7 @@
 		<p class="choices-header">
 			Result:
 			<span class="outcome-{rollOutcome}">
-				{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
+				{rollOutcome === 'make' ? 'Make' : 'Mar'}
 			</span>
 		</p>
 		<p class="choices-note">
@@ -177,12 +177,14 @@
 		{:else if amWinner && !claimIsAChoice}
 			<!-- A mar where the take is every stake: take them all, or spare. -->
 			{#if takeError}<ErrorText message={takeError} variant="panel" />{/if}
-			<button class="action-btn primary" onclick={submitTake} disabled={takeBusy}>
-				{takeBusy ? '…' : `Take ${effectiveTake === 1 ? 'the stake' : `all ${effectiveTake} stakes`}`}
-			</button>
-			<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
-				Spare {playerName(players, loserID)}
-			</button>
+			<div class="step-actions">
+				<button class="action-btn primary" onclick={submitTake} disabled={takeBusy}>
+					{takeBusy ? '…' : `Take ${effectiveTake === 1 ? 'the stake' : `all ${effectiveTake} stakes`}`}
+				</button>
+				<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
+					Spare {playerName(players, loserID)}
+				</button>
+			</div>
 			<EndsNote text="Either choice is the last step: Propose Duel resolves when you submit." />
 		{:else if amWinner}
 			<p class="choices-note">
@@ -199,16 +201,21 @@
 				onSelectMulti={(ids) => (takeSelectionIDs = ids)}
 			/>
 			{#if takeError}<ErrorText message={takeError} variant="panel" />{/if}
-			<button class="action-btn primary"
-				onclick={submitTake}
-				disabled={takeBusy || takeSelectionIDs.length !== effectiveTake}>
-				{takeBusy ? '…' : `Take ${takeSelectionIDs.length}/${effectiveTake}`}
-			</button>
-			{#if !marMayBeSpared}<EndsNote text="This is the last step: Propose Duel resolves when you submit." />{/if}
-			{#if marMayBeSpared}
-				<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
-					Spare {playerName(players, loserID)} instead
+			<div class="step-actions">
+				<button class="action-btn primary"
+					onclick={submitTake}
+					disabled={takeBusy || takeSelectionIDs.length !== effectiveTake}>
+					{takeBusy ? '…' : `Take ${takeSelectionIDs.length}/${effectiveTake}`}
 				</button>
+				{#if marMayBeSpared}
+					<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
+						Spare {playerName(players, loserID)} instead
+					</button>
+				{/if}
+			</div>
+			{#if !marMayBeSpared}
+				<EndsNote text="This is the last step: Propose Duel resolves when you submit." />
+			{:else}
 				<EndsNote text="Either choice is the last step: Propose Duel resolves when you submit." />
 			{/if}
 		{:else}
@@ -218,3 +225,16 @@
 		{/if}
 	{/if}
 </div>
+
+<style>
+	/* The main button takes the room and the way out sits beside it. A long label
+	   ("Spare alice instead") wraps inside its button rather than pushing it down. */
+	.step-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+	.step-actions > :global(.action-btn) { align-self: stretch; }
+	.step-actions > :global(.action-btn.primary) { flex: 2 1 10rem; }
+	.step-actions > :global(.action-btn.secondary) { flex: 1 1 6rem; }
+</style>
