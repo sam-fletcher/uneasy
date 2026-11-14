@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Asset, DuelBout, DuelStake } from '$lib/api';
-import { computeAccumulated, stakeLabel } from './shared';
+import { computeAccumulated, setAsideDice, stakeLabel } from './shared';
 
 const PREP = 1;
 const TARG = 2;
@@ -113,6 +113,35 @@ describe('computeAccumulated', () => {
 			targ: [],
 			pending: [],
 		});
+	});
+});
+
+describe('setAsideDice', () => {
+	// The tray shows whose each tied die is, so the owner travels with it: the
+	// declarer's die and the responder's die of every tied bout.
+	it('names the owner of each tied die', () => {
+		const tie = bout({ declarer_id: PREP, responder_id: TARG, declarer_die: 4, responder_die: 4, is_match: true });
+		expect(setAsideDice([tie], PREP)).toEqual([
+			{ die: 4, ownerID: PREP },
+			{ die: 4, ownerID: TARG },
+		]);
+	});
+
+	it('follows who declared each tied bout', () => {
+		const first = bout({ id: 1, declarer_id: PREP, responder_id: TARG, declarer_die: 2, responder_die: 2, is_match: true });
+		const second = bout({ id: 2, bout_number: 2, declarer_id: TARG, responder_id: PREP, declarer_die: 5, responder_die: 5, is_match: true });
+		expect(setAsideDice([first, second], PREP).map((d) => d.ownerID)).toEqual([PREP, TARG, TARG, PREP]);
+	});
+
+	it('empties once a non-tie bout has a winner, as computeAccumulated does', () => {
+		const tie = bout({ id: 1, declarer_die: 3, responder_die: 3, is_match: true });
+		const win = bout({ id: 2, bout_number: 2, declarer_die: 6, responder_die: 1, winner_id: PREP });
+		expect(setAsideDice([tie, win], PREP)).toEqual([]);
+		expect(setAsideDice([tie], PREP).map((d) => d.die)).toEqual(computeAccumulated([tie], PREP).pending);
+	});
+
+	it('is empty when preparerID is null', () => {
+		expect(setAsideDice([bout({ declarer_die: 3, responder_die: 3, is_match: true })], null)).toEqual([]);
 	});
 });
 

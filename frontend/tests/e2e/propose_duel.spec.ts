@@ -1,4 +1,4 @@
-import { test, expect, request as pwRequest, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, request as pwRequest, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { cleanupGameAfterEach } from './helpers';
 import { E2E } from './baseUrl';
 import {
@@ -52,6 +52,14 @@ async function stakeAsset(page: Page, assetName: string) {
 }
 
 const track = cleanupGameAfterEach();
+
+// What each die in `scope` shows a player: its face, or "?" while it is hidden
+// (a die nobody can read yet draws the die mark and no number). The page must
+// never carry a face the viewer is not allowed to read, so this is the
+// privacy check's reading of the DOM.
+const dieReads = (scope: Locator): Promise<string[]> =>
+	scope.locator('.die-tile').evaluateAll(els => els.map(e => e.querySelector('.face')?.textContent?.trim() ?? '?'));
+
 
 test('propose duel: setup → staking → bouts → final roll → settles itself', async ({ browser }) => {
 	// ── Seed a main_event game with alice (focus) + bob ──────────────────────
@@ -137,7 +145,7 @@ test('propose duel: setup → staking → bouts → final roll → settles itsel
 	// (String form on purpose: it normalises whitespace, whereas a regex matches the
 	// raw DOM text, which keeps the template's line breaks.)
 	await expect(bobBout.getByText('calling higher')).toBeVisible();
-	await expect(bobBout.locator('.open-call')).toContainText('Alice Peer');
+	await expect(bobBout.locator('.notice[data-tone="info"]')).toContainText('Alice Peer');
 	// …and the call is on the table's record too.
 	const feed = await bobCtx.request.get(`/api/tables/${game_id}/posts`);
 	expect(feed.ok(), `posts: ${await feed.text()}`).toBeTruthy();
@@ -359,15 +367,15 @@ test('bouts: each viewer sees only their own dice — over the API, the DOM and 
 	// bystander's whole view show "?". (Positive check first: the tracker rendered.)
 	const aBout = section(alice, 'Bout');
 	await expect(aBout.locator('.duel-side.is-mine .stake-line')).toHaveCount(2, { timeout: 10_000 });
-	const aliceShown = await aBout.locator('.duel-side.is-mine .die').allTextContents();
+	const aliceShown = await dieReads(aBout.locator('.duel-side.is-mine .stake-line'));
 	expect(aliceShown.map(Number).sort()).toEqual(aliceDice.map(s => s.hidden_die as number).sort());
-	await expect(aBout.locator('.duel-side:not(.is-mine) .die')).toHaveText(['?', '?']);
+	await expect.poll(() => dieReads(aBout.locator('.duel-side:not(.is-mine) .stake-line'))).toEqual(['?', '?']);
 	const bobDice = (await duelState(g, 'bob')).stakes.filter(s => s.player_id === g.ids.bob);
-	const bobShown = await section(bob, 'Bout').locator('.duel-side.is-mine .die').allTextContents();
+	const bobShown = await dieReads(section(bob, 'Bout').locator('.duel-side.is-mine .stake-line'));
 	expect(bobShown.map(Number).sort()).toEqual(bobDice.map(s => s.hidden_die as number).sort());
 	const cBout = section(carol, 'Bout');
 	await expect(cBout.locator('.duel-side .stake-line')).toHaveCount(4, { timeout: 10_000 });
-	const carolDice = await cBout.locator('.duel-side .stake-line .die').allTextContents();
+	const carolDice = await dieReads(cBout.locator('.duel-side .stake-line'));
 	expect(carolDice.filter(d => d !== '?'), 'a bystander sees no die value').toEqual([]);
 
 	// Alice opens through the UI with her first stake. Bob's page updates live.
@@ -375,11 +383,11 @@ test('bouts: each viewer sees only their own dice — over the API, the DOM and 
 	await aBout.locator('.stake-line.pick', { hasText: 'Alice Peer 1' }).click();
 	await aBout.getByRole('button', { name: 'Lower' }).click();
 	await aBout.getByRole('button', { name: 'Declare' }).click();
-	await expect(bBout.locator('.open-call')).toContainText('Alice Peer 1', { timeout: 10_000 });
+	await expect(bBout.locator('.notice[data-tone="info"]')).toContainText('Alice Peer 1', { timeout: 10_000 });
 	await expect(bBout.getByText('calling lower')).toBeVisible();
 	await expect(bBout.getByText('you can see your own die, not theirs', { exact: false })).toBeVisible();
 	await expect(cBout.getByText('must answer', { exact: false })).toBeVisible();
-	await expect(bBout.locator('.duel-side:not(.is-mine) .die')).toHaveText(['?', '?']);
+	await expect.poll(() => dieReads(bBout.locator('.duel-side:not(.is-mine) .stake-line'))).toEqual(['?', '?']);
 
 	// The call is public — on the wire and on the log — but no die travels with it.
 	// Every frame each page has received so far (duel.*, plan.*, roll.*, row state,
@@ -404,9 +412,9 @@ test('bouts: each viewer sees only their own dice — over the API, the DOM and 
 	await bBout.getByRole('button', { name: 'Respond' }).click();
 	for (const page of [alice, bob, carol]) {
 		await expect(section(page, 'Bout 2 of 2')).toBeVisible({ timeout: 10_000 });
-		const resolved = section(page, 'Bout').locator('.stake-line.resolved .die');
+		const resolved = section(page, 'Bout').locator('.stake-line.resolved');
 		await expect(resolved).toHaveCount(2);
-		for (const d of await resolved.allTextContents()) expect(d).toMatch(/^[1-6]$/);
+		for (const d of await dieReads(resolved)) expect(d).toMatch(/^[1-6]$/);
 	}
 	const round = await logHas(g, 'carol', 'Bout 1: alice rolled');
 	expect(round).toMatch(/bob rolled \d/);
@@ -416,7 +424,7 @@ test('bouts: each viewer sees only their own dice — over the API, the DOM and 
 	expect(nowBob.filter(s => s.player_id === g.ids.alice && !s.is_resolved).map(s => s.hidden_die)).toEqual([null]);
 	const nowCarol = (await duelState(g, 'carol')).stakes;
 	expect(nowCarol.filter(s => !s.is_resolved).map(s => s.hidden_die)).toEqual([null, null]);
-	await expect(section(bob, 'Bout').locator('.duel-side:not(.is-mine) .stake-line:not(.resolved) .die')).toHaveText(['?']);
+	await expect.poll(() => dieReads(section(bob, 'Bout').locator('.duel-side:not(.is-mine) .stake-line:not(.resolved)'))).toEqual(['?']);
 	// Bout 2 is under way and the bystander is told who declares it. (Whether
 	// each duellist's own page agrees is the 'both duellists agree' test below.)
 	// The responder's own page always has the new initiative (their click refreshes
