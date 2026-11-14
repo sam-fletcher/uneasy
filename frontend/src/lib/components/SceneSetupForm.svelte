@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!--
 	SceneSetupForm.svelte
 
@@ -15,12 +14,21 @@
 	- Who else: peer cards (multi-select). Focus player's own main character
 	  is implicit and excluded.
 
-	The follow-on prompt (or fallback) is shown read-only at the top so the
-	focus player has the rules' guidance in front of them while filling out
-	the form.
+	The follow-on prompt (or fallback) is shown at the top, as a small heading
+	and the prompt's words, so the focus player has the rules' guidance in front
+	of them while filling out the form. It has no box and no tint, since it is
+	only read: the boxes in this form are its controls and its cards.
+
+	The step's own heading ("Your move — set the scene" or "Waiting on otto — set
+	the scene") is drawn by the page above this form, so none is drawn here.
 
 	Submit posts to /scenes; on success the parent is responsible for
 	loading the active scene state (the WS event will also push it).
+
+	A watcher sees the same form, mirrored from the focus player's draft. It is
+	not faded: every control draws its own disabled look (a picked chip or card
+	keeps its gold border and takes faint text), and that is what says "not
+	yours". The help disclosure is not disabled with them.
 -->
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
@@ -30,6 +38,7 @@
 	import { playerColor } from '$lib/playerColor';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
+	import Chip from '$lib/components/shared/Chip.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import HelpDisclosure from '$lib/components/shared/HelpDisclosure.svelte';
 
@@ -51,8 +60,8 @@
 		 * When true, render the form structure for non-focus players to
 		 * see, but disable all inputs and hide the submit button. Selections
 		 * displayed come from `draft` (the focus player's in-flight
-		 * snapshot, broadcast over the WS). The waiting-on banner already
-		 * names the focus player.
+		 * snapshot, broadcast over the WS). The step heading above the form
+		 * already names the focus player.
 		 */
 		readOnly?: boolean;
 		/**
@@ -257,10 +266,10 @@
 	}
 </script>
 
-<section class="scene-setup" class:readonly={readOnly}>
-	<div class="prompt">
-		<span class="prompt-label">Prompt</span>
-		<p>{prompt}</p>
+<section class="scene-setup">
+	<div class="group">
+		<h3 class="label">Prompt</h3>
+		<p class="prompt">{prompt}</p>
 	</div>
 
 	<!-- Setting a scene is the one recurring turn in the game with no rules
@@ -279,9 +288,10 @@
 	     turn; neither prologue one does. The "Need ideas?" prompts do read as
 	     next-time advice for a watcher, which is the whole cost.
 
-	     It keeps full brightness inside the greyed read-only panel, unlike
-	     every other block here: it is the one thing on this screen a watcher
-	     can actually operate, and dimming it would say otherwise. -->
+	     A watcher's form is a mirror of the focus player's draft, with each
+	     control in its own disabled look. This disclosure is not one of those
+	     controls: it is the one thing on this screen a watcher can actually
+	     operate, so it is drawn as it is for the focus player. -->
 	<HelpDisclosure title="How to set a good scene" id="scene-setup-help-body">
 		<p class="help-lede">
 			You're choosing the moment the table plays out next. Everyone acts it
@@ -300,8 +310,8 @@
 		</ul>
 	</HelpDisclosure>
 
-	<div class="section">
-		<h3>Where</h3>
+	<div class="group">
+		<h3 class="label">Where</h3>
 		{#if holdings.length === 0}
 			<p class="hint">No holdings yet — use a custom location below.</p>
 		{:else}
@@ -319,45 +329,46 @@
 			</div>
 		{/if}
 
-		<div class="custom-panel" class:active={displayCustomLocation.trim() !== ''}>
-			<label>
-				<input
-					type="text"
-					placeholder="Another location"
-					value={displayCustomLocation}
-					oninput={(e) => onCustomInput((e.target as HTMLInputElement).value)}
-					maxlength={TEXT_LIMITS.NAME}
-					disabled={readOnly}
-				/>
-			</label>
-		</div>
+		<!-- A typed place and a picked holding are alternatives (picking one
+		     clears the other), so there is no frame to say which is chosen: the
+		     picked card wears the gold border, and typed words are their own
+		     proof. -->
+		<input
+			type="text"
+			aria-label="Another location"
+			placeholder="Another location"
+			value={displayCustomLocation}
+			oninput={(e) => onCustomInput((e.target as HTMLInputElement).value)}
+			maxlength={TEXT_LIMITS.NAME}
+			disabled={readOnly}
+		/>
 	</div>
 
-	<div class="section">
-		<h3>When</h3>
-		<!-- The chips are all "later than the last scene", which the opening
-		     scene has nothing to be. Only the free-text note is offered there,
+	<div class="group">
+		<h3 class="label">When</h3>
+		<!-- Six chips in a row of several, so the compact size: three to a
+		     line on a phone. They are all "later than the last scene", which
+		     the opening scene has nothing to be. Only the free-text note is
+		     offered there,
 		     and its placeholder carries the example instead of a hint line —
 		     Where is required with no marker either, so an extra line here
 		     would make this the one over-explained field in the form. -->
 		{#if !isFirstScene}
 			<div class="chips">
-				{#each timeOptions as opt}
-					<button
-						type="button"
-						class="chip"
-						class:active={displayTimeElapsed === opt.value}
+				{#each timeOptions as opt (opt.value)}
+					<Chip
+						compact
+						selected={displayTimeElapsed === opt.value}
 						onclick={() => selectTime(opt.value)}
 						disabled={readOnly}
 					>
 						{opt.label}
-					</button>
+					</Chip>
 				{/each}
 			</div>
 		{/if}
 		<input
 			type="text"
-			class="note"
 			aria-label={isFirstScene ? 'When the scene opens' : 'Another time'}
 			placeholder={isFirstScene ? 'At night? At the coronation?' : 'Another time'}
 			value={displayTimeNote}
@@ -367,8 +378,8 @@
 		/>
 	</div>
 
-	<div class="section">
-		<h3>Who else is here</h3>
+	<div class="group">
+		<h3 class="label">Who else is here</h3>
 		<div class="cards">
 			{#if focusMainCharacter}
 				<AssetCardSelectable
@@ -402,209 +413,140 @@
 	{#if error}<ErrorText message={error} />{/if}
 
 	{#if !readOnly}
-		<div class="actions">
-			<button
-				type="button"
-				class="action-btn primary"
-				onclick={submit}
-				disabled={!canSubmit || submitting}
-			>
-				{submitting ? '…' : 'Begin Scene'}
-			</button>
-		</div>
+		<!-- The step's one main button. Greyed out until the form can be
+		     submitted (a place and a time), which is how Send reads before there
+		     is text. -->
+		<button
+			type="button"
+			class="action-btn primary"
+			onclick={submit}
+			disabled={!canSubmit || submitting}
+		>
+			{submitting ? '…' : 'Begin Scene'}
+		</button>
 	{/if}
 </section>
 
 <style>
+	/* The form is a run of groups with the step gap between them: no frame, no
+	   tint. The page's scene panel is the scroller, so the form doesn't scroll
+	   on its own; the bottom space keeps the last control off the tab bar. */
 	.scene-setup {
 		display: flex;
 		flex-direction: column;
-		gap: 0.9rem;
-		padding: 0.5rem 0.2rem 0.8rem;
-		overflow-y: auto;
-		min-height: 0;
+		gap: var(--space-4);
+		padding-bottom: var(--space-4);
+		flex-shrink: 0;
 	}
 
+	/* A group: a small heading, then what it asks, a closer gap apart. */
+	.group {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		min-width: 0;
+	}
+
+	/* The small heading over a group (Prompt, Where, When, Who else): label
+	   size, capitals, secondary. The game's gold is for the step's own heading,
+	   which the page draws above this form. */
+	.label {
+		margin: 0;
+		font-size: var(--text-label);
+		font-weight: 400;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--color-text-secondary);
+	}
+
+	/* The prompt, as step text. */
 	.prompt {
-		background: var(--color-surface-active);
-		border: 1px solid var(--color-border-warm);
-		border-left: 3px solid var(--color-accent);
-		border-radius: 5px;
-		padding: 0.55rem 0.7rem;
-	}
-	.scene-setup.readonly .prompt {
-		background: var(--color-bg);
-		border: 1px solid var(--color-surface-2);
-		border-left: 3px solid var(--color-border-strong);
-	}
-	.scene-setup.readonly .prompt-label,
-	.scene-setup.readonly .section h3 {
-		color: var(--color-text-muted);
-	}
-	.prompt-label {
-		display: block;
-		font-size: 0.7rem;
-		color: var(--color-accent);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		margin-bottom: 0.2rem;
-	}
-	.prompt p {
 		margin: 0;
-		font-size: 0.92rem;
+		font-size: var(--text-body);
+		line-height: 1.5;
 		color: var(--color-text);
-		line-height: 1.4;
 	}
 
-	.section { display: flex; flex-direction: column; gap: 0.5rem; }
-	.section h3 {
-		margin: 0;
-		font-size: 0.82rem;
-		color: var(--color-accent);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-
-	/* Help body. The sub-head wears the section h3's SHAPE — same uppercase,
-	   same tracking, a size down — so it reads as a heading in the form's own
-	   voice. It does not wear its GOLD: with the panel open, gold uppercase
-	   has to keep meaning "this is one of the three fields you are filling
-	   in", and a heading inside the help is commentary, not structure. The
-	   accent stays the form's. */
+	/* Help body. HelpDisclosure owns the frame and the gap between these;
+	   everything here is the prose itself, one size down from step text since it
+	   is reference, and secondary except for the lede. No margins: the body is a
+	   flex column with a gap, so a margin here would double the space. */
 	.help-lede {
 		color: var(--color-text);
-		font-size: 0.95rem;
-		line-height: 1.45;
+		font-size: var(--text-body);
+		line-height: 1.5;
 	}
 	.help-text {
 		color: var(--color-text-secondary);
-		font-size: 0.88rem;
-		line-height: 1.4;
+		font-size: var(--text-small);
+		line-height: 1.5;
 	}
-	/* No margins on either paragraph: HelpDisclosure's body flexes with a gap
-	   and zeroes the browser default, so a margin here would double the space. */
 	h4 {
-		margin: 0.25rem 0 0;
-		font-size: 0.72rem;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		margin: 0;
+		font-size: var(--text-small);
+		font-weight: 400;
+		color: var(--color-text);
 	}
-	/* The house prose-bullet list (planPanel.css's .resolved-so-far-list and
-	   ChoicesApplied's .choices-summary-list): disc markers, indented to
-	   1.1rem with margin-left and padding zeroed, rather than riding the
-	   browser's 40px padding — which is what made this list sit a whole
-	   indent step right of every other block in the panel.
-
-	   Two deviations from those two, both because this list is prose rather
-	   than a subordinate summary of a form's state: it takes .help-text's
-	   0.88rem/secondary instead of their 0.82rem/muted, since it is peer to
-	   the paragraphs above it; and its top margin is 0, because the
-	   disclosure body is a flex column whose gap already spaces it off the
-	   heading (theirs sit in normal flow under a label). */
+	/* The house prose-bullet list (planPanel.css's .resolved-so-far-list): disc
+	   markers indented one step, margin and padding zeroed rather than riding
+	   the browser's 40px padding. Its type matches the paragraph above it. */
 	.help-list {
-		margin: 0 0 0 1.1rem;
+		margin: 0 0 0 var(--space-4);
 		padding: 0;
 		list-style: disc;
 		color: var(--color-text-secondary);
-		font-size: 0.88rem;
-		line-height: 1.4;
+		font-size: var(--text-small);
+		line-height: 1.5;
 	}
 	/* li + li, not a margin on every li: a leading margin on the first item
 	   collapses out through the zero-padding ul and reopens the gap the line
-	   above just closed. Same reason PushBlockedHelp's steps do it this way. */
-	.help-list li + li { margin-top: 0.3rem; }
+	   above just closed. */
+	.help-list li + li { margin-top: var(--space-1); }
 
+	/* "Nothing to pick here" lines: what the game is saying, so secondary and
+	   plain (italic is for asset names). */
 	.hint {
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
 		margin: 0;
-		font-style: italic;
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
 
 	.cards {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: var(--space-2);
 	}
 
-	.custom-panel {
-		border: 1px solid var(--color-surface-2);
-		border-radius: 5px;
-		background: var(--color-surface-sunken);
-		padding: 0.55rem 0.7rem;
-	}
-	.custom-panel.active { border-color: var(--color-accent); background: var(--color-surface-active); }
-	.scene-setup.readonly .custom-panel.active { border-color: var(--color-surface-2); background: var(--color-surface-sunken); }
-
-	.custom-panel label { display: flex; flex-direction: column; gap: 0.3rem; }
-
+	/* A text field standing on the page: the raised surface and the neutral
+	   control border, 16px type so iOS doesn't zoom the page when it takes
+	   focus, and 44px tall. Disabled is the mirror a watcher sees: faint
+	   words and the quiet border. */
 	input[type='text'] {
-		font-size: 0.9rem;
-		padding: 0.5rem 0.6rem;
-		border-radius: 5px;
-		border: 1px solid var(--color-border-strong);
-		background: var(--color-surface-2);
-		color: inherit;
-		min-height: 44px;
+		box-sizing: border-box;
+		width: 100%;
+		min-height: var(--size-tap);
+		padding: 0 var(--space-3);
+		border: 1px solid var(--color-border-control);
+		border-radius: var(--radius-control);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font: inherit;
+		font-size: var(--text-body);
 	}
-	input[type='text']:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+	input[type='text']::placeholder { color: var(--color-text-faint); }
+	input[type='text']:focus-visible {
+		outline: 2px solid var(--color-you);
+		outline-offset: 2px;
+	}
+	input[type='text']:disabled {
+		border-color: var(--color-border);
+		color: var(--color-text-faint);
+		cursor: not-allowed;
+	}
 
 	.chips {
 		display: flex;
 		flex-wrap: wrap;
-		justify-content: center;
-		gap: 0.35rem;
+		gap: var(--space-2);
 	}
-
-	.chip {
-		padding: 0.45rem 0.7rem;
-		min-height: 44px;
-		border-radius: 999px;
-		border: 1px solid var(--color-border-strong);
-		background: var(--color-surface-sunken);
-		color: var(--color-text-secondary);
-		font-size: 0.85rem;
-		cursor: pointer;
-		box-sizing: border-box;
-	}
-
-	/* Squeezed column (a 360 phone gives record-phase content exactly 300;
-	   docs/STYLE_GUIDE.md "Layout widths"): pack the time chips three per
-	   row. Container query, not viewport — the column is what matters. */
-	@container column (max-width: 300px) {
-		.chips {
-			gap: 0.3rem;
-		}
-
-		.chip {
-			flex: 0 0 calc(33.333% - 0.2rem);
-			min-width: 0;
-			padding: 0.35rem 0.45rem;
-			font-size: 0.74rem;
-			line-height: 1.1;
-			white-space: nowrap;
-		}
-	}
-	.chip.active {
-		background: var(--color-accent);
-		color: var(--color-bg);
-		border-color: var(--color-accent);
-	}
-	/* Read-only: drop the chips to label greys and lose the pointer, so they
-	   read as a record of the focus player's choices, not as buttons. The
-	   active one stays a step brighter — that is the only thing marking it. */
-	.scene-setup.readonly .chip {
-		color: var(--color-text-muted);
-		cursor: default;
-	}
-	.scene-setup.readonly .chip.active {
-		background: var(--color-border-strong);
-		color: var(--color-text-secondary);
-		border-color: var(--color-border-strong);
-	}
-
-	.note { width: 100%; }
-
-	.actions { display: flex; gap: 0.5rem; }
 </style>
