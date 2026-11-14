@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- MakeWar/SurrenderClaims.svelte
   Per-claim asset pickers for surrendered opponents' remaining assets.
   Only renders when the current player holds at least one open claim.
@@ -48,7 +47,7 @@
 	{#each claims as c (c.id)}
 		{@const claimable = targetAssetsFor(c.surrendered_id)}
 		{@const picked = claimAssetByClaim[c.id]}
-		<div style="display:block;margin-bottom:0.5rem;">
+		<div class="claim">
 			<CardPicker
 				label={`${playerName(players, c.surrendered_id)} surrendered. Pick one of their assets to take`}
 				items={claimable}
@@ -57,7 +56,7 @@
 				selected={picked ?? null}
 				onSelect={(id) => (claimAssetByClaim = { ...claimAssetByClaim, [c.id]: id })}
 			/>
-			<button class="action-btn primary" style="margin-top:0.4rem;"
+			<button class="action-btn primary"
 				onclick={() => submitClaim(c.id, c.surrendered_id)}
 				disabled={claimBusy || claimAssetByClaim[c.id] == null}>
 				{claimBusy ? '…' : 'Claim'}
@@ -66,3 +65,11 @@
 		</div>
 	{/each}
 </div>
+
+<style>
+	.claim {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+</style>

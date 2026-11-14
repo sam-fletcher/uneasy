@@ -1,4 +1,3 @@
-<!-- tokens: not migrated -->
 <!-- BattleCostForm.svelte
   Shared cost-of-battle picker used in two places:
    - cost mode: per-row cost-of-battle (break / leverage / propose peace),
@@ -8,6 +7,7 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import type { Player, Asset } from '$lib/api';
+	import Chip from '$lib/components/shared/Chip.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
 	import FormField from '../FormField.svelte';
@@ -117,19 +117,14 @@
 
 <FormField label="How will you pay?">
 	<div class="chip-row">
-		<button type="button" class="chip-btn"
-			class:active={kind === 'break_asset'}
-			onclick={() => setKind('break_asset')}>Break an asset</button>
-		<button type="button" class="chip-btn"
-			class:active={kind === 'leverage_two'}
-			onclick={() => setKind('leverage_two')}>Leverage two</button>
+		<Chip selected={kind === 'break_asset'} onclick={() => setKind('break_asset')}>Break an asset</Chip>
+		<Chip selected={kind === 'leverage_two'} onclick={() => setKind('leverage_two')}>Leverage two</Chip>
 		{#if allowPeace}
-			<button type="button" class="chip-btn"
-				class:active={kind === 'propose_peace'}
-				onclick={() => setKind('propose_peace')}>Propose peace</button>
+			<Chip selected={kind === 'propose_peace'} onclick={() => setKind('propose_peace')}>Propose peace</Chip>
 		{/if}
 	</div>
-	<p class="choices-note muted" style="margin:0.25rem 0 0;">
+	<!-- What the pick means, under it: the same two steps as joining a war. -->
+	<p class="pay-note">
 		{#if kind === 'break_asset'}
 			Tear one of your marginalia.
 		{:else if kind === 'leverage_two'}
@@ -154,7 +149,7 @@
 {:else if kind === 'leverage_two'}
 	{#if unleveraged.length < 2}
 		<FormField label="Pick two assets to leverage">
-			<p class="choices-note muted">You don't have two un-leveraged assets available.</p>
+			<p class="pay-note">You don't have two un-leveraged assets available.</p>
 		</FormField>
 	{:else}
 		<CardPicker
@@ -176,14 +171,14 @@
 {/if}
 
 {#if allowSurrender}
-	<label class="form-label" style="display:flex;align-items:center;gap:0.5rem;"
+	<label class="surrender-label"
 		title={kind === 'propose_peace'
 			? "Doesn't apply when proposing peace."
 			: 'After this payment is recorded you will be marked surrendered. ' +
 			  'Each opposing non-surrendered opponent will get to claim one of your assets.'}>
 		<input type="checkbox" bind:checked={surrender}
 			disabled={kind === 'propose_peace'} />
-		<span class:muted={kind === 'propose_peace'}>
+		<span class:inert={kind === 'propose_peace'}>
 			Surrender after this payment
 		</span>
 	</label>
@@ -193,3 +188,24 @@
 	disabled={busy || !submittable}>
 	{busy ? '…' : (submitLabel ?? defaultLabel)}
 </button>
+
+<style>
+	.pay-note {
+		margin: var(--space-1) 0 0;
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+
+	/* Surrender is a choice made alongside the payment, so the checkbox sits on
+	   the line with its words, at the 44px touch height. */
+	.surrender-label {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		min-height: var(--size-tap);
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
+	}
+	.surrender-label input { flex: none; }
+	.surrender-label .inert { color: var(--color-text-faint); }
+</style>

@@ -13,15 +13,17 @@
 	import '$lib/components/shared/statusText.css';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
-	import { warDrawerOpen, activeWarCount, pendingWarCount } from '$lib/warDrawer';
-	import { activeWarPlans, dedupeWars, warGateActive, warGatePlans } from '$lib/warGate';
+	import {
+		activeWarPlans, dedupeWars, nameWarInTakeover, peaceVoteLabel, warGateActive, warGatePlans,
+	} from '$lib/warGate';
 	// Both panels go through LazyPlanPanel rather than being imported directly:
 	// they are two of the heaviest in the app and render only in narrow
-	// situations (the simultaneous delay reveal, and the active-wars drawer),
-	// yet a static import here pulled them — and the shared plan code they drag
+	// situations (the simultaneous delay reveal, and a war's panel), yet a
+	// static import here pulled them — and the shared plan code they drag
 	// along — into the table route's eager bundle for every phase.
 	import LazyPlanPanel from '$lib/components/plans/LazyPlanPanel.svelte';
-	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
+	import WarBands from '$lib/components/plans/war/WarBands.svelte';
+	import WarName from '$lib/components/plans/war/WarName.svelte';
 	import type { PlanContext } from '$lib/components/plans/types';
 	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
 	import {
@@ -166,14 +168,18 @@
 	// result. The server's RowState is authoritative for who must act for
 	// every kind, including scenes/post-scene and an open dice roll — there is
 	// no client-side preparer/focus/roll-participant proxy here anymore.
-	const waitingOnState = $derived.by<WaitingOnState>(() =>
-		mainEventWaitingOn({
+	const waitingOnState = $derived.by<WaitingOnState>(() => {
+		const state = mainEventWaitingOn({
 			rowState,
 			activeRoll,
 			maxRefresh,
 			currentPlayerID,
-		}),
-	);
+		});
+		// A peace vote is the same row state as a payment, so it carries the same
+		// label; say what is actually being asked (lib/warGate.ts).
+		const peace = peaceVoteLabel(rowState, wars, currentPlayerID);
+		return peace ? { ...state, stepLabel: peace } : state;
+	});
 	$effect(() => { waitingOn = waitingOnState; });
 
 	// The open step's heading: the current ask, in words. Drawn by whichever
@@ -270,6 +276,7 @@
 	const warGate = $derived(warGateActive(rowState));
 	const warGateWarPlans = $derived(warGatePlans(rowState, wars, plans));
 	const warGateTakeover = $derived(warGate && warGateWarPlans.length > 0);
+	const takeoverPlanIDs = $derived(warGateWarPlans.map(p => p.id));
 
 	// ── Who draws the heading ─────────────────────────────────────────────────
 	// The heading belongs at the top of the open step. This view draws it at the
@@ -351,30 +358,20 @@
 		onPlansChanged();
 	}
 
-	// ── War drawer (header button) ───────────────────────────────────────────
-	// A placed Make War plan has no panel of its own in the play area — except
-	// while the war owes something this row, which is the takeover below. The
-	// drawer is where a player reviews a war the rest of the time: who is on
-	// which side, what has been paid, how to join. It is no longer the only
-	// way to discharge a blocking obligation.
+	// ── Wars at the top of Play ───────────────────────────────────────────────
+	// A war that is planned (its plan still 'pending' on a future row) or under way
+	// (the plan resolved, the war row still 'active') gets a band at the top of
+	// Play, and the band opens its panel as a sheet. The war has no panel among the
+	// plan's own steps once it is placed. While it owes a cost or a claim this row,
+	// the takeover above draws the panel in the play area instead.
 	//
-	// Plans still in delay-reveal stay inline as the takeover above. The
-	// button colours itself off two counts:
-	//   • pending — plan still 'pending' on a future row (war planned but
-	//     not started). Drives the yellow tint.
-	//   • active — plan resolved, war row still 'active' (war ongoing).
-	//     Drives the red tint. Both non-zero → orange.
-	const drawerWarPlans = $derived(activeWarPlans(plans, wars));
-	const drawerPendingCount = $derived(
-		drawerWarPlans.filter(p => p.status === 'pending').length,
-	);
-	const drawerActiveCount = $derived(
-		drawerWarPlans.length - drawerPendingCount,
-	);
-	$effect(() => { pendingWarCount.set(drawerPendingCount); });
-	$effect(() => { activeWarCount.set(drawerActiveCount); });
+	// A plan still in its delay reveal has no row and so no band; the takeover
+	// already shows its sides and the way in.
+	const warPlans = $derived(activeWarPlans(plans, wars));
+	// The wars a band already names, so the takeover only names the rest.
+	const bandPlanIDs = $derived(new Set(warPlans.map(p => p.id)));
 
-	const drawerCtx = $derived<PlanContext>({
+	const warCtx = $derived<PlanContext>({
 		gameID: game.id,
 		currentRow: game.current_row,
 		endingMode: game.ending_mode,
@@ -387,8 +384,8 @@
 		onRollCreated: onPlanRollCreated,
 		onPlansChanged,
 		onPlanPrepared,
-		// Drawer ctx only renders resolve-mode panels (delay reveal, active
-		// war drawer); prep-draft mirroring doesn't apply.
+		// Only resolve-mode panels (delay reveal, a war's panel) use this
+		// context; prep-draft mirroring doesn't apply.
 		readOnly: false,
 		prepDraft: null,
 		emitPrepDraft: () => {},
@@ -424,6 +421,9 @@
 	     wide desktop layouts. -->
 	<div class="play-surface">
 		<div class="scene-panel">
+			<!-- A band for each live war, above the open step's heading. -->
+			<WarBands plans={warPlans} {wars} {players} ctx={warCtx} {takeoverPlanIDs} />
+
 			<!-- The open step's heading, unless a card, the preparation step or an open roll
 			     has claimed it (see `headingClaims`). -->
 			{#if headingClaims === 0}
@@ -472,13 +472,25 @@
 					whole play area, not a card under one.
 				-->
 				{#each warGateWarPlans as p (p.id)}
-					<LazyPlanPanel planType="make_war" ctx={drawerCtx} plan={p} mode="resolve" />
+					<div class="war-area">
+						<!-- One band above one panel already names the war. Name it here
+						     when two owe at once, or when its band is gone (a war that
+						     has just ended and left a surrender claim). -->
+						{#if nameWarInTakeover(p.id, takeoverPlanIDs, bandPlanIDs)}
+							<WarName plan={p} {players} />
+						{/if}
+						<LazyPlanPanel planType="make_war" ctx={warCtx} plan={p} mode="resolve" />
+					</div>
 				{/each}
 			{:else if delayRevealActive && delayRevealPlan}
 				{#if delayRevealPlan.plan_type === 'make_war'}
-					<LazyPlanPanel planType="make_war" ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
+					<div class="war-area">
+						<!-- No band yet: the war has no row until this vote closes. -->
+						<WarName plan={delayRevealPlan} {players} />
+						<LazyPlanPanel planType="make_war" ctx={warCtx} plan={delayRevealPlan} mode="delayReveal" />
+					</div>
 				{:else if delayRevealPlan.plan_type === 'clandestinely_liaise'}
-					<LazyPlanPanel planType="clandestinely_liaise" ctx={drawerCtx} plan={delayRevealPlan} mode="delayReveal" />
+					<LazyPlanPanel planType="clandestinely_liaise" ctx={warCtx} plan={delayRevealPlan} mode="delayReveal" />
 				{/if}
 			{:else if activeScene && activeScene.kind === 'turn'}
 				<SceneDetailsPanel
@@ -594,19 +606,6 @@
 	</div>
 </div>
 
-<RetinueSheet open={$warDrawerOpen} onClose={() => warDrawerOpen.set(false)}>
-	<div class="war-sheet">
-		<h3 class="sheet-title">Active Wars ({drawerWarPlans.length})</h3>
-		{#if drawerWarPlans.length === 0}
-			<p class="muted-text">No active wars.</p>
-		{:else}
-			{#each drawerWarPlans as p (p.id)}
-				<LazyPlanPanel planType="make_war" ctx={drawerCtx} plan={p} mode="resolve" />
-			{/each}
-		{/if}
-	</div>
-</RetinueSheet>
-
 <style>
 	.main-event-view {
 		flex: 1;
@@ -650,6 +649,13 @@
 		overflow-y: auto;
 		min-height: 0;
 		flex: 1;
+	}
+
+	/* A war's name over its panel, where no band names it. */
+	.war-area {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
 	}
 
 	/* "OR" boundary divider between the plan grid and the refresh action.

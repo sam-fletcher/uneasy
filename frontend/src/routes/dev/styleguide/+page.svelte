@@ -22,7 +22,7 @@
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/marginaliaTile.css';
 	import { onMount } from 'svelte';
-	import type { Asset, Player } from '$lib/api';
+	import type { Asset, Plan, Player, WarStateResponse } from '$lib/api';
 	import AssetCardSelectable from '$lib/components/AssetCardSelectable.svelte';
 	import CharCounter from '$lib/components/CharCounter.svelte';
 	import CrownGlyph from '$lib/components/CrownGlyph.svelte';
@@ -40,6 +40,11 @@
 	import StarMark from '$lib/components/shared/StarMark.svelte';
 	import StepHeading from '$lib/components/shared/StepHeading.svelte';
 	import DieTile from '$lib/components/plans/shared/DieTile.svelte';
+	import WarBand from '$lib/components/plans/war/WarBand.svelte';
+	import WarName from '$lib/components/plans/war/WarName.svelte';
+	import WarSheet from '$lib/components/plans/war/WarSheet.svelte';
+	import WarStatus from '$lib/components/plans/war/WarStatus.svelte';
+	import type { PlanContext } from '$lib/components/plans/types';
 	import FinishedStep from '$lib/components/plans/shared/FinishedStep.svelte';
 	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 	import TableRoster from '$lib/components/shared/TableRoster.svelte';
@@ -80,6 +85,7 @@
 		['sheets', 'Sheets'],
 		['pieces', 'Game pieces'],
 		['steps', 'Play steps'],
+		['war', 'The war band'],
 	];
 
 	// ── Measured values ────────────────────────────────────────────────────
@@ -180,6 +186,31 @@
 	const cardMarginalia = sampleAsset(6, { name: 'Lady Merrow' }, NOTES);
 	let cardPicked = $state(false);
 	let notePicked = $state<number | null>(null);
+
+	// A war made of placeholders. The ids are negative so that pressing a button
+	// in the specimens can never reach a real plan: the server has no such row.
+	const warPlan = (over: Partial<Plan>, enemies: number[]): Plan => ({
+		id: -1, game_id: 0, plan_type: 'make_war', category: 'power', preparer_id: 3,
+		target_player_id: null, target_asset_id: null, row_number: 4, row_order: 0,
+		prepared_at_row: 1, status: 'resolved', result: null, resolved_at: null,
+		preparation_notes: null, targeted_plan_id: null, finale_bonus: false,
+		resolution_data: JSON.stringify({ make_war: { enemy_player_ids: enemies } }),
+		...over,
+	} as Plan);
+	const warUnderway = warPlan({}, [2]);
+	const warPlanned = warPlan({ id: -2, preparer_id: 1, status: 'pending', row_number: 8 }, [2, 4]);
+	// otto and Mira are on one side, Wren on the other; Mira joined late and still owes entry.
+	const warState = {
+		war_id: -1, origin_plan_id: -1, status: 'active', started_at_row: 4, ended_at_row: null,
+		end_reason: null, current_row: 6, battle_costs: [], outstanding_costs: [],
+		open_proposal: null, open_claims: [],
+		participants: [
+			{ player_id: 3, side: 1, joined_at_row: 4, surrendered_at_row: null, entry_payment_complete: true },
+			{ player_id: 4, side: 1, joined_at_row: 5, surrendered_at_row: null, entry_payment_complete: false },
+			{ player_id: 2, side: 2, joined_at_row: 4, surrendered_at_row: null, entry_payment_complete: true },
+		],
+	} as unknown as WarStateResponse;
+	let warSheetOpen = $state(false);
 
 	// ── Live state for the interactive specimens ───────────────────────────
 	let choice = $state<'aid' | 'interfere'>('aid');
@@ -873,7 +904,56 @@
 			</div>
 		</Cell>
 	</Section>
+
+	<Section
+		id="war"
+		title="The war band"
+		blurb="Each war that is planned or under way has a band at the top of Play; pressing it opens the war's panel as a sheet. Red marks the war on the band's border and name, and joining or staying out is chosen with ordinary chips."
+	>
+		<Cell label="Bands · one for each live war: under way, and planned with &quot;and others&quot; (press the first to open its sheet)">
+			<div class="step-col">
+				<WarBand plan={warUnderway} {players} onOpen={() => (warSheetOpen = true)} />
+				<WarBand plan={warPlanned} {players} onOpen={() => (warSheetOpen = true)} />
+			</div>
+		</Cell>
+		<Cell label="The war's name where no band names it (the delay vote, a claim left by a war that has just ended, two wars owing at once)">
+			<WarName plan={warUnderway} {players} />
+		</Cell>
+		<Cell label="Sides and the way in · the sides are named after their leaders; pick a chip, read the cost under it, then the main button names the commitment (this is the panel's body, as Ash)">
+			<div class="step-col">
+				<WarStatus
+					war={warState}
+					plan={warUnderway}
+					{players}
+					currentPlayerID={1}
+					amParticipant={false}
+					begun
+					onChanged={() => {}}
+					setError={() => {}}
+				/>
+			</div>
+		</Cell>
+	</Section>
 </div>
+
+<WarSheet
+	plan={warSheetOpen ? warUnderway : null}
+	war={warState}
+	{players}
+	ctx={{} as PlanContext}
+	onClose={() => (warSheetOpen = false)}
+>
+	<WarStatus
+		war={warState}
+		plan={warUnderway}
+		{players}
+		currentPlayerID={1}
+		amParticipant={false}
+		begun
+		onChanged={() => {}}
+		setError={() => {}}
+	/>
+</WarSheet>
 
 <RetinueSheet open={sheetOpen} onClose={() => (sheetOpen = false)}>
 	<h3 class="sheet-title">Example sheet</h3>
