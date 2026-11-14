@@ -322,11 +322,10 @@ test('phone: a sheet opens even when the pane it belongs to is another tab', asy
   await ctx.close();
 });
 
-// The War button left the header with Tones, Laws and Rumors. Until the Play and
-// war pieces replace it, the way into wars is the same button at the top of Play,
-// opening the same drawer as a sheet over Play.
+// The War button left the header with Tones, Laws and Rumors. Each live war has a
+// one-line band at the top of Play, which opens the war's panel as a sheet over Play.
 for (const [name, viewport] of [['phone', PHONE], ['three columns', THREE]] as const) {
-  test(`${name}: the way into wars is at the top of Play, and opens the drawer over Play`, async ({ browser }) => {
+  test(`${name}: each war has a band at the top of Play, and it opens the war's panel over Play`, async ({ browser }) => {
     const g = await seedWarGame(browser, viewport);
     track(g.gameID);
     await runScene(g);
@@ -337,15 +336,15 @@ for (const [name, viewport] of [['phone', PHONE], ['three columns', THREE]] as c
     await page.goto(`/table/${g.gameID}`);
     await expect(tableTitle(page)).toHaveText(/^Row \d+/);
 
-    // The old header button is gone; the new one is inside Play, above the plan.
+    // The old header button is gone; the band is inside Play, above the plan.
     const play = playColumn(page);
-    const wars = play.getByRole('button', { name: 'Open wars' });
+    const wars = play.getByRole('button', { name: /alice’s war on bob/ });
     await expect(wars).toBeVisible();
-    await expect(page.getByRole('banner').getByRole('button', { name: 'Open wars' })).toHaveCount(0);
+    await expect(page.getByRole('banner').getByRole('button', { name: /war on/ })).toHaveCount(0);
 
     await wars.click();
     const dialog = page.getByRole('dialog');
-    await expect(dialog.getByRole('heading', { name: /Active Wars/ })).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'alice’s war on bob' })).toBeVisible();
 
     const sheet = (await dialog.boundingBox())!;
     if (viewport === THREE) {
