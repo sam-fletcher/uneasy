@@ -341,7 +341,9 @@ describe('the pieces are drawn from the piece tokens', () => {
 	});
 
 	it('the checkbox is a control, so it takes the control corner; the card itself keeps the piece corner', () => {
-		expect(value(card, '.select-tap', 'border-radius')).toBe('var(--radius-control)');
+		// The card's box wears the shared recipe (checkbox.css), which has the corner.
+		expect(value(declarations(read('shared/checkbox.css')), '.check-box', 'border-radius')).toBe('var(--radius-control)');
+		expect(html(AssetCardSelectable, { asset: asset(7, {}, []), ownerColor: PERIDOT, selectable: true })).toMatch(/class="select-tap check-box[ "]/);
 		expect(value(card, '.card', 'border-radius')).toBe('var(--radius-piece)');
 	});
 

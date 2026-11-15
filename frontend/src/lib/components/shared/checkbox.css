@@ -1,0 +1,134 @@
+/* The checkbox: the drawn box every tick-box in the app wears, and the row that
+   holds it. There are no plain browser checkboxes. Import as a side effect
+   wherever markup needs .check-box or .check-row; <Checkbox> does so for you
+   and is the way to use it in new markup.
+
+   TWO PARTS, ONE LOOK.
+
+   The BOX (.check-box) is the asset card's: 24px, the neutral control border,
+   the raised-twice fill (a control standing on a raised thing) and the control
+   corner. TICKED is the 2px bright gold border with no fill, plus the success
+   tone's tick (<ToneMark>, painted bright gold by the box): the border's second
+   pixel is an inset shadow, so ticking never moves it. The card draws the box
+   on a <span role="checkbox"> inside its header button and states the state in
+   aria-checked, so the rules below answer to that attribute. <Checkbox> draws
+   the box after a real <input type="checkbox"> that it hides, so the same rules
+   answer to :checked, :disabled and :focus-visible on that input. Both spellings
+   sit in each rule, and nowhere else: a second copy of the look is how the two
+   would drift.
+
+   LOCKED is a hairline border, never opacity (which would take the words under
+   the contrast floor). A ticked box that is then locked keeps its gold border:
+   it still shows what was picked, as a locked chip and a locked card do. That
+   rule comes later in the file than the locked one, at the same weight, so it
+   wins.
+
+   The ROW (.check-row, on a .tap-row) is the whole control: the box, the words
+   beside it and, under the words, an optional explanation in secondary text.
+   It is a <label>, so tapping anywhere on it ticks the box, and it is at least
+   44px tall (--size-tap). The box lines up with the first line of the words.
+   Hover raises the row to the raised surface; the focus ring is drawn on the
+   box, as on the card's. A locked row's words go faint and it says why in words
+   under the explanation. Its look follows the input's own :disabled, so a
+   checkbox locked by a disabled <fieldset> reads as locked too. */
+
+/* ── The box ─────────────────────────────────────────────────────────────── */
+
+.check-box {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 24px;
+	height: 24px;
+	box-sizing: border-box;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border-control);
+	border-radius: var(--radius-control);
+	color: var(--color-you);
+	cursor: pointer;
+}
+
+.check-box[aria-disabled='true'],
+.check-input:disabled + .check-box {
+	border-color: var(--color-border);
+	cursor: not-allowed;
+}
+
+/* After the locked rule, so a ticked box that is locked stays gold. */
+.check-box[aria-checked='true'],
+.check-input:checked + .check-box {
+	border-color: var(--color-you);
+	box-shadow: inset 0 0 0 1px var(--color-you);
+}
+
+.check-box:focus-visible,
+.check-input:focus-visible + .check-box {
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
+}
+
+/* ── The row ─────────────────────────────────────────────────────────────── */
+
+/* .tap-row alone centres its content; a row with an explanation under the words
+   lines the box up with the first line instead. */
+.tap-row.check-row {
+	position: relative;
+	align-items: flex-start;
+	gap: var(--space-3);
+	cursor: pointer;
+}
+.check-row:hover {
+	background: var(--color-surface);
+}
+.check-row:has(.check-input:disabled) {
+	cursor: not-allowed;
+	color: var(--color-text-faint);
+}
+.check-row:has(.check-input:disabled):hover {
+	background: none;
+}
+
+/* Visually hidden, still focusable and still the one real control: the browser
+   keeps the keyboard, the screen reader and form behaviour. Not display:none and
+   not opacity, which would take it out of the tab order or the tree. */
+.check-input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* The box and the first line of the words share one 28px line (a 44px row less
+   its padding), so the box sits on the line it belongs to, however long the
+   explanation under it runs. */
+.check-lead,
+.check-label {
+	display: flex;
+	align-items: center;
+	min-height: calc(var(--size-tap) - 2 * var(--space-2));
+}
+.check-text {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	gap: var(--space-1);
+	min-width: 0;
+}
+.check-label {
+	font-size: var(--text-body);
+	overflow-wrap: anywhere;
+}
+.check-desc {
+	font-size: var(--text-small);
+	color: var(--color-text-secondary);
+	line-height: 1.4;
+}
+.check-row:has(.check-input:disabled) .check-desc {
+	color: var(--color-text-faint);
+}
