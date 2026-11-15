@@ -39,7 +39,7 @@ function renderFor(
 	const ctx = {
 		gameID: 1, currentRow: 5, endingMode: null, plans: [plan] as never,
 		assets: assets as never, players: PLAYERS as never, rankings: [], currentPlayerID: seat,
-		isFocusPlayer: false, rollActive: extra.rollActive ?? false, rollOutcome,
+		focusPlayerID: null, isFocusPlayer: false, rollActive: extra.rollActive ?? false, rollOutcome,
 		activeRoll: rollOutcome ? ({ id: 4, plan_id: 9, status: 'resolved', result: 1, difficulty: 2 } as never) : null,
 		onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
 		readOnly: false, prepDraft: null, emitPrepDraft: () => {},

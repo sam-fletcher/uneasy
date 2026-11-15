@@ -62,7 +62,7 @@ function renderFor(currentPlayerID: number, branch: Branch = MAKE): string {
 		plans: (branch.noWinner ? [target] : [target, demand]) as never,
 		assets: [],
 		players: [{ id: PREPARER, display_name: 'ravi' }, { id: WINNER, display_name: 'sol' }] as never,
-		rankings: [], currentPlayerID, isFocusPlayer: false,
+		rankings: [], currentPlayerID, focusPlayerID: null, isFocusPlayer: false,
 		rollActive: branch.rollActive ?? false, rollOutcome: branch.rollOutcome, activeRoll: null,
 		onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
 		readOnly: false, prepDraft: null, emitPrepDraft: () => {},

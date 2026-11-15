@@ -18,7 +18,7 @@ function renderMar(resolution: Record<string, unknown>): string {
 		gameID: 1, currentRow: 5, endingMode: null, plans: [plan] as never,
 		assets: [],
 		players: [{ id: PREPARER, display_name: 'ravi' }, { id: 2, display_name: 'sol' }] as never,
-		rankings: [], currentPlayerID: PREPARER, isFocusPlayer: false,
+		rankings: [], currentPlayerID: PREPARER, focusPlayerID: null, isFocusPlayer: false,
 		rollActive: false, rollOutcome: 'mar',
 		activeRoll: { id: 4, plan_id: 9, status: 'resolved' } as never,
 		onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},

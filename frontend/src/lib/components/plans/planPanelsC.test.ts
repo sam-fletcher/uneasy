@@ -348,7 +348,7 @@ describe('the Make Demands draft', () => {
 			rankings: [
 				{ category: 'power', player_id: ALICE, rank: 1 }, { category: 'power', player_id: BOB, rank: 2 },
 			] as never,
-			currentPlayerID: viewer, isFocusPlayer: false, rollActive: false, rollOutcome: 'make', activeRoll: null,
+			currentPlayerID: viewer, focusPlayerID: null, isFocusPlayer: false, rollActive: false, rollOutcome: 'make', activeRoll: null,
 			onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
 			readOnly: false, prepDraft: null, emitPrepDraft: () => {},
 		} as PlanContext;

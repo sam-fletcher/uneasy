@@ -101,7 +101,7 @@ function renderFor(c: Case, currentPlayerID: number): string {
 			{ id: PREPARER, display_name: 'ravi' }, { id: WINNER, display_name: 'sol' },
 			{ id: BYSTANDER, display_name: 'mel' },
 		] as never,
-		rankings: [], currentPlayerID, isFocusPlayer: false,
+		rankings: [], currentPlayerID, focusPlayerID: null, isFocusPlayer: false,
 		rollActive: false, rollOutcome: c.noRoll ? null : c.rollOutcome,
 		activeRoll: c.noRoll ? null : ({ id: 4, plan_id: 9, status: 'resolved' } as never),
 		onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
