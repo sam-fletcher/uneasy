@@ -378,6 +378,7 @@
 		endingMode: game.ending_mode,
 		plans, assets, players, rankings,
 		currentPlayerID,
+		focusPlayerID: game.focus_player_id,
 		isFocusPlayer,
 		rollActive,
 		rollOutcome,
@@ -538,6 +539,7 @@
 				{rankings}
 				{currentPlayerID}
 				{isFocusPlayer}
+				focusPlayerID={game.focus_player_id}
 				prepEnabled={rowState?.kind === 'post_scene_action'}
 				suppressPrep={delayRevealActive}
 				{rollActive}

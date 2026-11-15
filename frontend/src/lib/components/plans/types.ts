@@ -34,6 +34,9 @@ export interface PlanContext {
 	players: Player[];
 	rankings: Ranking[];
 	currentPlayerID: number | null;
+	/** The focus player: whose turn it is. While a plan is being prepared, this is the
+	 *  preparer. A read-only mirror of their form is built from this id, not the viewer's. */
+	focusPlayerID: number | null;
 	isFocusPlayer: boolean;
 	rollActive: boolean;
 	rollOutcome: 'make' | 'mar' | null;

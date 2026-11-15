@@ -76,6 +76,9 @@
 		rankings: Ranking[];
 		currentPlayerID: number | null;
 		isFocusPlayer: boolean;
+		/** The focus player's id (whose turn it is). Passed into every panel's context:
+		 *  a read-only prep mirror is drawn from it, not from the viewer. */
+		focusPlayerID: number | null;
 		/**
 		 * Whether prep UI should be shown at all (post-scene action step).
 		 * Set by the parent based on scene-end state — independent of who's
@@ -119,7 +122,7 @@
 
 	let {
 		gameID, currentRow, endingMode, plans, planTokens, assets, players, rankings, currentPlayerID,
-		isFocusPlayer, prepEnabled = false, suppressPrep = false,
+		isFocusPlayer, focusPlayerID, prepEnabled = false, suppressPrep = false,
 		rollActive, rollOutcome, activeRoll = null,
 		onRollCreated, onPlansChanged, onPlanPrepared,
 		preparePlanDraft = null,
@@ -330,7 +333,7 @@
 
 	const ctx = $derived<PlanContext>({
 		gameID, currentRow, endingMode, plans, assets, players, rankings,
-		currentPlayerID, isFocusPlayer,
+		currentPlayerID, focusPlayerID, isFocusPlayer,
 		rollActive, rollOutcome, activeRoll,
 		onRollCreated, onPlansChanged, onPlanPrepared,
 		readOnly: !isFocusPlayer,

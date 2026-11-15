@@ -101,7 +101,11 @@
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
-	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
+	// The player whose prep form this is. The preparer's own form is the viewer's;
+	// a watcher's read-only mirror is the focus player's, so the chips are the ones
+	// the preparer chooses from, not the watcher's.
+	const draftPreparerID = $derived(readOnly ? ctx.focusPlayerID : currentPlayerID);
+	const otherPlayers = $derived(playersExcept(players, draftPreparerID));
 	const ecTargetPlayerAssets = $derived(
 		ecTargetPlayerID != null
 			? assets.filter(a => a.owner_id === ecTargetPlayerID && a.asset_type === 'peer' && !a.is_destroyed)
