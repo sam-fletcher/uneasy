@@ -247,8 +247,8 @@ below it.
 
 Inputs use `--text-body` without exception: iOS Safari zooms the whole page
 when a focused input is set below 16px. "Inputs" means the text-like types: the
-global input look in `routes/+layout.svelte` leaves checkboxes and radios out, so
-they keep their native size and a control that needs its own box sizes it locally.
+global input look in `routes/+layout.svelte` leaves checkboxes and radios out. The
+app has no plain ones (see **Checkboxes** under Recipes).
 
 ### Gaps
 
@@ -586,6 +586,7 @@ Reuse before writing new CSS — these live in
 | `actionButton.css` | **the** button: main (deep gold), secondary, greyed out; and the step's button row (`.step-actions`); see Recipes |
 | `chip.css` + `Chip.svelte` | **the** chip: a fully rounded control for choosing among a few things. Selected = 2px bright gold border and bright gold text, no fill |
 | `optionCard.css` + `OptionCard.svelte` | **the** option card: one choice as a full-width row with a title, a sentence and optionally a level. A control, so the neutral control border. Selected = 2px bright gold border, no fill, and a tick. Locked = a hairline and faint words, with the reason under the sentence |
+| `checkbox.css` + `Checkbox.svelte` | **the** checkbox: the asset card's drawn box (24px, control border, a gold border and tick when ticked) with the words beside it and an optional explanation under them, in a tap row. There are no plain browser checkboxes; a test fails on one |
 | `tapRow.css` | **the** tappable row: a 44px line with a rule beneath, no box |
 | `RowMark.svelte` | the caret (expands in place) and the arrow (opens elsewhere) at the end of a tappable row |
 | `Notice.svelte` | **the** notice: a mark and coloured text, no box or tint |
@@ -654,6 +655,26 @@ more; `/dev/styleguide` shows every state.
   `reason`, and an `aside` for what rides at the end of the row (the duel's die on a stake).
   Hover lightens the border and focus draws the bright gold ring, as on a chip.
   `.option-list` is the column they sit in.
+- **Checkboxes** (`checkbox.css`, `Checkbox.svelte`). There are **no plain browser checkboxes** in
+  the app: every tick-box is the one the asset cards draw, and `shared/checkboxGuard.test.ts`
+  fails on a native `<input type="checkbox">` or `type="radio"` anywhere else. The box is 24px,
+  with the neutral control border, the raised-twice fill and the control corner; **ticked is the
+  2px bright gold border with no fill, plus the success tick** from `ToneMark`. The row is the
+  control: the box, the words beside it and, under the words, an explanation in secondary text,
+  as a tap row (44px at least; tapping anywhere ticks it). **Say what ticking does in words on
+  the screen**, in the `description`; a `title` can't be read on a phone. **Locked** is a
+  hairline border and faint words, never opacity, and the `reason` it is locked shows in words
+  under the explanation, only while it is. A ticked box that is then locked keeps its gold
+  border. Under the drawn box is a real `<input type="checkbox">`, hidden but focusable, so
+  `bind:checked`, Space and screen readers work; the card draws the same box on a
+  `<span role="checkbox">` inside its header button, which can't hold an input, and shares only
+  the look (`.check-box`). Which control:
+  - a **checkbox** for a yes-or-no that is sent with the rest of a form (nothing happens until
+    the step's button is pressed): "Surrender after this payment", "Keep it secret for now";
+  - a **switch** for a setting that acts the moment it is flipped, with no button after it: the
+    chat's "Hide bookkeeping" (`role="switch"`, the one input the guard lists as an exception);
+  - a **chip** for choosing among a few words (Aid or Interfere), where choosing one means not
+    choosing the others.
 - **The step's button row** (`.step-actions`, in `actionButton.css`). A step's main button
   with the way out beside it. The main button takes twice the room and the other sits next to
   it when there is room, so a phone column has "Confirm / Cancel" on one line, and a long label
