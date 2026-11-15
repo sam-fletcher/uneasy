@@ -1,0 +1,107 @@
+/* The option card: one choice laid out as a full-width row, for options that
+   need more than a word (a make or mar option with its level and what it does,
+   a demand to draft, a plan to aim at, a stake to play). A chip is the house
+   control for choosing between a few WORDS; reach for this when an option has a
+   title and a sentence under it. Import as a side effect wherever a component
+   needs .option-card; <OptionCard> does so for you.
+
+   A card is a CONTROL, so it has the neutral control border and a raised fill.
+   SELECTED is the 2px bright gold border with no fill, plus a tick at the end
+   of the row: the border's second pixel is an inset shadow, so choosing a card
+   never moves it. A choice wears no meaning colour and no player colour; it is
+   told apart by its words. Hover lightens the border and a selected card keeps
+   its gold on hover.
+
+   LOCKED (native `disabled`, or `aria-disabled="true"` where a tap should say
+   why): a hairline border and faint text, never opacity, which would take the
+   words under the contrast floor. A locked card says why in words, in a line
+   under its description. The look follows the attribute, as it does on a chip,
+   so there is no class to forget; and a card that is locked wins over a pick
+   (hairline, with the tick still in place).
+
+   44px tall at least (--size-tap), and the corner is a control's. */
+
+.option-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.option-card {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	width: 100%;
+	min-height: var(--size-tap);
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-control);
+	border: 1px solid var(--color-border-control);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.option-card:hover:not(:disabled):not([aria-disabled='true']):not(.selected) {
+	border-color: var(--color-border-control-hover);
+}
+.option-card.selected {
+	border-color: var(--color-you);
+	box-shadow: inset 0 0 0 1px var(--color-you);
+}
+.option-card:focus-visible {
+	outline: 2px solid var(--color-you);
+	outline-offset: 2px;
+}
+.option-card:disabled,
+.option-card[aria-disabled='true'] {
+	border-color: var(--color-border);
+	color: var(--color-text-faint);
+	cursor: not-allowed;
+}
+
+/* The level ("+1", "−2") is a number, not a badge: it is inert, so it gets no box. */
+.option-badge {
+	flex-shrink: 0;
+	min-width: 2ch;
+	text-align: center;
+	font-size: var(--text-body);
+	font-weight: 600;
+	color: var(--color-text-secondary);
+}
+.option-card.selected .option-badge { color: var(--color-you); }
+.option-card:disabled .option-badge,
+.option-card[aria-disabled='true'] .option-badge { color: var(--color-text-faint); }
+
+.option-text {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	gap: var(--space-1);
+	min-width: 0;
+}
+.option-title {
+	font-size: var(--text-body);
+	overflow-wrap: anywhere;
+}
+.option-desc {
+	font-size: var(--text-small);
+	color: var(--color-text-secondary);
+	line-height: 1.4;
+}
+.option-card:disabled .option-desc,
+.option-card[aria-disabled='true'] .option-desc { color: var(--color-text-faint); }
+
+/* Whatever sits at the end of the row before the tick (the duel's die). */
+.option-aside {
+	display: inline-flex;
+	flex: none;
+}
+
+/* The tick on a picked card (the success tone's tick, painted bright gold). */
+.option-picked {
+	margin-left: auto;
+	flex-shrink: 0;
+	display: inline-flex;
+	color: var(--color-you);
+}

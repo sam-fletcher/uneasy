@@ -16,7 +16,7 @@
 	import Chip from '$lib/components/shared/Chip.svelte';
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
-	import ToneMark from '$lib/components/shared/ToneMark.svelte';
+	import OptionCard from '$lib/components/shared/OptionCard.svelte';
 	import { playerColorByID } from '$lib/playerColor';
 	import { boutDeclare, boutRespond, type Asset, type DuelBout, type DuelStake, type Plan, type Player } from '$lib/api';
 	import FormField from '../FormField.svelte';
@@ -188,14 +188,14 @@
 				{#if isMyTurn && mine && !v.resolved}
 					<!-- A stake of mine I can play: a control, so it has the control's border;
 					     picked is the bright gold border and a tick, like any option card. -->
-					<button type="button" class="choice-card stake-line pick" class:active={pickedStakeID === v.id}
-						aria-pressed={pickedStakeID === v.id} onclick={() => togglePick(v.id)}>
-						<span class="stake-name">{v.name}</span>
-						<span class="die"><DieTile face={v.die} {color} label={dieLabel(v, ownerName)} /></span>
-						{#if pickedStakeID === v.id}
-							<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
-						{/if}
-					</button>
+					<!-- `stake-line pick` carry no style here: they are the hooks the specs
+					     count the stakes and press a pick by. -->
+					<OptionCard class="stake-line pick" title={v.name}
+						selected={pickedStakeID === v.id} onclick={() => togglePick(v.id)}>
+						{#snippet aside()}
+							<DieTile face={v.die} {color} label={dieLabel(v, ownerName)} />
+						{/snippet}
+					</OptionCard>
 				{:else}
 					<div class="stake-line" class:resolved={v.resolved}>
 						<span class="stake-name">{v.name}</span>
@@ -349,9 +349,6 @@
 		color: var(--color-text);
 	}
 	.stake-line.resolved .stake-name { color: var(--color-text-secondary); }
-	/* A stake of mine I can pick is the shared option card (planPanel.css); it
-	   only needs its die to sit at the end. */
-	.stake-line.pick { gap: var(--space-3); }
 	.die { display: inline-flex; flex: none; }
 
 	.stake-name {

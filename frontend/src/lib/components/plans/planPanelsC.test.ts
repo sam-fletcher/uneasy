@@ -154,7 +154,7 @@ describe('the duel tracker', () => {
 		expect(picks).toHaveLength(2);
 		// A pick is a control: the option card, pressed or not. Alice's stakes are plain lines.
 		for (const p of picks) {
-			expect(p).toContain('choice-card');
+			expect(p).toContain('option-card');
 			expect(p).toContain('aria-pressed="false"');
 		}
 		expect(html).toContain('Lady Merrow');
@@ -369,19 +369,19 @@ describe('the Make Demands draft', () => {
 
 	it('gives an option card a title and its effect on separate lines', () => {
 		const body = draft(BOB);
-		expect(body).toMatch(/choice-title[^>]*>Perform steps<\/span>/);
-		expect(body).toMatch(/choice-desc[^>]*>Submit the target plan’s make\/mar choice in their place</);
+		expect(body).toMatch(/option-title[^>]*>Perform steps<\/span>/);
+		expect(body).toMatch(/option-desc[^>]*>Submit the target plan’s make\/mar choice in their place</);
 		// Control leverage is already taken, so it is not offered again.
-		expect(body).not.toMatch(/choice-title[^>]*>Control leverage</);
+		expect(body).not.toMatch(/option-title[^>]*>Control leverage</);
 	});
 
 	it('shows a card that would do nothing as locked, with the reason in words', () => {
 		const body = draft(BOB);
-		const keepAssets = body.match(/<button[^>]*choice-card[^>]*>(?:(?!<\/button>).)*Keep assets(?:(?!<\/button>).)*<\/button>/)?.[0] ?? '';
+		const keepAssets = body.match(/<button[^>]*option-card[^>]*>(?:(?!<\/button>).)*Keep assets(?:(?!<\/button>).)*<\/button>/)?.[0] ?? '';
 		expect(keepAssets).toContain('aria-disabled="true"');
 		expect(keepAssets).toContain('gives its preparer no assets to keep');
 		// A live card is not locked.
-		const perform = body.match(/<button[^>]*choice-card[^>]*>(?:(?!<\/button>).)*Perform steps(?:(?!<\/button>).)*<\/button>/)?.[0] ?? '';
+		const perform = body.match(/<button[^>]*option-card[^>]*>(?:(?!<\/button>).)*Perform steps(?:(?!<\/button>).)*<\/button>/)?.[0] ?? '';
 		expect(perform).toContain('aria-disabled="false"');
 	});
 
@@ -389,7 +389,7 @@ describe('the Make Demands draft', () => {
 		const body = draft(CAROL);
 		expect(body).not.toContain('Waiting for bob to pick');
 		expect(body).not.toContain('Your turn to pick');
-		expect(body).not.toContain('choice-card');
+		expect(body).not.toContain('option-card');
 	});
 });
 
@@ -397,7 +397,7 @@ describe('the demand overlay', () => {
 	const css = cssOf('demand/TargetPlanDemandOverlay.svelte');
 
 	it('is a group on the page: no box, no fill, no ink of its own', () => {
-		for (const sel of ['.demand-banner', '.demand-summary', '.demand-form']) {
+		for (const sel of ['.demand-summary', '.demand-form']) {
 			for (const forbidden of ['background', 'border', 'border-top', 'padding', 'color', 'box-shadow']) {
 				expect(props(css, sel), `${sel} ${forbidden}`).not.toContain(forbidden);
 			}
@@ -411,9 +411,12 @@ describe('the demand overlay', () => {
 		expect(winners.find((d) => d.prop === 'color')?.value).toBe('var(--color-text-secondary)');
 	});
 
-	it('stacks its two buttons full width in a phone column', () => {
-		const grow = css.filter((d) => d.selector.startsWith('.demand-actions >') && d.prop === 'flex');
-		// Each is 12rem at least, so two do not fit beside each other in 344px.
-		expect(grow.map((d) => d.value).sort()).toEqual(['1 1 12rem', '2 1 12rem']);
+	it('draws its buttons in the shared step row, the stacking one, and its groups in the shared gap', () => {
+		const src = read('demand/TargetPlanDemandOverlay.svelte');
+		expect(src).toContain('class="step-actions stacking"');
+		expect(src).toContain('class="step-groups"');
+		// It keeps no copy of either: both recipes are shared (actionButton.css, planPanel.css).
+		const own = css.map((d) => d.selector).join(' ');
+		expect(own).not.toMatch(/demand-actions|demand-banner(?!-header)/);
 	});
 });

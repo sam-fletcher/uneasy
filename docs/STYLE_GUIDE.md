@@ -581,8 +581,9 @@ Reuse before writing new CSS — these live in
 
 | file | what it is |
 |---|---|
-| `actionButton.css` | **the** button: main (deep gold), secondary, greyed out; see Recipes |
+| `actionButton.css` | **the** button: main (deep gold), secondary, greyed out; and the step's button row (`.step-actions`); see Recipes |
 | `chip.css` + `Chip.svelte` | **the** chip: a fully rounded control for choosing among a few things. Selected = 2px bright gold border and bright gold text, no fill |
+| `optionCard.css` + `OptionCard.svelte` | **the** option card: one choice as a full-width row with a title, a sentence and optionally a level. A control, so the neutral control border. Selected = 2px bright gold border, no fill, and a tick. Locked = a hairline and faint words, with the reason under the sentence |
 | `tapRow.css` | **the** tappable row: a 44px line with a rule beneath, no box |
 | `RowMark.svelte` | the caret (expands in place) and the arrow (opens elsewhere) at the end of a tappable row |
 | `Notice.svelte` | **the** notice: a mark and coloured text, no box or tint |
@@ -639,6 +640,25 @@ more; `/dev/styleguide` shows every state.
   choice wears no meaning colour and no player colour. Use `kind="tab"` for a
   chip standing in for a tab (it sets `aria-current` instead of
   `aria-pressed`).
+- **Option cards** (`optionCard.css`, `OptionCard.svelte`). A chip is a few words; an option
+  with a sentence under its title (a make or mar option, a demand to draft, a plan to aim
+  at, a stake to play) is a card. It has the neutral control border and a raised fill, and
+  **selected is the 2px bright gold border with no fill, plus a tick at the end of the row**,
+  the second pixel an inset shadow so picking never moves it. A card wears no meaning colour.
+  **Locked** (native `disabled`, or `aria-disabled` where a tap should say why; the look
+  follows the attribute) is a hairline border and faint words, never opacity, and it says why
+  in words **under the sentence**, not at the edge of the row. A locked card wins over a pick.
+  The props are the parts: a `badge` (a signed level, "+1"), a `title`, a `description`, a
+  `reason`, and an `aside` for what rides at the end of the row (the duel's die on a stake).
+  Hover lightens the border and focus draws the bright gold ring, as on a chip.
+  `.option-list` is the column they sit in.
+- **The step's button row** (`.step-actions`, in `actionButton.css`). A step's main button
+  with the way out beside it. The main button takes twice the room and the other sits next to
+  it when there is room, so a phone column has "Confirm / Cancel" on one line, and a long label
+  wraps inside its button while both stretch to the row's height. Put one main and one
+  secondary in it; a lone main button needs no row. **`.step-actions.stacking`** is for labels
+  that are sentences ("Leverage none — let the roll fail"): each button asks for 12rem, so the
+  two stack full width in a phone column and sit side by side in a wider one.
 - **Tappable rows** (`tapRow.css`, `ChecklistRow.svelte`, `RowMark.svelte`). A 44px
   line with a hairline under it and a caret or an arrow at the end. There is no
   border or fill: the end mark is the only sign the row can be pressed. Hover
@@ -729,10 +749,23 @@ is "Roll").
 each control's own disabled look to say "not yours"; a fade would take text under the
 contrast floor.
 
-`plans/planPanel.css` still carries the older class names the panels draw their chips,
-option cards and warnings with (`.chip-btn`, `.player-chip`, `.choice-card`,
-`.res-warning`). Each is built from the shared recipes' tokens, and a test holds the chips
-to agreeing with `chip.css`; a panel that moves to `<Chip>` or `<Notice>` drops its name.
+**Groups in a step.** With no boxes, a group is a group because of the space around it, so
+the gap between groups has to be visibly bigger than the gap between a group's own lines:
+**24px (`--space-5`) between groups, 12px (`--space-3`) inside one.** `ResolvingCard` puts the
+panel's body in a `.step-groups` column once, so every panel's groups are 24px apart; the
+frame's own parts (the finished lines, the roll, the heading) keep the frame's 12px. A panel
+that nests groups inside one of its own (the festivity's body, the duel's setup, the demand
+overlay) wraps them in `.step-groups` too. A line that belongs to a group goes inside it: a
+lead line left outside, next to the group it leads, now sits 24px away from it. The count
+after a lead line ("· 0 of 1 taken", "· 2 mars to settle") is `.taken-count`: secondary
+words, not part of the heading.
+
+**What a player presses in a step is a shared piece:** a choice among a few words is a `Chip`
+(`PlayerChips` is a row of them, each a player's shape and their name in their colour: the
+colour is on the name, never on the chip); an option with a sentence is an `OptionCard`; the
+buttons are `.action-btn`s in a `.step-actions` row; a warning is a `Notice`. `planPanel.css`
+holds what is left: the frame, the groups, the forms and the plan grid, and
+`plans/sharedRecipes.test.ts` fails on a panel that writes one of these out again.
 
 ### The war band
 

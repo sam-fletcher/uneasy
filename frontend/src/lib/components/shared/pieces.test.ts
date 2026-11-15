@@ -5,6 +5,7 @@ import { createRawSnippet } from 'svelte';
 import { render } from 'svelte/server';
 import Chip from './Chip.svelte';
 import Notice from './Notice.svelte';
+import OptionCard from './OptionCard.svelte';
 import RowMark from './RowMark.svelte';
 import { declarations, styleOf, winning, type El } from './cssTestKit';
 
@@ -121,6 +122,132 @@ describe('chip.css', () => {
 
 	it('never takes a meaning colour: a choice wears none', () => {
 		expect(chip).not.toMatch(/--color-(danger|warning|success|highlight|info)/);
+	});
+});
+
+describe('OptionCard', () => {
+	const aside = createRawSnippet(() => ({ render: () => '<i class="the-die">4</i>' }));
+	const card = (props: Record<string, unknown> = {}) =>
+		render(OptionCard, { props: { title: 'Perform steps', ...props } }).body;
+
+	it('is a pressable button that says whether it is picked, and ticks only when it is', () => {
+		const off = card();
+		expect(off).toContain('<button');
+		expect(off).toContain('type="button"');
+		expect(off).toMatch(/class="[^"]*\boption-card\b/);
+		expect(off).toContain('aria-pressed="false"');
+		expect(off).not.toContain('option-picked');
+		const on = card({ selected: true });
+		expect(on).toContain('aria-pressed="true"');
+		expect(on).toMatch(/class="[^"]*\bselected\b/);
+		// The tick is the success tone's mark, named for a screen reader.
+		expect(on).toMatch(/option-picked[\s\S]*aria-label="Picked"/);
+	});
+
+	it('lays out a level, a title, a sentence and a reason, in that order, and only what it is given', () => {
+		const full = card({ badge: '+1', description: 'Does the thing.', reason: 'needs +2' });
+		const at = (s: string) => full.indexOf(s);
+		expect(at('+1')).toBeGreaterThan(-1);
+		expect(at('+1')).toBeLessThan(at('Perform steps'));
+		expect(at('Perform steps')).toBeLessThan(at('Does the thing.'));
+		expect(at('Does the thing.')).toBeLessThan(at('needs +2'));
+		const bare = card();
+		for (const part of ['option-badge', 'option-desc', 'option-aside']) expect(bare).not.toContain(part);
+		expect(bare).toContain('option-title');
+	});
+
+	it('puts an aside (the duel\'s die) at the end of the row, before the tick', () => {
+		const html = card({ selected: true, aside });
+		expect(html.indexOf('option-text')).toBeLessThan(html.indexOf('the-die'));
+		expect(html.indexOf('the-die')).toBeLessThan(html.indexOf('option-picked'));
+	});
+
+	it('is locked by the attribute the caller sets, and passes attributes and extra classes through', () => {
+		const html = card({ disabled: true, 'aria-disabled': 'true', 'data-x': '1', class: 'stake-line' });
+		expect(html).toMatch(/<button[^>]*\sdisabled/);
+		expect(html).toContain('aria-disabled="true"');
+		expect(html).toContain('data-x="1"');
+		expect(html).toMatch(/class="[^"]*\boption-card\b[^"]*\bstake-line\b/);
+		// A card never reads its lock from a class: the look follows the attribute.
+		expect(html).not.toMatch(/class="[^"]*\blocked\b/);
+	});
+});
+
+describe('optionCard.css', () => {
+	const sheet = css('optionCard.css');
+	const el = (classes: string[] = [], pseudos: string[] = [], attrs: Record<string, string> = {}): El => ({
+		classes: ['option-card', ...classes], pseudos, attrs,
+	});
+	const border = (e: El) => winning(sheet, 'border-color', e);
+
+	it('is a control: the control border and corner, a raised fill, and the touch floor', () => {
+		const base = rule(sheet, '.option-card');
+		expect(base).toContain('border: 1px solid var(--color-border-control)');
+		expect(base).toContain('border-radius: var(--radius-control)');
+		expect(base).toContain('background: var(--color-surface)');
+		expect(base).toContain('min-height: var(--size-tap)');
+	});
+
+	it('a selected card is the bright gold border with an inset second pixel, at rest and on hover', () => {
+		for (const pseudos of [[], ['hover'], ['focus-visible']]) {
+			expect(border(el(['selected'], pseudos)), pseudos.join('+') || 'rest').toBe('var(--color-you)');
+			expect(winning(sheet, 'box-shadow', el(['selected'], pseudos))).toBe('inset 0 0 0 1px var(--color-you)');
+		}
+		// No fill for a pick: only the base paints a background.
+		expect(declarations(sheet).filter((d) => /^background/.test(d.prop)).map((d) => d.selector)).toEqual(['.option-card']);
+	});
+
+	it('an unselected card lightens its border on hover, and a locked one is a hairline with faint words', () => {
+		expect(border(el([], ['hover']))).toBe('var(--color-border-control-hover)');
+		for (const e of [el([], ['disabled']), el([], [], { 'aria-disabled': 'true' }), el([], ['hover', 'disabled'])]) {
+			expect(border(e)).toBe('var(--color-border)');
+			expect(winning(sheet, 'color', e)).toBe('var(--color-text-faint)');
+			expect(winning(sheet, 'cursor', e)).toBe('not-allowed');
+		}
+	});
+
+	it('a card that is locked wins over a pick: it keeps the tick but not the gold', () => {
+		expect(border(el(['selected'], ['disabled']))).toBe('var(--color-border)');
+		expect(border(el(['selected'], [], { 'aria-disabled': 'true' }))).toBe('var(--color-border)');
+	});
+
+	it('never fades and never wears a meaning colour: a choice is told apart by its words', () => {
+		const decls = declarations(sheet); // comments stripped: the header may say "never opacity"
+		expect(decls.filter((d) => d.prop === 'opacity')).toEqual([]);
+		expect(decls.filter((d) => /--color-(danger|warning|success|highlight|info)/.test(d.value))).toEqual([]);
+	});
+
+	it('the focus ring is the bright gold, the tick is bright gold, and the sentence is secondary', () => {
+		expect(rule(sheet, '.option-card:focus-visible')).toContain('outline: 2px solid var(--color-you)');
+		expect(rule(sheet, '.option-picked')).toContain('color: var(--color-you)');
+		expect(rule(sheet, '.option-desc')).toContain('color: var(--color-text-secondary)');
+	});
+});
+
+describe('the step\'s button row (actionButton.css)', () => {
+	const sheet = css('actionButton.css');
+	const flexOf = (selector: string) => declarations(sheet).find((d) => d.selector === selector && d.prop === 'flex')?.value;
+
+	it('is a wrapping row with the small gap, and the main button takes twice the room', () => {
+		const row = rule(sheet, '.step-actions');
+		expect(row).toContain('display: flex');
+		expect(row).toContain('flex-wrap: wrap');
+		expect(row).toContain('gap: var(--space-2)');
+		expect(flexOf('.step-actions > .action-btn.primary')).toBe('2 1 10rem');
+		expect(flexOf('.step-actions > .action-btn.secondary')).toBe('1 1 6rem');
+	});
+
+	it('has a stacking variant: each button asks for 12rem, so two never fit a phone column', () => {
+		expect(flexOf('.step-actions.stacking > .action-btn.primary')).toBe('2 1 12rem');
+		expect(flexOf('.step-actions.stacking > .action-btn.secondary')).toBe('1 1 12rem');
+		// 2 × 12rem + the gap is wider than the narrowest play column (344px).
+		expect(2 * 12 * 16 + 8).toBeGreaterThan(344);
+		// And the row without it fits beside each other there.
+		expect(10 * 16 + 6 * 16 + 8).toBeLessThan(344);
+	});
+
+	it('stretches both buttons to the row\'s height, so a long label never leaves its neighbour short', () => {
+		expect(declarations(sheet).find((d) => d.selector === '.step-actions > .action-btn' && d.prop === 'align-self')?.value).toBe('stretch');
 	});
 });
 

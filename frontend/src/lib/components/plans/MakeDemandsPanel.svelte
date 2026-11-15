@@ -31,7 +31,7 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
-	import ToneMark from '$lib/components/shared/ToneMark.svelte';
+	import OptionCard from '$lib/components/shared/OptionCard.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import FinishedStep from './shared/FinishedStep.svelte';
 
@@ -363,25 +363,18 @@
 						{#if allRemainingInert}
 							<p class="choices-note">None of what's left does anything against this plan — pick whichever.</p>
 						{/if}
-						<div class="choice-list">
+						<div class="option-list">
 							{#each optionViews as v (v.option)}
 								{@const opt = v.option}
 								{@const parts = optionParts(opt)}
-								<button type="button" class="choice-card"
-									class:active={pickedOption === opt}
-									class:locked={v.disabled}
-									aria-pressed={pickedOption === opt}
+								<OptionCard
+									title={parts.title}
+									description={parts.effect}
+									reason={v.reason ?? undefined}
+									selected={pickedOption === opt}
 									aria-disabled={v.disabled}
-									onclick={() => { pickedOption = pickAfterTap(pickedOption, v); }}>
-									<span class="choice-text">
-										<span class="choice-title">{parts.title}</span>
-										<span class="choice-desc">{parts.effect}</span>
-										{#if v.reason}<span class="choice-desc">{v.reason}</span>{/if}
-									</span>
-									{#if pickedOption === opt}
-										<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
-									{/if}
-								</button>
+									onclick={() => { pickedOption = pickAfterTap(pickedOption, v); }}
+								/>
 							{/each}
 						</div>
 						<button class="action-btn primary" onclick={submitDraftPick}
@@ -420,32 +413,19 @@
 						one of {playerName(players, plan.preparer_id)}'s plans, or defer it
 						to whichever plan they prepare next.
 					</p>
-					<div class="choice-list">
+					<div class="option-list">
 						{#each counterTargetablePlans as p}
-							<button type="button" class="choice-card"
-								class:active={counterChoice === p.id}
-								aria-pressed={counterChoice === p.id}
-								onclick={() => { counterChoice = p.id; }}>
-								<span class="choice-text">
-									<span class="choice-title">{PLAN_SHORT[p.plan_type] ?? p.plan_type} (row {p.row_number})</span>
-								</span>
-								{#if counterChoice === p.id}
-									<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
-								{/if}
-							</button>
+							<OptionCard
+								title="{PLAN_SHORT[p.plan_type] ?? p.plan_type} (row {p.row_number})"
+								selected={counterChoice === p.id}
+								onclick={() => { counterChoice = p.id; }}
+							/>
 						{/each}
-						<button type="button" class="choice-card"
-							class:active={counterChoice === 'defer'}
-							aria-pressed={counterChoice === 'defer'}
-							onclick={() => { counterChoice = 'defer'; }}>
-							<span class="choice-text">
-								<span class="choice-title">Defer — counter the next plan
-									{playerName(players, plan.preparer_id)} prepares{#if counterTargetablePlans.length === 0}{' '}(no eligible plans yet){/if}</span>
-							</span>
-							{#if counterChoice === 'defer'}
-								<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
-							{/if}
-						</button>
+						<OptionCard
+							title="Defer — counter the next plan {playerName(players, plan.preparer_id)} prepares{counterTargetablePlans.length === 0 ? ' (no eligible plans yet)' : ''}"
+							selected={counterChoice === 'defer'}
+							onclick={() => { counterChoice = 'defer'; }}
+						/>
 					</div>
 					<button class="action-btn primary" onclick={submitCounter}
 						disabled={counterBusy || counterChoice == null}>

@@ -79,7 +79,7 @@ describe('the page', () => {
 	it('has a section for each thing the brief lists', () => {
 		for (const id of [
 			'type', 'gaps', 'corners', 'surfaces', 'text', 'borders', 'gold', 'meaning', 'players',
-			'marks', 'buttons', 'chips', 'rows', 'status', 'notices', 'sheets', 'pieces',
+			'marks', 'buttons', 'chips', 'options', 'rows', 'status', 'notices', 'sheets', 'pieces',
 		]) {
 			expect(body, `section #${id}`).toContain(`id="${id}"`);
 		}
@@ -91,7 +91,7 @@ describe('the page', () => {
 		for (const marker of [
 			'class="clock-mark', 'class="new-dot', 'class="die-mark', 'class="barbute-mark',
 			'class="player-shape', 'class="row-mark', 'class="notice', 'checklist-row',
-			'table-roster', 'class="chip', 'class="star-mark', 'class="tone-mark', 'class="m-tile', 'class="card ',
+			'table-roster', 'class="chip', 'class="option-card', 'class="step-actions', 'class="step-groups', 'class="star-mark', 'class="tone-mark', 'class="m-tile', 'class="card ',
 		]) {
 			expect(body, marker).toContain(marker);
 		}

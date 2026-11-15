@@ -101,5 +101,8 @@
 		<ErrorText message={error} variant="panel" />
 	{/if}
 
-	{@render children()}
+	<!-- The panel's own body: a column of groups, with the group gap between them. -->
+	<div class="step-groups">
+		{@render children()}
+	</div>
 </div>

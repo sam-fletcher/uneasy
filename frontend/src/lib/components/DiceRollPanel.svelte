@@ -713,16 +713,6 @@
 	}
 	.choice-row > :global(.chip) { flex: 1 1 8rem; }
 
-	/* The step's buttons: the main one takes the room, the pass sits beside it. */
-	.step-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-	}
-	.step-actions > :global(.action-btn) { align-self: stretch; }
-	.step-actions > :global(.action-btn.primary) { flex: 2 1 10rem; }
-	.step-actions > :global(.action-btn.secondary) { flex: 1 1 6rem; }
-
 	/* A cluster of controls under a small label ("Leverage from your retinue"). */
 	.leverage-group {
 		display: flex;

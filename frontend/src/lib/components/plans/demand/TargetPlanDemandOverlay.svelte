@@ -266,7 +266,7 @@
 </script>
 
 {#if demand && draftComplete}
-	<div class="demand-banner">
+	<div class="step-groups">
 		<!-- What the demand does to this plan: plain rules, so no box and no colour. -->
 		<div class="demand-summary">
 			<p class="demand-banner-header">
@@ -388,7 +388,7 @@
 					/>
 				{/if}
 
-				<div class="demand-actions">
+				<div class="step-actions stacking">
 					<button class="action-btn primary" onclick={() => submitRetarget(false)}
 						disabled={retargetBusy || (isLiaise && (liaiseReaimBlocked != null || retargetPlayerID == null || retargetPeerID == null))}>
 						{retargetBusy ? '…' : 'Re-aim this plan'}
@@ -442,7 +442,7 @@
 						selectedMulti={selectedLeverageIDs}
 						onSelectMulti={(ids) => (selectedLeverageIDs = ids)}
 					/>
-					<div class="demand-actions">
+					<div class="step-actions stacking">
 						<button class="action-btn primary" onclick={submitLeverage} disabled={leverageBusy}>
 							{#if leverageBusy}
 								…
@@ -462,13 +462,6 @@
 {/if}
 
 <style>
-	/* The demand's effect on this plan, then the Make Demands winner's own forms.
-	   No box, fill or border anywhere: it is a run of groups with space between. */
-	.demand-banner {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-5);
-	}
 	.demand-summary {
 		display: flex;
 		flex-direction: column;
@@ -509,15 +502,4 @@
 		flex-direction: column;
 		gap: var(--space-3);
 	}
-	/* The step's buttons: the main one takes the room and the other sits beside
-	   it when there is space. Each is 12rem at least, so in a phone column they
-	   stack and both stay full-width targets. */
-	.demand-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-	}
-	.demand-actions > :global(.action-btn) { align-self: stretch; }
-	.demand-actions > :global(.action-btn.primary) { flex: 2 1 12rem; }
-	.demand-actions > :global(.action-btn.secondary) { flex: 1 1 12rem; }
 </style>

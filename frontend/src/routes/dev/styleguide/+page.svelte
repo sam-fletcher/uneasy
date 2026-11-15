@@ -21,6 +21,7 @@
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/marginaliaTile.css';
+	import '$lib/components/plans/planPanel.css';
 	import { onMount } from 'svelte';
 	import type { Asset, Plan, Player, WarStateResponse } from '$lib/api';
 	import AssetCardSelectable from '$lib/components/AssetCardSelectable.svelte';
@@ -35,11 +36,13 @@
 	import DieMark from '$lib/components/shared/DieMark.svelte';
 	import NewDot from '$lib/components/shared/NewDot.svelte';
 	import Notice from '$lib/components/shared/Notice.svelte';
+	import OptionCard from '$lib/components/shared/OptionCard.svelte';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import RowMark from '$lib/components/shared/RowMark.svelte';
 	import StarMark from '$lib/components/shared/StarMark.svelte';
 	import StepHeading from '$lib/components/shared/StepHeading.svelte';
 	import DieTile from '$lib/components/plans/shared/DieTile.svelte';
+	import PlayerChips from '$lib/components/plans/PlayerChips.svelte';
 	import WarBand from '$lib/components/plans/war/WarBand.svelte';
 	import WarName from '$lib/components/plans/war/WarName.svelte';
 	import WarSheet from '$lib/components/plans/war/WarSheet.svelte';
@@ -79,6 +82,7 @@
 		['marks', 'Marks'],
 		['buttons', 'Buttons'],
 		['chips', 'Chips'],
+		['options', 'Option cards'],
 		['rows', 'Rows'],
 		['status', 'Status words'],
 		['notices', 'Notices'],
@@ -215,6 +219,8 @@
 	// ── Live state for the interactive specimens ───────────────────────────
 	let choice = $state<'aid' | 'interfere'>('aid');
 	let subTab = $state<'events' | 'laws' | 'rumors'>('events');
+	let option = $state<'one' | 'two'>('one');
+	let pickedPlayer = $state<number | null>(2);
 	let sheetOpen = $state(false);
 	let sheetChoice = $state<'one' | 'two' | 'out'>('one');
 	let counterText = $state('Sixteen chars...');
@@ -586,10 +592,16 @@
 			<Cell label="greyed out · aria-disabled (still tappable, to explain why)">
 				<button class="action-btn primary" aria-disabled="true">Join</button>
 			</Cell>
-			<Cell label="a main and a secondary, as in a step">
-				<div class="button-pair">
+			<Cell label="the step's button row · .step-actions: the main button takes twice the room, and the other sits beside it">
+				<div class="step-actions sg-col">
 					<button class="action-btn primary">Commit</button>
 					<button class="action-btn secondary">Pass</button>
+				</div>
+			</Cell>
+			<Cell label="the stacking row · .step-actions.stacking: for labels that are sentences, so the two stack full width on a phone">
+				<div class="step-actions stacking sg-col">
+					<button class="action-btn primary">Leverage none — let the roll fail</button>
+					<button class="action-btn secondary">Keep the current target</button>
 				</div>
 			</Cell>
 			<Cell label="small · legacy, for the few dense spots that have it">
@@ -629,11 +641,81 @@
 				<Chip disabled>Unavailable</Chip>
 				<Chip selected disabled>Chosen, locked</Chip>
 			</Cell>
+			<Cell label="player chips · PlayerChips: the player's shape, then their name in their colour; the pick is the border alone, and a locked row keeps the colours">
+				<div class="step-col">
+					<PlayerChips
+						players={players.slice(0, 3)}
+						isActive={(p) => pickedPlayer === p.id}
+						onSelect={(p) => (pickedPlayer = pickedPlayer === p.id ? null : p.id)}
+					/>
+					<PlayerChips
+						players={players.slice(0, 3)}
+						isActive={(p) => p.id === 2}
+						onSelect={() => {}}
+						readOnly
+					/>
+				</div>
+			</Cell>
 		</div>
 		<p class="note">
 			A choice wears no meaning colour: the two chips above are told apart by their words, and
 			the one picked is the one in bright gold. Hover lightens the border; focus draws the
 			bright gold ring.
+		</p>
+	</Section>
+
+	<Section
+		id="options"
+		title="Option cards"
+		blurb="An option that needs more than a word is a card: a title, a sentence under it, and a level when it has one. It is a control, so it has the neutral control border. Selected is the 2px bright gold border with no fill, plus a tick at the end of the row. Locked is a hairline and faint words, and says why in words under the sentence."
+	>
+		<Cell label="rest, selected and locked · OptionCard (tap to switch the first two)">
+			<div class="option-list sg-col">
+				<OptionCard
+					title="Control leverage"
+					description="Leverage the target preparer's assets onto their roll."
+					selected={option === 'one'}
+					onclick={() => (option = 'one')}
+				/>
+				<OptionCard
+					title="Perform steps"
+					description="Submit the target plan's make or mar choice in their place."
+					selected={option === 'two'}
+					onclick={() => (option = 'two')}
+				/>
+				<OptionCard
+					title="Keep assets"
+					description="Receive any assets the target plan would have given its preparer."
+					reason="This plan gives its preparer no assets to keep."
+					aria-disabled="true"
+				/>
+			</div>
+		</Cell>
+		<Cell label="with a level · a signed number before the text, and a locked option names what it needs">
+			<div class="option-list sg-col">
+				<OptionCard badge="+1" title="Legal" description="Everything went according to plan." selected />
+				<OptionCard badge="+2" title="Conspiracy" description="The peer was in on it." />
+				<OptionCard badge="+3" title="Forfeit" description="You take the requested peer." reason="needs +3" disabled />
+			</div>
+		</Cell>
+		<Cell label="with a die at the end of the row · the duel's stake line (aside)">
+			<div class="option-list sg-col">
+				<OptionCard title="The Old Ledger" selected>
+					{#snippet aside()}
+						<DieTile face={4} color={playerColor({ token_color: null, seat_order: 1 })} label="Ash's die" />
+					{/snippet}
+				</OptionCard>
+				<OptionCard title="Lady Merrow">
+					{#snippet aside()}
+						<DieTile face={2} color={playerColor({ token_color: null, seat_order: 1 })} label="Ash's die" />
+					{/snippet}
+				</OptionCard>
+			</div>
+		</Cell>
+		<p class="note">
+			A card wears no meaning colour: its words tell it apart. Hover lightens the border and a
+			selected card keeps its gold. Focus draws the bright gold ring. Lock a card with
+			<code>disabled</code>, or with <code>aria-disabled</code> where a tap should say why.
 		</p>
 	</Section>
 
@@ -900,6 +982,22 @@
 				<div class="chip-row">
 					<button class="action-btn primary">Commit aid</button>
 					<button class="action-btn secondary">Pass</button>
+				</div>
+			</div>
+		</Cell>
+		<Cell label="Groups in a step · .step-groups: 24px between groups, 12px between a group's own lines, and .taken-count after a lead line">
+			<div class="step-groups sg-col">
+				<div class="choices-section">
+					<p class="choices-header">Your extra Makes <span class="taken-count">· 0 of 2 taken</span></p>
+					<p class="choices-note">Take a Make — pick one.</p>
+					<div class="chip-row">
+						<Chip>Spread a rumor</Chip>
+						<Chip>Introduce a peer</Chip>
+					</div>
+				</div>
+				<div class="choices-section">
+					<p class="choices-header">Ash insists you take a Mar <span class="taken-count">· 2 mars to settle</span></p>
+					<p class="choices-note">You choose which one.</p>
 				</div>
 			</div>
 		</Cell>
@@ -1208,10 +1306,6 @@
 		flex-wrap: wrap;
 		gap: var(--space-2);
 	}
-	.button-pair {
-		display: flex;
-		gap: var(--space-2);
-	}
 	.with-dot {
 		display: inline-flex;
 		align-items: center;
@@ -1268,6 +1362,8 @@
 		gap: var(--space-3);
 		width: min(100%, var(--layout-column-min));
 	}
+	/* A specimen that is itself a column (the option list, the group gap): the width of a play column. */
+	.sg-col { width: min(100%, var(--layout-column-min)); }
 	.piece-col {
 		width: 100%;
 		min-width: 0;

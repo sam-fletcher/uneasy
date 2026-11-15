@@ -250,7 +250,7 @@ test('seek answers: ask → veto → re-ask → answer each reach the other side
 	// collapses to bob, pre-selected and not clickable, so there's nothing to pick.
 	const bobChip = reaskForm.getByRole('button', { name: 'bob' });
 	await expect(bobChip).toBeDisabled();
-	await expect(reaskForm.locator('.player-chip')).toHaveCount(1);
+	await expect(reaskForm.getByRole('button', { name: /^(alice|bob|carol)$/ })).toHaveCount(1);
 	const q2 = 'Then who carried your seal that night?';
 	await reaskForm.locator('textarea').fill(q2);
 	await reaskForm.getByRole('button', { name: 'Ask question' }).click();

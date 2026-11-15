@@ -9,7 +9,7 @@ import DieTile from './DieTile.svelte';
 import ResolvingCard from '../ResolvingCard.svelte';
 import StepHeading from '$lib/components/shared/StepHeading.svelte';
 import { STEP_FRAME_KEY, type StepFrame } from './stepFrame';
-import { declarations, winning } from '$lib/components/shared/cssTestKit';
+import { declarations } from '$lib/components/shared/cssTestKit';
 
 /*
  * The Play pane reads as a plan's steps in order: finished steps are one line,
@@ -166,6 +166,21 @@ describe('ResolvingCard', () => {
 		expect(at('Your move — the next step')).toBeLessThan(at('THE BODY'));
 	});
 
+	it('puts the panel\'s body in a column of groups, after the frame\'s own lines', () => {
+		const html = card({ plan: plan({ preparation_notes: 'A note.' }) }, frame({
+			roll: snippet('<section id="roll">THE ROLL</section>'),
+			heading: { text: 'Your move — the next step', yours: true },
+		}));
+		// The body, and only the body, is inside .step-groups: the finished lines, the
+		// roll and the heading keep the frame's own gap.
+		const open = html.indexOf('class="step-groups"');
+		expect(open, 'a .step-groups column').toBeGreaterThan(-1);
+		expect(html.indexOf('THE BODY')).toBeGreaterThan(open);
+		for (const framePart of ['alice prepared', 'THE ROLL', 'Your move — the next step']) {
+			expect(html.indexOf(framePart), framePart).toBeLessThan(open);
+		}
+	});
+
 	it('leaves the heading to the roll while the roll is open, so there is only one', () => {
 		const html = card({}, frame({
 			roll: snippet('<section>THE ROLL</section>'),
@@ -204,30 +219,5 @@ describe('planPanel.css: no boxes, no fades', () => {
 
 	it('the gold wash and the violet chip are gone', () => {
 		expect(css).not.toMatch(/surface-active|chip-violet|surface-sunken|border-warm-strong/);
-	});
-
-	// The panels still draw their chips with the older class names. Each must
-	// still be the house chip, state for state: if chip.css changes a selected
-	// chip and these don't follow, the panels quietly stop matching it.
-	describe('.player-chip and .chip-btn are the house chip', () => {
-		const chipCss = readFileSync(join(__dirname, '../../shared/chip.css'), 'utf8');
-		const rules = css;
-		const states: Array<[string, { chip: object; legacy: object }]> = [
-			['at rest', { chip: { classes: ['chip'] }, legacy: { classes: ['chip-btn'] } }],
-			['selected', { chip: { classes: ['chip', 'selected'] }, legacy: { classes: ['chip-btn', 'active'] } }],
-			['hovered', { chip: { classes: ['chip'], pseudos: ['hover'] }, legacy: { classes: ['chip-btn'], pseudos: ['hover'] } }],
-			// A face the player cannot press (the die-face picker after Submit sets native
-			// `disabled`; a tap-to-explain option sets aria-disabled): both must look locked.
-			['locked (disabled)', { chip: { classes: ['chip'], pseudos: ['disabled'] }, legacy: { classes: ['chip-btn'], pseudos: ['disabled'] } }],
-			['locked (aria-disabled)', { chip: { classes: ['chip'], attrs: { 'aria-disabled': 'true' } }, legacy: { classes: ['chip-btn'], attrs: { 'aria-disabled': 'true' } } }],
-			['chosen and locked', { chip: { classes: ['chip', 'selected'], pseudos: ['disabled'] }, legacy: { classes: ['chip-btn', 'active'], pseudos: ['disabled'] } }],
-		];
-		for (const [name, { chip, legacy }] of states) {
-			for (const prop of ['border-color', 'box-shadow', 'color', 'border-radius', 'min-height', 'background']) {
-				it(`${prop} ${name}`, () => {
-					expect(winning(rules, prop, legacy), `.chip-btn ${prop}`).toBe(winning(chipCss, prop, chip));
-				});
-			}
-		}
 	});
 });
