@@ -66,14 +66,34 @@
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
-	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
+	// The player whose prep form this is. The preparer's own form is the viewer's;
+	// a watcher's read-only mirror is the focus player's, so the lists and labels
+	// name the preparer, not the watcher.
+	const draftPreparerID = $derived(readOnly ? ctx.focusPlayerID : currentPlayerID);
+	const draftPreparerName = $derived(playerName(players, draftPreparerID));
+	const otherPlayers = $derived(playersExcept(players, draftPreparerID));
 
-	// The peers each side could bring to the meeting (intact, owned).
-	const myPeers = $derived(
-		ownerIntactAssets(assets, currentPlayerID).filter(a => a.asset_type === 'peer'),
+	// The peers the preparer could bring to the meeting (intact, owned).
+	const draftPreparerPeers = $derived(
+		ownerIntactAssets(assets, draftPreparerID).filter(a => a.asset_type === 'peer'),
 	);
 	const prepPartnerPeers = $derived(
 		ownerIntactAssets(assets, clPartnerID).filter(a => a.asset_type === 'peer'),
+	);
+	// "Your …" is the preparer's own wording. A watcher reads the same form, so
+	// there it names whose peer each list is.
+	const meetingPeerLabel = $derived(
+		readOnly ? `${draftPreparerName}'s meeting peer` : 'Your meeting peer',
+	);
+	const meetingPeerEmpty = $derived(
+		readOnly
+			? `${draftPreparerName} has no peer to bring to the meeting.`
+			: 'You have no peer to bring to the meeting.',
+	);
+	const partnerPeerEmpty = $derived(
+		readOnly
+			? `${playerName(players, clPartnerID)} has no peer to bring to the meeting.`
+			: 'Your partner has no peer to bring to the meeting.',
 	);
 
 	// Drop a partner-peer pick if the partner changes (it belonged to the old one).
@@ -433,10 +453,10 @@
 				Tip: discuss the choice with the other player in the chat first.
 			</p>
 			<CardPicker
-				label="Your meeting peer"
-				items={myPeers}
+				label={meetingPeerLabel}
+				items={draftPreparerPeers}
 				{players}
-				emptyMessage="You have no peer to bring to the meeting."
+				emptyMessage={meetingPeerEmpty}
 				selected={clPreparerPeerID}
 				onSelect={(id) => (clPreparerPeerID = id)}
 			/>
@@ -445,7 +465,7 @@
 					label="Partner's meeting peer"
 					items={prepPartnerPeers}
 					{players}
-					emptyMessage="Your partner has no peer to bring to the meeting."
+					emptyMessage={partnerPeerEmpty}
 					selected={clPartnerPeerID}
 					onSelect={(id) => (clPartnerPeerID = id)}
 				/>
