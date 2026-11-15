@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, expectHeading } from './helpers';
 import { E2E } from './baseUrl';
 import {
 	cleanupDuelsAfterEach, seedDuel, addPeer, openDuel, openTable, duelWithDice, aliceCall, duelState,
@@ -477,8 +477,8 @@ test('make with a real pick: the preparer chooses which of the target’s stakes
 
 	const claim = section(alice, 'The final roll');
 	await expect(claim.getByText("Choose 2 of bob's staked assets to take:")).toBeVisible({ timeout: 10_000 });
-	await expect(bob.getByText('Waiting for alice to claim stakes…')).toBeVisible();
-	await expect(carol.getByText('Waiting for alice to claim stakes…')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — claim the stakes');
+	await expectHeading(carol, 'Waiting on alice — claim the stakes');
 	expect(await rowState(g)).toMatchObject({ kind: 'plan_resolving' });
 	// The picker is capped at the budget: a third card cannot be ticked.
 	await claim.locator('.card', { hasText: 'Bob Peer 1' }).getByRole('checkbox').click();
@@ -538,8 +538,8 @@ test.describe('the take after a mar is the opponent’s choice', () => {
 		const claim = section(bob, 'The final roll');
 		await expect(claim.getByRole('button', { name: 'Take the stake' })).toBeVisible({ timeout: 10_000 });
 		await expect(claim.getByRole('button', { name: 'Spare alice' })).toBeVisible();
-		await expect(alice.getByText('Waiting for bob to take stakes or spare…')).toBeVisible();
-		await expect(carol.getByText('Waiting for bob to take stakes or spare…')).toBeVisible();
+		await expectHeading(alice, 'Waiting on bob — take the stakes or spare them');
+		await expectHeading(carol, 'Waiting on bob — take the stakes or spare them');
 		await expect(section(alice, 'The final roll').getByRole('button')).toHaveCount(0);
 		expect((await planWithData(g)).plan.status).toBe('resolving');
 		expect(await rowState(g)).toMatchObject({ kind: 'plan_resolving', acting_player_ids: [g.ids.bob] });
@@ -593,8 +593,8 @@ test.describe('the take after a mar is the opponent’s choice', () => {
 		const claim = section(bob, 'The final roll');
 		await expect(claim.getByText("Choose 1 of alice's staked asset to take:")).toBeVisible({ timeout: 10_000 });
 		await expect(claim.getByRole('button', { name: 'Spare alice instead' })).toBeVisible();
-		await expect(alice.getByText('Waiting for bob to take stakes or spare…')).toBeVisible();
-		await expect(carol.getByText('Waiting for bob to take stakes or spare…')).toBeVisible();
+		await expectHeading(alice, 'Waiting on bob — take the stakes or spare them');
+		await expectHeading(carol, 'Waiting on bob — take the stakes or spare them');
 		await expect(section(alice, 'The final roll').getByRole('button', { name: /^Take/ })).toHaveCount(0);
 		expect((await planWithData(g)).plan.status).toBe('resolving');
 		// The bar names the mar winner, not the preparer.

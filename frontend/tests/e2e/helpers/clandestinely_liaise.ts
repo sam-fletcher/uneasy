@@ -227,9 +227,22 @@ export async function openAll(
 	return out;
 }
 
-/** The Things We Share / Secrets We Keep etc. panel section with this header. */
+/**
+ * A liaison phase's own panel section. The phases used to carry the book's name as
+ * a title ("Things We Share"); the open step's heading says it now, word for word
+ * ("Your move — things we share"), so the section is found by the sentence the phase
+ * opens with. `header` is still the phase's name, as the specs say it.
+ */
+const PHASE_SENTENCE: Record<string, string> = {
+	'together at last': 'set the scene of your',
+	'secrets we keep': 'nominates one of your own assets to hold the secret',
+	'things we share': 'Picks are revealed once both players have submitted',
+	'when will i see you again?': 'Reveal a die face (1–6) to choose how many rows',
+};
 export function section(page: Page, header: string) {
-	return page.locator('.choices-section', { hasText: header });
+	const sentence = PHASE_SENTENCE[header.toLowerCase()];
+	if (!sentence) throw new Error(`no liaison phase is called "${header}"`);
+	return page.locator('.choices-section', { hasText: sentence });
 }
 
 /** Alice or bob's liaison panel: pick a card by asset name and tick it. */

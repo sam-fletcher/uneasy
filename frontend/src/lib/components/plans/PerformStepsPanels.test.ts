@@ -11,8 +11,11 @@ import type { PlanContext } from './types';
 
 // A Make Demands perform_steps win hands a plan's post-roll steps to the winner
 // and locks the preparer out (the server 403s them). Each panel must show the
-// winner its post-roll form and the preparer a wait line — never the reverse —
-// while the pre-roll steps stay with the preparer.
+// winner its post-roll form and the preparer none that works — never the reverse —
+// while the pre-roll steps stay with the preparer. Who the table is waiting on is
+// the open step's heading's to say (the server names the winner, plans/stepLabels
+// names the step), so no panel prints a "X is choosing…" line any more: `wait` is
+// that old line, and it must stay gone.
 
 const PREPARER = 1;
 const WINNER = 2;
@@ -27,7 +30,8 @@ type Case = {
 	extra?: Record<string, unknown>;
 	/** Present only on the post-roll form the actor works. */
 	form: string;
-	/** Present only on the wait line shown to everyone else. */
+	/** The wait line this panel used to print to everyone else. It is the heading's
+	 *  now, so it must not come back. */
 	wait: string;
 	/** No roll yet: leave the roll state empty (pre-roll steps stay with the preparer). */
 	noRoll?: boolean;
@@ -136,28 +140,28 @@ describe.each([...CASES, DECREE_ADDENDUM])('$name with a perform_steps winner', 
 		expect(body).not.toContain(c.wait);
 	});
 
-	it('shows the preparer a wait on the winner, not the form', () => {
+	it('shows the preparer no working form, and no line about the winner (the heading says it)', () => {
 		const body = renderFor(c, PREPARER);
 		expect(live(body, c.form)).toBe(false);
-		expect(body).toContain(c.wait);
+		expect(body).not.toContain(c.wait);
 	});
 });
 
 describe('pre-roll steps stay with the preparer under perform_steps', () => {
-	it('shows the preparer the narration form and the winner a wait', () => {
+	it('shows the preparer the narration form and the winner none', () => {
 		const prep = renderFor(SEEK_PRE_ROLL, PREPARER);
 		const winner = renderFor(SEEK_PRE_ROLL, WINNER);
 		expect(prep).toContain('Submit');
 		expect(winner).not.toContain('Submit');
-		expect(winner).toContain('ravi is researching');
+		expect(winner).not.toContain(SEEK_PRE_ROLL.wait);
 	});
 });
 
 describe('completion stays with the preparer under perform_steps', () => {
-	it('offers Complete plan to the preparer and a wait to the winner', () => {
+	it('offers Complete plan to the preparer and nothing to the winner', () => {
 		expect(renderFor(SEEK_DONE, PREPARER)).toContain('Complete plan');
 		const winner = renderFor(SEEK_DONE, WINNER);
 		expect(winner).not.toContain('Complete plan');
-		expect(winner).toContain(SEEK_DONE.wait);
+		expect(winner).not.toContain(SEEK_DONE.wait);
 	});
 });

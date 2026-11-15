@@ -6,9 +6,9 @@ import PreRollStep from './PreRollStep.svelte';
  * The pre-roll step is shared by Spread Propaganda and Spread Rumors, so what it
  * promises is checked once here: the actor gets the book's prompt, one field per
  * entry, and a submit that is dead until every field has text; everyone else gets
- * a single waiting line and no form at all. Rendered through svelte/server (no
- * jsdom in this suite), so the pre-fill — an $effect — and the click are out of
- * reach; the real-browser pass covers them.
+ * no form at all, and no line either: the open step's heading says who is owed.
+ * Rendered through svelte/server (no jsdom in this suite), so the pre-fill — an
+ * $effect — and the click are out of reach; the real-browser pass covers them.
  */
 
 const fields = [
@@ -21,8 +21,6 @@ const props = {
 	prompt: "State the rumor you plan to spread and explain how you're spreading it.",
 	fields,
 	busy: false,
-	actorName: 'alice',
-	waitingVerb: 'is about to state the rumor',
 	onSubmit: () => {},
 };
 
@@ -38,10 +36,11 @@ describe('PreRollStep', () => {
 		expect(body).toMatch(/<button[^>]*disabled[^>]*>\s*Post &amp; open the roll/);
 	});
 
-	it('gives everyone else one waiting line and no form', () => {
+	it('gives everyone else no form, and no waiting line (the heading says who)', () => {
 		const { body } = render(PreRollStep, { props: { ...props, canAct: false } });
-		expect(body).toContain('alice is about to state the rumor…');
 		expect(body).not.toContain('<textarea');
 		expect(body).not.toContain('<button');
+		expect(body).not.toContain('about to');
+		expect(body.replace(/<!--[\s\S]*?-->/g, '').trim()).toBe('');
 	});
 });

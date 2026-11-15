@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
-import { cleanupGameAfterEach, expectWaitingOn } from './helpers';
+import { cleanupGameAfterEach, expectHeading, expectWaitingOn, stepHeading } from './helpers';
+import { expectRollOpen } from './helpers/roll_open';
 import { E2E } from './baseUrl';
 
 // Regression specs for what the 12-plan UX audit fixed in Make Introductions:
@@ -142,7 +143,7 @@ async function nameAndRoll(alice: Page, names: string[]) {
 	await expect(inputs).toHaveCount(names.length, { timeout: 10_000 });
 	for (const [i, n] of names.entries()) await inputs.nth(i).fill(n);
 	await alice.getByRole('button', { name: 'Name peers & roll' }).click();
-	await expect(alice.getByText('Dice roll in progress…')).toBeVisible({ timeout: 10_000 });
+	await expectRollOpen(alice);
 }
 
 async function forceRoll(f: Fixture, outcome: 'make' | 'mar') {
@@ -199,7 +200,7 @@ test('pre-roll: everyone sees the difficulty meter and the buffet; only the prep
 	// Only alice gets the naming form; the others are told who is naming.
 	await expect(alice.getByRole('button', { name: 'Name peers & roll' })).toBeVisible();
 	for (const p of [bob, carol]) {
-		await expect(p.getByText('alice is naming the new peers…')).toBeVisible();
+		await expectHeading(p, 'Waiting on alice — name the new peers');
 		await expect(p.getByRole('button', { name: 'Name peers & roll' })).toHaveCount(0);
 	}
 	// ...and the server agrees: a non-preparer cannot name a peer.
@@ -234,7 +235,7 @@ test('make: the preparer describes each arrival; the last arrival ends the plan'
 	await expect(alice.locator('.acf input').first()).toHaveValue('Lady Ashby');
 	const arrive = alice.getByRole('button', { name: 'They arrive', exact: true });
 	await expect(arrive).toBeDisabled();
-	await expect(bob.getByText('alice is welcoming the new peers…')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — describe each arrival');
 
 	await expectNoGates(alice);
 	await alice.locator('.acf textarea').first().fill('Holds the northern road.');
@@ -266,7 +267,7 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 
 	await expect(alice.getByText('(2 remaining):')).toBeVisible({ timeout: 10_000 });
 	for (const p of [bob, carol]) {
-		await expect(p.getByText('alice is resolving the marred introductions…')).toBeVisible();
+		await expectHeading(p, 'Waiting on alice — settle each newcomer');
 	}
 	// The mar commits with no picks, so the panel knows it is committed from the
 	// auto-apply marker alone — and nobody is left looking at the dice wait or
@@ -278,7 +279,6 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 		expect(committed.make_mar_choices ?? []).toHaveLength(0);
 	}
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('Dice roll in progress…')).toHaveCount(0);
 		await expect(p.locator('.meter-label', { hasText: 'Difficulty' })).toHaveCount(0);
 	}
 
@@ -291,6 +291,11 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 
 	// Second peer: the outcome already handed out is greyed, with a reason on tap.
 	await expect(alice.getByText('(1 remaining):')).toBeVisible({ timeout: 10_000 });
+	// Alice still has a fate to settle while bob writes the first peer's marginalia, and the table
+	// waits on both for different things: the heading names what they share, to alice and bob alike.
+	await expectHeading(alice, 'Your move — the newcomers');
+	await expectHeading(bob, 'Your move — the newcomers');
+	await expectHeading(carol, 'Waiting on alice and bob — the newcomers');
 	const taken = alice.getByRole('button', { name: 'Another retinue', exact: true });
 	await expect(taken).toHaveAttribute('aria-disabled', 'true');
 	await taken.click({ force: true }); // aria-disabled reads as not actionable to Playwright
@@ -312,6 +317,8 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 
 	// The wait moves from the preparer to the two authors (alice no longer owes a step).
 	await expectWaitingOn(alice, ['bob', 'carol'], 'alice');
+	await expectHeading(alice, 'Waiting on bob and carol — describe a newcomer');
+	await expectHeading(bob, 'Your move — describe a newcomer');
 	await expectNoGates(alice);
 
 	// Bob and carol are each asked for the marginalia they owe; alice is not.
@@ -344,7 +351,7 @@ test('perform_steps winner drives the post-roll steps; the preparer still names 
 	const { alice, bob } = pages;
 
 	// Pre-roll the winner is just a bystander: alice names, bob waits.
-	await expect(bob.getByText('alice is naming the new peers…')).toBeVisible({ timeout: 10_000 });
+	await expect(stepHeading(bob)).toHaveText('Waiting on alice — name the new peers', { timeout: 10_000 });
 	await expect(bob.getByRole('button', { name: 'Name peers & roll' })).toHaveCount(0);
 	const res = await f.ctx.bob.post(`/api/plans/${f.planID}/create-peer`, { data: { name: 'Demander pick' } });
 	expect(res.status()).toBe(403);
@@ -363,7 +370,7 @@ test('perform_steps winner drives the post-roll steps; the preparer still names 
 
 	// Post-roll the winner gets the arrival form and the preparer sees the wait.
 	await expect(bob.getByText('arrives at court. Describe them', { exact: false })).toBeVisible({ timeout: 10_000 });
-	await expect(alice.getByText('bob is welcoming the new peers…')).toBeVisible();
+	await expectHeading(alice, 'Waiting on bob — describe each arrival');
 	await expect(alice.getByText('arrives at court', { exact: false })).toHaveCount(0);
 
 	await bob.locator('.acf textarea').first().fill('Bob vouches for them.');

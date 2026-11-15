@@ -9,7 +9,9 @@
 // must act — `acting_player_ids` is read directly, with no client-side
 // preparer/focus proxy (the proxy is what produced the original bug).
 
-import type { DiceRoll, RowState } from '$lib/api';
+import type { DiceRoll, Plan, RowState } from '$lib/api';
+import { REGISTRY } from '$lib/components/plans/registry';
+import { ownRoll, UNKNOWN_STEP } from '$lib/plans/stepLabel';
 
 /** A single party the game is waiting on. */
 export type Waitee =
@@ -37,12 +39,34 @@ export interface MainEventWaitingOnInput {
 	activeRoll: DiceRoll | null;
 	/** Max assets the focus player may refresh (for the post-scene label). */
 	maxRefresh: number;
+	/** Every plan in the game. The row state names the plan it is about
+	 *  (`plan_id`); that plan says which of its own steps is open (plans/stepLabel.ts).
+	 *  Left out, a resolving plan is simply "the next step". */
+	plans?: Plan[];
 	/** The viewer. Only a dice roll's wording needs it: the actor's move is the
 	 *  roll itself, everyone else's is to aid or interfere with it. */
 	currentPlayerID?: number | null;
 }
 
 const player = (playerID: number): Waitee => ({ kind: 'player', playerID });
+
+/** The phrase the row's plan gives for its open step, or null when the plan can't
+ *  say (no plan named or loaded, or a moment the plan has no step for). The plan
+ *  answers from its own resolution data, so this is the same wherever it is asked:
+ *  the page's heading and the plan's card can't disagree, and it is right before the
+ *  plan's panel has loaded. */
+function planStepLabel(rowState: RowState, plans: Plan[], activeRoll: DiceRoll | null): string | null {
+	const plan = plans.find(p => p.id === rowState.plan_id);
+	// A plan that has not started resolving has no step yet: its data is the prepare-time
+	// draft, which the labels would read as the open step's.
+	if (!plan || plan.status !== 'resolving') return null;
+	return REGISTRY[plan.plan_type]?.stepLabel({
+		plan,
+		plans,
+		roll: ownRoll(plan, activeRoll),
+		acting: rowState.acting_player_ids ?? [],
+	}) ?? null;
+}
 
 /** The roll step's ask. The actor's move is the roll, and everyone else's is
  *  to aid or interfere. It is "the roll" only while the ACTOR still owes it: to
@@ -84,6 +108,7 @@ const rollStepLabel = (
  */
 export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnState {
 	const { rowState, activeRoll, maxRefresh } = input;
+	const plans = input.plans ?? [];
 	const viewerID = input.currentPlayerID ?? null;
 
 	// The server-authoritative acting set. The backend names the exact
@@ -103,7 +128,13 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// Resolved by its preparer (named server-side), never the focus
 			// player — a delayed plan routinely resolves on a row whose focus is
 			// someone else. plan_pending is the brief pre-kickoff/recovery state.
-			return { waitees: actingWaitees(), stepLabel: 'the next step' };
+			// The server only knows the plan is resolving; the plan knows which of its
+			// own steps is open. UNKNOWN_STEP is for the plans and moments that can't
+			// say (a plan not loaded yet, a step the server is about to finish itself).
+			return {
+				waitees: actingWaitees(),
+				stepLabel: planStepLabel(rowState, plans, activeRoll) ?? UNKNOWN_STEP,
+			};
 		case 'await_demand_counter':
 			return { waitees: actingWaitees(), stepLabel: 'the counter-demand' };
 		case 'await_demand_draft_pick':
@@ -143,21 +174,42 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 		case 'await_take_consent':
 			return { waitees: actingWaitees(), stepLabel: 'consent to the take' };
 		case 'await_question_answer':
-			return { waitees: actingWaitees(), stepLabel: 'answer the question' };
+			// The target answers; the actor is named too while they still owe picks of
+			// their own, so the plan says which asks are open ("the question and the
+			// picks" when both).
+			return {
+				waitees: actingWaitees(),
+				stepLabel: planStepLabel(rowState, plans, activeRoll) ?? 'answer the question',
+			};
 		case 'liaise_resolving':
 			// Collaborative submit phase (secrets / things-we-share /
 			// when-will-I-see-you-again). The backend names who still owes a
-			// submission, or the preparer once both are in (must advance).
-			return { waitees: actingWaitees(), stepLabel: 'the liaison' };
+			// submission, or the preparer once both are in (must advance). The kind
+			// spans three phases, so the plan says which; "the liaison" is for when it
+			// can't (the plan not loaded yet).
+			return {
+				waitees: actingWaitees(),
+				stepLabel: planStepLabel(rowState, plans, activeRoll) ?? 'the liaison',
+			};
 		case 'await_courtier_response':
 			// Exchange Courtiers target-driven sub-step (offer / messy break / mar
-			// choices / peer claims). Blocks on the target, not the preparer.
-			return { waitees: actingWaitees(), stepLabel: 'respond to the exchange' };
+			// choices / peer claims). Blocks on the target, not the preparer. The kind
+			// spans three different asks, so the plan says which; "respond to the
+			// exchange" is for when it can't (the plan not loaded yet).
+			return {
+				waitees: actingWaitees(),
+				stepLabel: planStepLabel(rowState, plans, activeRoll) ?? 'respond to the exchange',
+			};
 		case 'await_introductions_marginalia':
 			// Marred Make Introductions — a newcomer's marginalia is somebody
 			// else's to write, and until they do the peer is still a draft with no
 			// asset behind them.
-			return { waitees: actingWaitees(), stepLabel: 'describe a newcomer' };
+			// Named together with the actor while they still owe fates of their own, so the
+			// plan says which asks are open ("the newcomers" when both).
+			return {
+				waitees: actingWaitees(),
+				stepLabel: planStepLabel(rowState, plans, activeRoll) ?? 'describe a newcomer',
+			};
 		case 'await_counter_propaganda':
 			// The top interferer was handed a counter-propaganda plan by the
 			// preparer's mar: state their message and roll, or decline. Names the

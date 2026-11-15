@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cleanupGameAfterEach, openRecordTab, expectWaitingOn } from './helpers';
+import { cleanupGameAfterEach, expectHeading, openRecordTab, expectWaitingOn } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedPD, prepareDecree, resolveDecree, resolvingDecree, openAll, act, actOK, forceRoll, decreeState,
@@ -123,6 +123,10 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	await expect(bob.getByText('Council (1) · Signatory: alice')).toBeVisible();
 	await expect(alice.getByText('Finalize your decree')).toBeVisible();
 	await expect(bob.getByText('alice is finalizing the decree…')).toBeVisible();
+	// Two asks are open at once (alice's text, the others' join-or-decline), so the heading names
+	// what they share, to alice and to a player who may join alike.
+	await expectHeading(alice, 'Your move — form the council');
+	await expectHeading(bob, 'Your move — form the council');
 	await expect(bob.getByText('Join the council?')).toBeVisible();
 	await expect(carol.getByText('Join the council?')).toBeVisible();
 	await expect(bob.getByText('Proposed decree being debated:')).toHaveCount(0);
@@ -219,8 +223,8 @@ test('make: the signatory\'s addendum, then the preparer names the resource; the
 	// Passing the decree is automatic: straight to the addendum, no "pass" gate.
 	await expect(alice.getByText("Signatory's Addendum")).toBeVisible();
 	await expect(alice.getByRole('button', { name: 'Pass the decree' })).toHaveCount(0);
-	await expect(bob.getByText('Waiting for alice to place the addendum…')).toBeVisible();
-	await expect(carol.getByText('Waiting for alice to place the addendum…')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — place the addendum');
+	await expectHeading(carol, 'Waiting on alice — place the addendum');
 	await expect(bob.getByText('The decree passed — writing the law.')).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Place addendum' })).toHaveCount(0);
 	await expectWaitingOn(bob, ['alice'], 'bob');
@@ -241,7 +245,7 @@ test('make: the signatory\'s addendum, then the preparer names the resource; the
 	// disabled until the resource has a name and a marginalia.
 	const enact = alice.getByRole('button', { name: 'Enact the law' });
 	await expect(enact).toBeDisabled();
-	await expect(bob.getByText('Waiting for alice to enact the law…')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — enact the law');
 	await expect(carol.getByRole('button', { name: 'Enact the law' })).toHaveCount(0);
 	expect((await act(g, 'bob', planID, 'enact-law', { resource_name: 'Salt Tax', resource_marginalia: ['x'] })).status()).toBe(403);
 	expect((await act(g, 'alice', planID, 'enact-law', { resource_marginalia: ['x'] })).status()).toBe(400);
@@ -323,7 +327,7 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 
 	// Lowest power first: carol (rank 2), then bob (rank 1). The preparer doesn't amend.
 	await expect.poll(async () => (await decreeState(g, planID)).amendment_order).toEqual([g.ids.carol, g.ids.bob]);
-	await expect(carol.getByText('Amend the law (your turn)')).toBeVisible();
+	await expectHeading(carol, 'Your move — amend the law');
 	await expect(alice.getByText('The council is amending the law (2 to go). Next: carol.')).toBeVisible();
 	await expect(bob.getByText('The council is amending the law (2 to go). Next: carol.')).toBeVisible();
 	await expect(alice.getByText('The decree passed — writing the law (being amended).')).toBeVisible();
@@ -352,7 +356,7 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 	await bob.getByPlaceholder('a simple phrase. (optional)').fill('the Queen consents');
 	await bob.getByRole('button', { name: 'Place addendum' }).click();
 	await expect(alice.getByText('The law above takes effect (no resource on a mar).')).toBeVisible();
-	await expect(carol.getByText('Waiting for alice to enact the law…')).toBeVisible();
+	await expectHeading(carol, 'Waiting on alice — enact the law');
 	await expect(alice.getByPlaceholder('The amended law…')).toHaveCount(0);
 
 	// NOTE: "Enact the law" on a mar is a click-to-agree gate that the audit flagged
@@ -420,7 +424,7 @@ test('monarch: the crown-bearer signs and sits on the council even at the lowest
 
 	// The monarch signs; the preparer enacts and keeps the resource.
 	await expect(carol.getByText("Signatory's Addendum")).toBeVisible();
-	await expect(alice.getByText('Waiting for carol to place the addendum…')).toBeVisible();
+	await expectHeading(alice, 'Waiting on carol — place the addendum');
 	expect((await act(g, 'alice', planID, 'set-addendum', { connector: 'and', addendum: 'alice signs' })).status()).toBe(403);
 	await carol.getByPlaceholder('a simple phrase. (optional)').fill('by the crown\'s leave');
 	await carol.getByRole('button', { name: 'Place addendum' }).click();
@@ -460,10 +464,10 @@ test('phone width: the join and decline buttons are real tap targets and nothing
 test('make: the signatory is handed the addendum live, with no reload', async ({ browser }) => {
 	const { g, rollID } = await rolledDecree(browser);
 	const { alice, bob } = await openAll(g);
-	await expect(alice.getByText('Dice roll in progress…')).toBeVisible();
+	await expectRollOpen(alice);
 	await forceRoll(g, rollID, 'make');
 	await expect(alice.getByText("Signatory's Addendum")).toBeVisible();
-	await expect(bob.getByText('Waiting for alice to place the addendum…')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — place the addendum');
 });
 
 // The audit found the finalized text vanishing once the roll started, leaving
@@ -477,6 +481,6 @@ test('roll: the finalized decree text, not the prep draft, is on screen while th
 	await actOK(g, 'carol', planID, 'decline-council');
 	await actOK(g, 'alice', planID, 'call-roll');
 	const { bob } = await openAll(g);
-	await expect(bob.getByText('Dice roll in progress…')).toBeVisible();
+	await expectRollOpen(bob);
 	await expect(bob.getByText(FINAL).first()).toBeVisible();
 });

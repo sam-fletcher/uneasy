@@ -21,7 +21,7 @@
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import EndsNote from '../shared/EndsNote.svelte';
 
-	let { plan, duelRes, players, assets, currentPlayerID, stakes, bouts, activeRoll, rollActive, rollOutcome, onPlansChanged }: {
+	let { plan, duelRes, players, assets, currentPlayerID, stakes, bouts, activeRoll, rollOutcome, onPlansChanged }: {
 		plan: Plan;
 		duelRes: DuelRes;
 		players: Player[];
@@ -30,7 +30,6 @@
 		stakes: DuelStake[];
 		bouts: DuelBout[];
 		activeRoll: DiceRoll | null;
-		rollActive: boolean;
 		rollOutcome: 'make' | 'mar' | null;
 		onPlansChanged: () => void;
 	} = $props();
@@ -147,9 +146,9 @@
 			{/if}
 		</p>
 	{/if}
-	{#if rollActive}
-		<p class="choices-note muted">Dice roll in progress — resolve above.</p>
-	{:else if rollOutcome != null && !choicesApplied}
+	<!-- While the dice are out the roll is the open step and carries its own heading,
+	     so there is nothing to say until it lands. -->
+	{#if rollOutcome != null && !choicesApplied}
 		<p class="choices-header">
 			Result:
 			<span class="outcome-{rollOutcome}">
@@ -218,10 +217,6 @@
 			{:else}
 				<EndsNote text="Either choice is the last step: Propose Duel resolves when you submit." />
 			{/if}
-		{:else}
-			<p class="choices-note muted">
-				Waiting for {playerName(players, winnerID)} to {marMayBeSpared ? 'take stakes or spare' : 'claim stakes'}…
-			</p>
 		{/if}
 	{/if}
 </div>

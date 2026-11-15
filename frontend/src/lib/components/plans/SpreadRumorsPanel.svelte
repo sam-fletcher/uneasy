@@ -53,7 +53,6 @@
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
-	const rollActive = $derived(ctx.rollActive);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
 	const onPlansChanged = $derived(ctx.onPlansChanged);
@@ -734,14 +733,11 @@
 				]}
 				canAct={isPreparer}
 				busy={preRollBusy}
-				actorName={playerName(players, plan.preparer_id)}
-				waitingVerb="is about to state the rumor"
 				onSubmit={(v) => submitPreRoll(plan, v)}
 			/>
 
-		{:else if rollActive && !choicesDone}
-			<p class="ft-prompt muted">Dice roll in progress…</p>
-
+		<!-- While the dice are out the roll is the open step and carries its own
+		     heading, so there is nothing to say until it lands. -->
 		{:else if rollOutcome === 'mar' && !choicesDone && !srData.counter_rumor_text && pendingConsent == null}
 			<!-- The mar opens with the counter-rumor: its author is the target player,
 			     and the table reads it before the options land. -->
@@ -764,8 +760,6 @@
 						{counterBusy ? '…' : 'Spread it'}
 					</button>
 				</div>
-			{:else}
-				<p class="ft-prompt muted">{actorName} is writing the rumor that spreads instead…</p>
 			{/if}
 
 		{:else if pendingConsent != null}
@@ -907,9 +901,6 @@
 					<EndsNote show={totalPicked > 0 && (counts.take_asset ?? 0) === 0 && (counts.break_target ?? 0) === 0 && (counts.hide_source ?? 0) === 0} text={lastText} />
 				{/if}
 			</fieldset>
-			{#if !isActor}
-				<p class="ft-prompt muted">{actorName} is choosing options…</p>
-			{/if}
 
 		{:else if choicesDone}
 			<div class="complete-section">
@@ -1049,30 +1040,9 @@
 							onclick={() => onComplete(plan)} disabled={resBusy}>
 							{resBusy ? '…' : 'Complete plan'}
 						</button>
-					{:else}
-						<p class="complete-note muted">
-							Sub-flows done. {playerName(players, plan.preparer_id)} will complete the plan.
-						</p>
 					{/if}
-				{:else if !isActor}
-					<p class="ft-prompt muted">
-						{#if rollOutcome === 'mar'}
-							{actorName} is applying the counter-rumor…
-						{:else}
-							{actorName} is resolving Spread Rumors…
-						{/if}
-					</p>
 				{/if}
 			</div>
-
-		{:else if !isActor}
-			<p class="ft-prompt muted">
-				{#if rollOutcome === 'mar' && targetAssetOwnerID != null}
-					{playerName(players, targetAssetOwnerID)} is resolving the counter-rumor…
-				{:else}
-					{playerName(players, plan.preparer_id)} is resolving Spread Rumors…
-				{/if}
-			</p>
 		{/if}
 	</ResolvingCard>
 {/if}

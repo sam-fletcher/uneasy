@@ -1,10 +1,9 @@
 ---
 title: "Plans: one group gap and one set of step buttons in the plan frame"
 order: 64
-after: next/plan-step-labels.md
 ---
 
-**Starts after** `plan-step-labels`, so the panels are not edited twice.
+**Starts after** `plan-step-labels`, which merged, so the panels are not edited twice.
 
 With the boxes gone, the groups inside a plan's open step have to read as groups by the space between them,
 which has to be visibly bigger than the lines inside a group. The plan frame (`plans/planPanel.css`) puts
@@ -21,6 +20,20 @@ frame once, and delete the copies:
   modifier for the stacking one.
 - **The count after a lead line** ("· 0 of 1 taken", "· 2 mars to settle"), written as `.taken-count` in
   `HostChoosing` and `HostPendingMar`.
+
+**The class-name moves `plan-step-labels` left for this piece.** Wave 5 moved the notices and most chips onto
+`<Notice>` and `<Chip>`; what is left in `plans/planPanel.css` is one component and a few leftovers, and it is
+the same file this piece edits:
+
+- **`plans/PlayerChips.svelte`** still draws `.player-chip`. Convert it to `<Chip>` once: many panels and
+  `war/BattleCostForm` use it, `shared/steps.test.ts` pins its look to the house chip, and about five e2e specs
+  select by the class.
+- **`.choice-card`** is used in `MakeDemandsPanel`, `MakeMarPicker`, `ReAimPanel`, `duel/BoutsPhase` and
+  `festivity/HostPendingMar`, and needs a shared option-card component.
+- **`.chip-btn.face-chip`** is in `SimultaneousRevealInput`, and `D6Face`'s header comment names it.
+- **The `.res-warning` rule** in `planPanel.css` has no users left: delete it.
+- **Then delete the paragraph in `docs/STYLE_GUIDE.md`, under "Play steps",** that says `planPanel.css` still
+  carries the older class names (`.chip-btn`, `.player-chip`, `.choice-card`, `.res-warning`), once none does.
 
 Add whatever is shared to `/dev/styleguide` and `docs/STYLE_GUIDE.md` in the same change.
 

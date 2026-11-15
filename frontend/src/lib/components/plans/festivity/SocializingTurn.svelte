@@ -215,9 +215,8 @@
 				Opt out
 			</button>
 		</div>
-	{:else if myEffectiveOutcome == null}
-		<p class="choices-note muted">Rolling… resolve the dice above.</p>
-	{:else}
+	<!-- Until the dice land the roll is the open step and carries its own heading. -->
+	{:else if myEffectiveOutcome != null}
 		{@const opts = myEffectiveOutcome === 'make' ? MAKE_OPTS : MAR_OPTS}
 		<p class="choices-header">
 			Result:

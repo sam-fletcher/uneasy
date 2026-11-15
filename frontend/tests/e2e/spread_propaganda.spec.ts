@@ -2,7 +2,7 @@ import {
 	test, expect, request as pwRequest,
 	type APIRequestContext, type BrowserContext, type Page,
 } from '@playwright/test';
-import { cleanupGameAfterEach } from './helpers';
+import { cleanupGameAfterEach, expectHeading, stepHeading } from './helpers';
 import { E2E } from './baseUrl';
 import { expectRollOpen } from './helpers/roll_open';
 
@@ -192,7 +192,7 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 
 	// ── Pre-roll: no roll exists; the preparer is asked, the bystander waits ──
 	await expect(alice.page.getByText('Spread your message')).toBeVisible({ timeout: 10_000 });
-	await expect(bob.page.getByText('alice is about to say how they\'re spreading their message')).toBeVisible();
+	await expectHeading(bob.page, 'Waiting on alice — state the message');
 	await expect(bob.page.locator('.pre-roll')).toHaveCount(0);
 
 	// The server refuses a choice before the dice are cast.
@@ -222,8 +222,8 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	// ── The dice land as a mar owing difficulty − result = 2 picks ──
 	await forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: roll.difficulty - 2 });
 	await expect(alice.page.getByText('choose exactly 2')).toBeVisible({ timeout: 10_000 });
-	// The bystander gets a wait line and no picker.
-	await expect(bob.page.getByText('alice is resolving Spread Propaganda…')).toBeVisible();
+	// The bystander is told what alice is on by the heading, and gets no picker.
+	await expectHeading(bob.page, 'Waiting on alice — choose the mar options');
 	await expect(bob.page.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 	await expect(bob.page.locator('.stepper-row')).toHaveCount(0);
 
@@ -269,7 +269,7 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	await apply.click();
 
 	// ── Committed: bob is told what alice faces; the panel is server-authoritative ──
-	await expect(bob.page.getByText('Waiting for alice to face the fallout…')).toBeVisible({ timeout: 10_000 });
+	await expect(stepHeading(bob.page)).toHaveText('Waiting on alice — break an asset', { timeout: 10_000 });
 	await expect(alice.page.getByText('Break yourself')).toBeVisible();
 
 	// ── Break yourself, from the picker: the holding that carries the secret ──
@@ -322,7 +322,7 @@ test('spread propaganda make: no Apply gate, the artifact + changes are one step
 	// Alice is handed the artifact step directly, with no "Apply choices" to click first.
 	await expect(alice.page.getByText('Your message sets society ablaze')).toBeVisible({ timeout: 10_000 });
 	await expect(alice.page.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
-	await expect(bob.page.getByText('Waiting for alice to author the artifact…')).toBeVisible();
+	await expectHeading(bob.page, 'Waiting on alice — create the artifact');
 	await expect(bob.page.getByText('Your message sets society ablaze')).toHaveCount(0);
 
 	// The narration of the changes, the name and the first note are all required.
@@ -378,9 +378,6 @@ test('spread propaganda mar: a zero-pick commit auto-resolves the plan, leaving 
 	expect(rd.resolution_data?.make_mar_choices ?? []).toHaveLength(0);
 	for (const p of [alice.page, bob.page]) {
 		await expect(p.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
-		await expect(p.getByText('Dice roll in progress…')).toHaveCount(0);
-		await expect(p.getByText('alice is resolving Spread Propaganda…')).toHaveCount(0);
-		await expect(p.getByText('Waiting for alice', { exact: false })).toHaveCount(0);
 	}
 
 });
@@ -433,7 +430,7 @@ test('spread propaganda mar: a pick that lost its last peer is forfeited, and th
 	// Hand over the one peer.
 	await expect(alice.page.getByText('A peer leaves your retinue — hand it to another player'))
 		.toBeVisible({ timeout: 10_000 });
-	await expect(bob.page.getByText('Waiting for alice to face the fallout…')).toBeVisible();
+	await expectHeading(bob.page, 'Waiting on alice — give up a peer');
 	const step = alice.page.locator('.plan-form', { hasText: 'A peer leaves your retinue' });
 	await step.getByRole('checkbox').first().click();
 	await step.getByRole('button', { name: 'bob' }).click();
@@ -461,7 +458,7 @@ test('spread propaganda make: the artifact step appears live, with no reload', a
 	await forceRoll(alice.ctx.request, roll.id, { outcome: 'make' });
 
 	await expect(alice.page.getByText('Your message sets society ablaze')).toBeVisible({ timeout: 10_000 });
-	await expect(bob.page.getByText('Waiting for alice to author the artifact…')).toBeVisible({ timeout: 10_000 });
+	await expect(stepHeading(bob.page)).toHaveText('Waiting on alice — create the artifact', { timeout: 10_000 });
 
 });
 
@@ -531,7 +528,7 @@ test('counter-propaganda: the interferer may decline, and it is logged', async (
 	const { alice, bob } = t;
 
 	await expect(bob.page.getByText('Answer with propaganda of your own')).toBeVisible({ timeout: 10_000 });
-	await expect(alice.page.getByText('bob is about to say how they\'re spreading their message')).toBeVisible();
+	await expectHeading(alice.page, 'Waiting on bob — counter-propaganda');
 	await bob.page.getByRole('button', { name: 'Decline: spread nothing' }).click();
 
 	await expect.poll(() => planStatus(alice.ctx.request, childID), { timeout: 10_000 }).toBe('resolved');

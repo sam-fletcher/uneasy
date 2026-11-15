@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { cleanupGameAfterEach, waitingOnNames } from './helpers';
+import { cleanupGameAfterEach, expectHeading, waitingOnNames } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedCHGame, runScene, prepareCH, resolveCH, castCH, forceCH, rolledCH, openAll, artifactOf,
@@ -105,8 +105,9 @@ test('pre-roll: everyone sees the live meter, only the preparer picks, one submi
 	for (const p of [alice, bob, carol]) {
 		await expect(p.getByText('knowledge rank 2 (a lower rank is better) · 0 artifacts invoked → max = 2')).toBeVisible();
 	}
-	// The others wait; they get neither the submit button nor an enabled scene field.
-	await expect(bob.getByText('alice is setting the scene…')).toBeVisible();
+	// The others wait (the heading says on whom and for what); they get neither the
+	// submit button nor an enabled scene field.
+	await expectHeading(bob, 'Waiting on alice — set the scene');
 	await expect(bob.getByRole('button', { name: 'Set the scene & gather your dice' })).toHaveCount(0);
 	await expect(carol.getByPlaceholder('Describe the moment from the past')).toBeDisabled();
 
@@ -208,7 +209,7 @@ test('make: the outcome is applied on the roll; two options, one at a time, and 
 	await expect.poll(async () => (await chronicleData(g, planID)).make_budget).toBe(2);
 	expect((await chronicleData(g, planID)).make_choices_done ?? 0).toBe(0);
 	await expect(alice.getByText('2 of 2 choices remaining')).toBeVisible();
-	await expect(bob.getByText('alice is choosing options…')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — choose a make option');
 	await expectPlanLog(alice, ['Chronicle Histories succeeded']);
 
 	// The plan cannot be wrapped with options still owed.
@@ -450,7 +451,7 @@ for (const outcome of ['make', 'mar'] as const) {
 			await expect(alice.getByRole('button', { name: 'Submit choice' })).toBeVisible();
 			// Non-preparers see the controls greyed out, never live.
 			for (const p of [bob, carol]) {
-				await expect(p.getByText('alice is choosing options…')).toBeVisible();
+				await expectHeading(p, 'Waiting on alice — choose a make option');
 				await expect(p.getByRole('button', { name: OPT.echo, exact: true })).toBeDisabled();
 				await expect(p.getByRole('button', { name: 'Submit choice' })).toHaveCount(0);
 			}
@@ -479,9 +480,9 @@ test('the auto-applied outcome reaches open panels live, without a reload', asyn
 	await expect(bob.getByText('Invoked artifacts (1)')).toBeVisible();
 	await expectRollOpen(alice, bob);
 	await forceCH(g, rollID, 'make');
-	// No reload: the preparer's choices and the others' waiting line arrive live.
+	// No reload: the preparer's choices and the others' heading arrive live.
 	await expect(alice.getByText('2 of 2 choices remaining')).toBeVisible();
-	await expect(bob.getByText('alice is choosing options…')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice — choose a make option');
 });
 
 test('another player\'s mar choice reaches open panels and the clocks without a reload', async ({ browser }) => {

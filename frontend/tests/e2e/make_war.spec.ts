@@ -116,7 +116,6 @@ test('delay vote: a bystander sees the sides and the join choices; the participa
 	const { alice, bob, carol } = await openAll(g);
 
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText("Vote for the war's delay")).toBeVisible();
 		// The sides are named after their leaders, and so is the war.
 		await expect(p.getByText('alice’s side')).toBeVisible();
 		await expect(p.getByText('bob’s side')).toBeVisible();

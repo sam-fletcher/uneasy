@@ -690,6 +690,7 @@ all on `/dev/styleguide` under "Play steps":
 |---|---|
 | `shared/StepHeading.svelte` | the open step's heading: **"Your move — …"** when the game waits on you, **"Waiting on otto — …"** when it waits on someone else. Deep gold at heading size. The one place the ask is stated in words |
 | `lib/stepHeading.ts` | the wording, pure and tested. It reads the same derivation as the clocks on the player row (`lib/waitingOn.ts`), so the two can't disagree |
+| `lib/plans/stepLabel.ts`, `lib/plans/stepLabels/*` | what each plan calls the step it is on: one pure function per plan, registered in `plans/registry.ts` and read by `waitingOn.ts` through the row state's `plan_id`. The server knows only that a plan is resolving; the plan's own data says which step. A plan that can't tell says "the next step" |
 | `plans/shared/FinishedStep.svelte` | a step that is over, as one line with its mark. With a `detail` it is a tappable row with a caret that opens in place |
 | `plans/shared/DieTile.svelte` | one die: a 44px game piece whose edge is its owner's colour. The die mark before it is rolled, its face after; cancelled and repeated dice are dashed, never faded |
 | `plans/shared/stepFrame.ts` | the context `PlanPanel` gives the plan's card, so the roll slots in between the finished steps and the open one |
@@ -702,10 +703,21 @@ they wrote, the roll (open it is the open step and carries the heading; resolved
 it is one finished line that opens to show the dice), then the heading, then the
 panel's own body. A panel never draws its own heading, box or "Resolving" badge.
 
-**Wording.** A step's label (`stepLabel` in `waitingOn.ts`) is a lower-case phrase
-that finishes the heading, never one that names the plan: the title bar and the
-first finished line already do. When it is your move the heading names no one else;
-the clocks on the other chips say who else is owed.
+**Wording.** A step's label (`stepLabel` in `waitingOn.ts`; a plan's own steps come from
+its function in `lib/plans/stepLabels/`) is a lower-case phrase that finishes both
+"Your move — …" and "Waiting on otto — …". So it names the step and never speaks to the
+reader ("what have you learned?" fails for a watcher), and never names the plan: the
+title bar and the first finished line already do. When several things are owed at once
+and no one of them is the step, it names what they share ("carry out the picks"). When
+it is your move the heading names no one else; the clocks on the other chips say who
+else is owed.
+
+**Say it once.** The heading says who the game is waiting on and what for, and the roll
+is a step with its own heading, so a panel prints no "otto is resolving…", "Dice roll in
+progress…" or "Waiting for otto to …" under it, and a sub-step's title that is the
+heading's own words ("Enact the law", "Things We Share") is left out. A line that says
+more than the heading does ("Waiting for sol to agree to give up Dame Orr…" names the
+asset) stays. `plans/headingSaysIt.test.ts` holds the first two.
 
 **A pending roll** splits its dice into **For** and **Against** (labelled only when
 there is an Against), and a choice in it (aid or interfere, easier or harder) is a
