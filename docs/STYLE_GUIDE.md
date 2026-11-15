@@ -246,7 +246,9 @@ below it.
 | `--text-display` | fluid | the landing page's cover title only, in `--font-display`: the one documented exception |
 
 Inputs use `--text-body` without exception: iOS Safari zooms the whole page
-when a focused input is set below 16px.
+when a focused input is set below 16px. "Inputs" means the text-like types: the
+global input look in `routes/+layout.svelte` leaves checkboxes and radios out, so
+they keep their native size and a control that needs its own box sizes it locally.
 
 ### Gaps
 
