@@ -1,7 +1,6 @@
 ---
 title: "Plans: sub-headings that read as headings, and step text that says each thing once"
 order: 65
-after: next/plan-group-gap.md
 ---
 
 **Starts with a design round** the owner signs off: mockups, no code. The build starts after `plan-group-gap`,
