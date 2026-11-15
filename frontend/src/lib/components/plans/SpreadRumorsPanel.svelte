@@ -20,7 +20,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
-	import '$lib/components/shared/tapRow.css';
 	import {
 		preparePlan, makeChoice, completePlan,
 		breakTarget, requestTakeConsent, respondTakeConsent, hideSource, forfeitSpreadRumorsStep,
@@ -40,6 +39,7 @@
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import FormField from './FormField.svelte';
+	import Checkbox from '$lib/components/shared/Checkbox.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import Stepper from './shared/Stepper.svelte';
@@ -619,14 +619,12 @@
 						: 'What are people starting to say?'}></textarea>
 			</label>
 
-			<label class="tap-row sr-secret-toggle">
-				<input type="checkbox" bind:checked={prepKeepSecret} disabled={readOnly} />
-				<span>
-					Keep it secret for now
-					<small>Hide the rumor under one of your own assets instead of
-						announcing it. Others won't see the text until you spread it.</small>
-				</span>
-			</label>
+			<Checkbox
+				bind:checked={prepKeepSecret}
+				disabled={readOnly}
+				label="Keep it secret for now"
+				description="Hide the rumor under one of your own assets instead of announcing it. Others won't see the text until you spread it."
+			/>
 
 			{#if prepKeepSecret}
 				{#if readOnly}
@@ -1087,31 +1085,6 @@
 		color: var(--color-text-secondary);
 		line-height: 1.4;
 	}
-
-	/* "Keep it secret": a checkbox and its words, not a box. The row is the shared
-	   tap row (tapRow.css: at least 44px, a hairline under it). Its hover and
-	   focus are written here because tapRow's are for buttons and links, and a
-	   label takes focus through its checkbox. The checkbox is the default one the
-	   rest of the app uses. */
-	.sr-secret-toggle {
-		align-items: flex-start;
-		gap: var(--space-3);
-		cursor: pointer;
-	}
-	.sr-secret-toggle:hover { background: var(--color-surface); }
-	.sr-secret-toggle:focus-within {
-		outline: 2px solid var(--color-you);
-		outline-offset: -2px;
-	}
-	.sr-secret-toggle input[type='checkbox'] {
-		width: 1.25rem;
-		height: 1.25rem;
-		margin: 0;
-		flex: none;
-		cursor: pointer;
-	}
-	.sr-secret-toggle span { display: flex; flex-direction: column; gap: var(--space-1); }
-	.sr-secret-toggle small { color: var(--color-text-secondary); line-height: 1.35; }
 
 	/* Choices-applied list styling */
 </style>
