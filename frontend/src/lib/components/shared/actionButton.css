@@ -64,3 +64,28 @@
 	color: var(--color-text-faint);
 	cursor: not-allowed;
 }
+
+/* THE STEP'S BUTTON ROW: the main button, with the way out beside it.
+   The main one takes the room (twice the share) and the other sits next to it
+   when there is space, so a phone column has Confirm / Cancel on one line. A
+   long label wraps inside its button, and each button stretches to the row's
+   height, so a two-line label never leaves its neighbour short. Both stay at
+   the 44px floor from .action-btn.
+
+   Put at most one primary and one secondary in it. A lone main button is not in
+   a row: .action-btn is its own block and needs no wrapper.
+
+   .stacking is for labels that are sentences ("Leverage none — let the roll
+   fail", "Keep the current target"): each button asks for 12rem, so the two
+   never fit side by side in a phone column and stack, both full width. A wider
+   column still puts them beside each other. */
+.step-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+.step-actions > .action-btn { align-self: stretch; }
+.step-actions > .action-btn.primary { flex: 2 1 10rem; }
+.step-actions > .action-btn.secondary { flex: 1 1 6rem; }
+.step-actions.stacking > .action-btn.primary { flex: 2 1 12rem; }
+.step-actions.stacking > .action-btn.secondary { flex: 1 1 12rem; }

@@ -397,7 +397,7 @@ describe('the demand overlay', () => {
 	const css = cssOf('demand/TargetPlanDemandOverlay.svelte');
 
 	it('is a group on the page: no box, no fill, no ink of its own', () => {
-		for (const sel of ['.demand-banner', '.demand-summary', '.demand-form']) {
+		for (const sel of ['.demand-summary', '.demand-form']) {
 			for (const forbidden of ['background', 'border', 'border-top', 'padding', 'color', 'box-shadow']) {
 				expect(props(css, sel), `${sel} ${forbidden}`).not.toContain(forbidden);
 			}
@@ -411,9 +411,12 @@ describe('the demand overlay', () => {
 		expect(winners.find((d) => d.prop === 'color')?.value).toBe('var(--color-text-secondary)');
 	});
 
-	it('stacks its two buttons full width in a phone column', () => {
-		const grow = css.filter((d) => d.selector.startsWith('.demand-actions >') && d.prop === 'flex');
-		// Each is 12rem at least, so two do not fit beside each other in 344px.
-		expect(grow.map((d) => d.value).sort()).toEqual(['1 1 12rem', '2 1 12rem']);
+	it('draws its buttons in the shared step row, the stacking one, and its groups in the shared gap', () => {
+		const src = read('demand/TargetPlanDemandOverlay.svelte');
+		expect(src).toContain('class="step-actions stacking"');
+		expect(src).toContain('class="step-groups"');
+		// It keeps no copy of either: both recipes are shared (actionButton.css, planPanel.css).
+		const own = css.map((d) => d.selector).join(' ');
+		expect(own).not.toMatch(/demand-actions|demand-banner(?!-header)/);
 	});
 });

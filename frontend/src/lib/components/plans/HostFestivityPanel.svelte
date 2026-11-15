@@ -214,7 +214,7 @@
 			bind:performStepsWinnerID />
 
 		<!-- The event's groups, with a bigger gap between them than inside one. -->
-		<div class="fest-body">
+		<div class="step-groups">
 			{#if isResolving}
 				<p class="ft-prompt">
 					{#if amHost}
@@ -309,14 +309,3 @@
 
 	</ResolvingCard>
 {/if}
-
-<style>
-	/* Groups are told apart by the space between them: bigger than the gap inside
-	   a group, so "The Talk of the Event", the host's Makes and an insisted Mar
-	   read as separate things without a box around any of them. */
-	.fest-body {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-5);
-	}
-</style>

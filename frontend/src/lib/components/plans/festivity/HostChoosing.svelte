@@ -193,11 +193,3 @@
 		</button>
 	{/if}
 </div>
-
-<style>
-	/* The count after the lead line: plain secondary words, not part of the heading. */
-	.taken-count {
-		color: var(--color-text-secondary);
-		font-size: var(--text-small);
-	}
-</style>

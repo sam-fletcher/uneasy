@@ -166,6 +166,21 @@ describe('ResolvingCard', () => {
 		expect(at('Your move — the next step')).toBeLessThan(at('THE BODY'));
 	});
 
+	it('puts the panel\'s body in a column of groups, after the frame\'s own lines', () => {
+		const html = card({ plan: plan({ preparation_notes: 'A note.' }) }, frame({
+			roll: snippet('<section id="roll">THE ROLL</section>'),
+			heading: { text: 'Your move — the next step', yours: true },
+		}));
+		// The body, and only the body, is inside .step-groups: the finished lines, the
+		// roll and the heading keep the frame's own gap.
+		const open = html.indexOf('class="step-groups"');
+		expect(open, 'a .step-groups column').toBeGreaterThan(-1);
+		expect(html.indexOf('THE BODY')).toBeGreaterThan(open);
+		for (const framePart of ['alice prepared', 'THE ROLL', 'Your move — the next step']) {
+			expect(html.indexOf(framePart), framePart).toBeLessThan(open);
+		}
+	});
+
 	it('leaves the heading to the roll while the roll is open, so there is only one', () => {
 		const html = card({}, frame({
 			roll: snippet('<section>THE ROLL</section>'),

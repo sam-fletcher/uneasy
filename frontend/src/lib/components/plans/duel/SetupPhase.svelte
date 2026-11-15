@@ -142,7 +142,7 @@
 	}
 </script>
 
-<div class="setup-groups">
+<div class="step-groups">
 	<!-- Who duels -->
 	<div class="choices-section">
 		<p class="choices-header">{heading}</p>
@@ -232,23 +232,3 @@
 		{/if}
 	</div>
 </div>
-
-<style>
-	/* Who duels, then the stakes: two groups, with more space between them than
-	   inside either. */
-	.setup-groups {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-5);
-	}
-
-	/* Confirm takes the room and Cancel sits beside it. */
-	.step-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-	}
-	.step-actions > :global(.action-btn) { align-self: stretch; }
-	.step-actions > :global(.action-btn.primary) { flex: 2 1 10rem; }
-	.step-actions > :global(.action-btn.secondary) { flex: 1 1 6rem; }
-</style>

@@ -20,8 +20,9 @@
 
 /* ── The plan's steps ─────────────────────────────────────────────────────── */
 
-/* The card around a plan: finished lines, the heading, the plan's own body.
-   One gap, between all of them. */
+/* The card around a plan: finished lines, the heading, the plan's own body
+   (ResolvingCard puts that in a .step-groups column, below). One gap, 12px,
+   between those parts; the groups inside the body are further apart than that. */
 .plan-panel {
 	display: flex;
 	flex-direction: column;
@@ -102,6 +103,18 @@
 	flex-direction: column;
 	gap: var(--space-3);
 }
+
+/* A column of those groups. With no boxes, a group is a group because of the
+   space around it, so the gap BETWEEN groups (24px) has to be visibly bigger
+   than the gap between a group's own lines (12px, above): at the frame's own
+   12px, a lead line and the picker under it read the same as two separate
+   groups. A panel wraps the groups of its open step in this; the lines that
+   belong to one group stay inside that group. */
+.step-groups {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-5);
+}
 .choices-section .choices-section {
 	margin-top: var(--space-1);
 }
@@ -128,6 +141,12 @@
 .choices-header {
 	font-size: var(--text-body);
 	margin: 0;
+}
+/* The count after a lead line ("· 0 of 1 taken", "· 2 mars to settle"): plain
+   secondary words, not part of the heading. */
+.taken-count {
+	color: var(--color-text-secondary);
+	font-size: var(--text-small);
 }
 
 .outcome-make { color: var(--color-success); }

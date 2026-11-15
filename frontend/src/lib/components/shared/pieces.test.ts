@@ -124,6 +124,33 @@ describe('chip.css', () => {
 	});
 });
 
+describe('the step\'s button row (actionButton.css)', () => {
+	const sheet = css('actionButton.css');
+	const flexOf = (selector: string) => declarations(sheet).find((d) => d.selector === selector && d.prop === 'flex')?.value;
+
+	it('is a wrapping row with the small gap, and the main button takes twice the room', () => {
+		const row = rule(sheet, '.step-actions');
+		expect(row).toContain('display: flex');
+		expect(row).toContain('flex-wrap: wrap');
+		expect(row).toContain('gap: var(--space-2)');
+		expect(flexOf('.step-actions > .action-btn.primary')).toBe('2 1 10rem');
+		expect(flexOf('.step-actions > .action-btn.secondary')).toBe('1 1 6rem');
+	});
+
+	it('has a stacking variant: each button asks for 12rem, so two never fit a phone column', () => {
+		expect(flexOf('.step-actions.stacking > .action-btn.primary')).toBe('2 1 12rem');
+		expect(flexOf('.step-actions.stacking > .action-btn.secondary')).toBe('1 1 12rem');
+		// 2 × 12rem + the gap is wider than the narrowest play column (344px).
+		expect(2 * 12 * 16 + 8).toBeGreaterThan(344);
+		// And the row without it fits beside each other there.
+		expect(10 * 16 + 6 * 16 + 8).toBeLessThan(344);
+	});
+
+	it('stretches both buttons to the row\'s height, so a long label never leaves its neighbour short', () => {
+		expect(declarations(sheet).find((d) => d.selector === '.step-actions > .action-btn' && d.prop === 'align-self')?.value).toBe('stretch');
+	});
+});
+
 describe('actionButton.css', () => {
 	const btn = css('actionButton.css');
 
