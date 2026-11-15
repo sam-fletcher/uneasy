@@ -263,6 +263,27 @@ test('cost of battle: owed per opponent, shown in the play area to everyone, and
 	await expect(pages.alice.getByRole('button', { name: 'Choose an option' })).toHaveCount(0);
 });
 
+test('cost of battle: the surrender checkbox is a box with its words beside it on a phone', async ({ browser }) => {
+	const g = await game(browser);
+	await warAtCostRow(g);
+	expect(await frontPayer(g)).toBe('bob');
+	const bob = (await openAll(g)).bob;
+	await opponentChip(bob, 'alice');
+	await bob.getByRole('button', { name: 'Break an asset' }).click();
+
+	// A checkbox is its own small box, not a row: the global text-field rule must
+	// not stretch it. Its words sit to the box's right, inside the phone's width.
+	const surrender = bob.getByRole('checkbox', { name: 'Surrender after this payment' });
+	const words = bob.getByText('Surrender after this payment');
+	await expect(words).toBeVisible();
+	const box = await surrender.boundingBox();
+	const text = await words.boundingBox();
+	const { width } = (await bob.viewportSize())!;
+	expect(box!.width, 'the checkbox is a box, not the full row').toBeLessThanOrEqual(24);
+	expect(text!.x, 'the words sit beside the box').toBeGreaterThan(box!.x + box!.width);
+	expect(text!.x + text!.width, 'the words are on the phone').toBeLessThanOrEqual(width);
+});
+
 test('cost of battle: paying by breaking tears the marginalia, hands the turn on, and refuses the wrong payer', async ({ browser }) => {
 	const g = await game(browser);
 	await threeWayWar(g);
