@@ -8,11 +8,10 @@
    scales; the neutral control border; selected as a 2px bright gold border
    with no fill; a notice as a mark and coloured text.
 
-   Twelve panels use these class names, and most of their own files have not
-   moved onto the recipes yet. So the names stay, and each is drawn here the way
-   its recipe says; a panel that migrates swaps the class for the shared piece
-   (Chip, Notice, FinishedStep) and the rule goes. Every rule that exists only
-   for that interim says so. */
+   Twelve panels use these class names. What a player presses or reads has a
+   shared piece of its own (Chip, OptionCard, PlayerChips, Notice, FinishedStep,
+   and the button row in actionButton.css); what is left here is the frame, the
+   groups inside a step, the forms and the plan grid. */
 
 @import '../shared/actionButton.css';
 @import '../shared/chip.css';
@@ -75,14 +74,6 @@
 	color: var(--color-danger);
 	font-size: var(--text-small);
 	margin: 0;
-}
-
-/* A warning inside a step: coloured words, no box. (The panels move these onto
-   <Notice>, which adds the mark; until then the words carry it.) */
-.res-warning {
-	margin: 0;
-	color: var(--color-warning);
-	font-size: var(--text-small);
 }
 
 /* Quiet lines: a wait that says more than the heading does ("Waiting for sol to
@@ -313,72 +304,8 @@
 }
 
 /* ── Chip rows ────────────────────────────────────────────────────────────── */
-/* The panels draw their chips with these class names; each is the house chip
-   (chip.css) under an older name, so it is built from the same tokens and
-   marked by the same state: a neutral border and a raised fill, and a pick is
-   the 2px bright gold border and gold text with no fill. A panel that moves to
-   <Chip> drops its name from here. chipRecipe.test.ts holds them to agreeing. */
-
-.player-chips {
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--space-2);
-}
-
-.player-chip,
-.chip-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: var(--space-2);
-	min-height: var(--size-tap);
-	padding: 0 var(--space-4);
-	border: 1px solid var(--color-border-control);
-	border-radius: var(--radius-chip);
-	background: var(--color-surface);
-	color: var(--color-text);
-	font: inherit;
-	font-size: var(--text-body);
-	line-height: 1.2;
-	cursor: pointer;
-}
-.player-chip:hover:not(:disabled):not(.active),
-.chip-btn:hover:not(:disabled):not([aria-disabled='true']):not(.active) {
-	border-color: var(--color-border-control-hover);
-}
-.player-chip.active,
-.chip-btn.active {
-	border-color: var(--color-you);
-	box-shadow: inset 0 0 0 1px var(--color-you);
-	color: var(--color-you);
-}
-.player-chip:focus-visible,
-.chip-btn:focus-visible {
-	outline: 2px solid var(--color-you);
-	outline-offset: 2px;
-}
-/* A chip that can't be pressed: a hairline and faint words, whether the panel
-   sets native `disabled` (the die-face picker once it has been submitted) or
-   `aria-disabled` (a tap that explains why). A chosen one still shows which it
-   was (the gold border stays), as chip.css does. Never faded. */
-.player-chip:disabled,
-.player-chip[aria-disabled='true'],
-.chip-btn:disabled,
-.chip-btn[aria-disabled='true'] {
-	border-color: var(--color-border);
-	color: var(--color-text-faint);
-	cursor: not-allowed;
-}
-.player-chip.active:disabled,
-.player-chip.active[aria-disabled='true'],
-.chip-btn.active:disabled,
-.chip-btn.active[aria-disabled='true'] {
-	border-color: var(--color-you);
-}
-
-/* A player's chip: their shape, then their name in their colour (the chip's own
-   text stays neutral; the child wears the colour). */
-.player-chip .name { color: var(--owner-color, var(--color-text)); }
+/* The chips themselves are <Chip> (shared/Chip.svelte) and the option cards are
+   <OptionCard>; these are the rows and lists they sit in. */
 
 .peer-cards {
 	display: flex;
@@ -386,123 +313,12 @@
 	gap: var(--space-2);
 }
 
-/* Generic non-coloured chip row — for numeric picks (Make Introductions peer
-   count) and small enum choices (Propose Duel arms/wits). */
+/* A row of chips: a numeric pick (Make Introductions peer count) or a small
+   enum choice (Propose Duel arms/wits). */
 .chip-row {
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--space-2);
-}
-
-.chip-btn { min-width: var(--size-tap); }
-
-/* An option already handed out (Make Introductions: one outcome per peer). Stays
-   tappable — aria-disabled, not disabled — so a tap can say why. Struck through
-   and faint, never faded. */
-.chip-btn.used {
-	border-color: var(--color-border);
-	color: var(--color-text-faint);
-	text-decoration: line-through;
-	cursor: not-allowed;
-}
-
-/* An option that can't be picked right now (Chronicle break with nothing to
-   break). aria-disabled, not disabled, so a tap can say why via the hint. */
-.chip-btn.unavailable {
-	border-color: var(--color-border);
-	color: var(--color-text-faint);
-	cursor: not-allowed;
-}
-
-/* Die-face icon chips: the pips already carry the meaning, so trim the padding. */
-.chip-btn.face-chip {
-	padding: 0 var(--space-2);
-}
-
-/* ── Option cards (make / mar, demand options) ────────────────────────────── */
-/* A tappable option laid out as a full-width row: a level, a title, a line of
-   description. It is a control, so it has the neutral border; a pick is the
-   bright gold border with a tick (ToneMark), no fill. The choice wears no
-   meaning colour. */
-
-.choice-list {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-2);
-}
-
-.choice-card {
-	display: flex;
-	align-items: center;
-	gap: var(--space-3);
-	width: 100%;
-	min-height: var(--size-tap);
-	padding: var(--space-2) var(--space-3);
-	border-radius: var(--radius-control);
-	border: 1px solid var(--color-border-control);
-	background: var(--color-surface);
-	color: var(--color-text);
-	font: inherit;
-	text-align: left;
-	cursor: pointer;
-}
-.choice-card:hover:not(:disabled):not(.active):not(.locked) {
-	border-color: var(--color-border-control-hover);
-}
-.choice-card.active {
-	border-color: var(--color-you);
-	box-shadow: inset 0 0 0 1px var(--color-you);
-}
-.choice-card:focus-visible {
-	outline: 2px solid var(--color-you);
-	outline-offset: 2px;
-}
-/* Locked: it can't be picked now, and the card says why in words. A hairline and
-   faint text, never faded. */
-.choice-card.locked {
-	border-color: var(--color-border);
-	color: var(--color-text-faint);
-	cursor: not-allowed;
-}
-
-/* The level ("+1", "−2") is a number, not a badge: it is inert, so it gets no box. */
-.choice-badge {
-	flex-shrink: 0;
-	min-width: 2ch;
-	text-align: center;
-	font-size: var(--text-body);
-	font-weight: 600;
-	color: var(--color-text-secondary);
-}
-.choice-card.active .choice-badge { color: var(--color-you); }
-.choice-card.locked .choice-badge { color: var(--color-text-faint); }
-
-.choice-text {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-1);
-	min-width: 0;
-}
-.choice-title { font-size: var(--text-body); }
-.choice-tick { color: var(--color-you); }
-.choice-desc {
-	font-size: var(--text-small);
-	color: var(--color-text-secondary);
-	line-height: 1.4;
-}
-.choice-card.locked .choice-desc { color: var(--color-text-faint); }
-.choice-lock {
-	margin-left: auto;
-	flex-shrink: 0;
-	font-size: var(--text-label);
-	color: var(--color-text-faint);
-}
-/* The tick on a picked card (the success tone's tick, painted bright gold). */
-.choice-card .choice-picked {
-	margin-left: auto;
-	flex-shrink: 0;
-	display: inline-flex;
-	color: var(--color-you);
 }
 
 /* ── Preparing: the plan grid ─────────────────────────────────────────────── */

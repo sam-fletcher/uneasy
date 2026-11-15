@@ -341,7 +341,7 @@ test('the host spends an earned make on a duel; a guest bound by accept_duels ca
 	// First make: a challenge to dave, through the host's picker.
 	await expect(alice.getByText('0 of 2 taken')).toBeVisible();
 	await alice.getByRole('button', { name: 'Propose a duel' }).click();
-	await alice.locator('.player-chip', { hasText: 'dave' }).click();
+	await alice.getByRole('button', { name: 'dave', exact: true }).click();
 	await alice.getByRole('button', { name: 'Take this Make (2 left)' }).click();
 	await expect.poll(async () => (await festivity(g, planID)).host_makes_taken).toEqual(['challenge_duel']);
 	expect((await festivity(g, planID)).pending_challenge).toMatchObject({ challenger_id: g.ids.alice, target_id: g.ids.dave });
@@ -362,7 +362,7 @@ test('the host spends an earned make on a duel; a guest bound by accept_duels ca
 	// The make is spent whether or not it is accepted. Her second goes at carol,
 	// who took accept_duels: the picker says so and she cannot decline.
 	await alice.getByRole('button', { name: 'Propose a duel' }).click();
-	await alice.locator('.player-chip', { hasText: 'carol' }).click();
+	await alice.getByRole('button', { name: 'carol', exact: true }).click();
 	await expect(alice.getByText('This challenge must be accepted.')).toBeVisible();
 	await alice.getByRole('button', { name: 'Take this Make (1 left)' }).click();
 	await expect.poll(async () => (await festivity(g, planID)).host_makes_taken).toEqual(['challenge_duel', 'challenge_duel']);

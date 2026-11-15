@@ -286,7 +286,7 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 	await alice.getByRole('button', { name: 'Another retinue', exact: true }).click();
 	const resolve = alice.getByRole('button', { name: 'Resolve peer' });
 	await expect(resolve).toBeDisabled();
-	await alice.locator('.player-chip', { hasText: 'bob' }).click();
+	await alice.getByRole('button', { name: 'bob', exact: true }).click();
 	await resolve.click();
 
 	// Second peer: the outcome already handed out is greyed, with a reason on tap.
@@ -312,7 +312,7 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 
 	// Carol writes the second peer's real identity.
 	await alice.getByRole('button', { name: 'Not who you thought', exact: true }).click();
-	await alice.locator('.player-chip', { hasText: 'carol' }).click();
+	await alice.getByRole('button', { name: 'carol', exact: true }).click();
 	await alice.getByRole('button', { name: 'Resolve peer' }).click();
 
 	// The wait moves from the preparer to the two authors (alice no longer owes a step).
@@ -437,7 +437,7 @@ test('mar: a named marginalia author sees their form live, without a reload', as
 	await nameAndRoll(pages.alice, ['Lady Ashby']);
 	await forceRoll(f, 'mar');
 	await pages.alice.getByRole('button', { name: 'Not who you thought', exact: true }).click();
-	await pages.alice.locator('.player-chip', { hasText: 'bob' }).click();
+	await pages.alice.getByRole('button', { name: 'bob', exact: true }).click();
 	await pages.alice.getByRole('button', { name: 'Resolve peer' }).click();
 	await expect(pages.bob.getByPlaceholder('Who has arrived at court?')).toBeVisible({ timeout: 10_000 });
 });
@@ -450,7 +450,7 @@ test('mar: a bystander sees each fate recorded live, without a reload', async ({
 	await nameAndRoll(pages.alice, ['Lady Ashby']);
 	await forceRoll(f, 'mar');
 	await pages.alice.getByRole('button', { name: 'Another retinue', exact: true }).click();
-	await pages.alice.locator('.player-chip', { hasText: 'bob' }).click();
+	await pages.alice.getByRole('button', { name: 'bob', exact: true }).click();
 	await pages.alice.getByRole('button', { name: 'Resolve peer' }).click();
 	await expect(pages.carol.getByText('Lady Ashby — Another retinue (awaiting marginalia)'))
 		.toBeVisible({ timeout: 10_000 });

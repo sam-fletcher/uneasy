@@ -11,6 +11,7 @@
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { REVEAL_EVENTS } from '$lib/ws';
 	import D6Face from './D6Face.svelte';
+	import Chip from '$lib/components/shared/Chip.svelte';
 	import ToneMark from '$lib/components/shared/ToneMark.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
@@ -136,16 +137,14 @@
 		     non-interactive "Submitted" state. -->
 		<div class="chip-row face-row">
 			{#each faces as face}
-				<button
-					type="button"
-					class="chip-btn face-chip"
-					class:active={picked === face}
+				<Chip
+					selected={picked === face}
 					aria-label="Pick {face}"
 					disabled={submitted || busy}
 					onclick={() => (picked = face)}
 				>
 					<D6Face value={face} size={28} />
-				</button>
+				</Chip>
 			{/each}
 		</div>
 		<div class="submit-row">
@@ -205,9 +204,14 @@
 		gap: var(--space-2);
 		cursor: default;
 	}
-	/* Locked faces: the chosen one keeps its gold border (the chip recipe's
-	   chosen-and-locked look); the rest are hairlines with faint pips. */
-	.face-chip:disabled {
+	/* A face is a chip with a die in it: the pips already carry the meaning, so
+	   the chip trims its padding to the die. Locked faces: the chosen one keeps its
+	   gold border (the chip recipe's chosen-and-locked look); the rest are
+	   hairlines with faint pips. */
+	.face-row :global(.chip) {
+		padding: 0 var(--space-2);
+	}
+	.face-row :global(.chip:disabled) {
 		cursor: default;
 	}
 </style>

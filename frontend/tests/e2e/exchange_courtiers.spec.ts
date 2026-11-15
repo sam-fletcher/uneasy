@@ -37,9 +37,9 @@ function expectRefused(res: APIResponse) {
 	expect(res.status()).toBeLessThan(500);
 }
 
-/** A player chip in the target-player row (the table header has same-named buttons). */
+/** A player chip in the target-player row (the table header has same-named buttons, but their names say more). */
 function chip(page: Page, name: string) {
-	return page.locator('.player-chip', { hasText: name });
+	return page.getByRole('button', { name, exact: true });
 }
 
 /** Tick a card in a CardPicker (peers and marginalia are chosen by checkbox). */

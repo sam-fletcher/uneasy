@@ -33,11 +33,9 @@ function markupOf(file: string): string {
 }
 
 describe('the five panels draw no legacy chip or warning markup', () => {
-	// .choice-card is not on this list on purpose: there is no shared option card
-	// yet, so Re-aim's Make Demands cards keep the recipe in planPanel.css.
 	it.each(PANELS)('%s', (file) => {
 		const markup = markupOf(file);
-		for (const legacy of ['chip-btn', 'player-chip', 'res-warning']) {
+		for (const legacy of ['chip-btn', 'player-chip', 'choice-card', 'res-warning']) {
 			expect(markup, `${file} still uses ${legacy}`).not.toContain(legacy);
 		}
 	});

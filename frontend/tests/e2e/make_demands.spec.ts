@@ -33,7 +33,9 @@ import * as H from './helpers/make_demands';
 
 H.cleanupAfterEach();
 
-const card = (page: Page, label: string) => page.locator('.choice-card', { hasText: label });
+const card = (page: Page, label: string) => page.getByRole('button', { name: new RegExp(`^${label}`) });
+/** Any of the draft's four option cards (a player who is not picking has none). */
+const draftCards = (page: Page) => page.getByRole('button', { name: /^(Control leverage|Keep or change target|Keep assets|Perform steps)/ });
 
 test('attaching: bob picks alices pending plan, gives a motivation, and the demand lands right before it', async ({ browser }) => {
 	const f = await H.seedMD();
@@ -104,8 +106,8 @@ test('the draft: duds are greyed with a reason while a live option remains, and 
 	await expectHeading(pick, 'Your move — draft pick');
 	await expectHeading(other, `Waiting on ${first} — draft pick`);
 	await expectHeading(pages.carol, `Waiting on ${first} — draft pick`);
-	await expect(pages.carol.locator('.choice-card')).toHaveCount(0);
-	await expect(other.locator('.choice-card')).toHaveCount(0);
+	await expect(draftCards(pages.carol)).toHaveCount(0);
+	await expect(draftCards(other)).toHaveCount(0);
 
 	// Duds are shown, greyed, with the reason; the live ones are not.
 	const dud = card(pick, 'Keep or change target');
@@ -445,7 +447,7 @@ test('a marred demand: the target preparer places the counter-demand, the demand
 	// bob's only unresolved plan is the demand itself, which can't be countered, so she defers.
 	const place = alice.getByRole('button', { name: 'Place counter-demand' });
 	await expect(place).toBeDisabled();
-	await alice.locator('.choice-card', { hasText: 'Defer' }).click();
+	await alice.getByRole('button', { name: /^Defer/ }).click();
 	await place.click();
 
 	// Placing it is the last step: the demand completes itself, no click to agree.

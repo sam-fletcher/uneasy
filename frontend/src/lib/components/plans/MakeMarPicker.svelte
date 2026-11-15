@@ -14,7 +14,7 @@
 	import type { Snippet } from 'svelte';
 	import type { PlanChoiceOption } from './shared';
 	import EndsNote from './shared/EndsNote.svelte';
-	import ToneMark from '$lib/components/shared/ToneMark.svelte';
+	import OptionCard from '$lib/components/shared/OptionCard.svelte';
 
 	interface Props {
 		outcome: 'make' | 'mar';
@@ -57,25 +57,18 @@
 
 	{#if options.length > 0}
 		<p class="choices-note">{single ? 'Choose one option:' : 'Select options to apply:'}</p>
-		<div class="choice-list">
+		<div class="option-list">
 			{#each options as opt (opt.key)}
-				{@const isSelected = selected.includes(opt.key)}
 				{@const isLocked = disabledKeys.includes(opt.key)}
-				{@const reason = isLocked ? lockReason?.(opt.key) : undefined}
-				<button type="button" class="choice-card" class:active={isSelected} class:locked={isLocked}
-					disabled={isLocked} aria-pressed={isSelected} onclick={() => onToggle(opt.key)}>
-					{#if opt.level != null}
-						<span class="choice-badge">{sign}{opt.level}</span>
-					{/if}
-					<span class="choice-text">
-						<span class="choice-title">{opt.label}</span>
-						{#if opt.desc}<span class="choice-desc">{opt.desc}</span>{/if}
-					</span>
-					{#if reason}<span class="choice-lock">{reason}</span>{/if}
-					{#if isSelected}
-						<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
-					{/if}
-				</button>
+				<OptionCard
+					title={opt.label}
+					badge={opt.level != null ? `${sign}${opt.level}` : undefined}
+					description={opt.desc || undefined}
+					reason={isLocked ? lockReason?.(opt.key) : undefined}
+					selected={selected.includes(opt.key)}
+					disabled={isLocked}
+					onclick={() => onToggle(opt.key)}
+				/>
 			{/each}
 		</div>
 	{/if}

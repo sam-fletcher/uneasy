@@ -145,7 +145,7 @@ test('make demands: the demand offers the plans it can still be aimed at, picked
 	await expect(panel.getByText('Demand against:')).toBeVisible();
 
 	// One option card: the plan and what its preparer wrote. Nothing is picked yet.
-	const card = panel.locator('.choice-card');
+	const card = panel.getByRole('button', { name: /Seek Answers/ });
 	await expect(card).toHaveCount(1);
 	await expect(card).toContainText("alice's Seek Answers");
 	await expect(card).toContainText('Old ledgers and older grudges.');
@@ -172,5 +172,5 @@ test('make demands: the demand offers the plans it can still be aimed at, picked
 	const carol = await open('carol');
 	await expect(carol.getByText('Waiting for bob to choose a new target')).toBeVisible({ timeout: 10_000 });
 	await expect(carol.getByRole('button', { name: 'Re-aim this plan' })).toHaveCount(0);
-	await expect(carol.locator('.choice-card')).toHaveCount(0);
+	await expect(carol.getByRole('button', { name: /Seek Answers/ })).toHaveCount(0);
 });

@@ -16,7 +16,7 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import Notice from '$lib/components/shared/Notice.svelte';
-	import ToneMark from '$lib/components/shared/ToneMark.svelte';
+	import OptionCard from '$lib/components/shared/OptionCard.svelte';
 	import { resolveHostMar, type Asset, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import { breakableAssets, playerName } from '../shared';
@@ -132,22 +132,17 @@
 
 		{#if legacyOption == null}
 			<p class="choices-note muted">You choose which one — pick one from the Mar list.</p>
-			<div class="choice-list">
+			<div class="option-list">
 				{#each MAR_OPTS as o (o.key)}
 					{@const reason = lockReason(o.key)}
-					<button type="button" class="choice-card"
-						class:active={picked === o.key} class:locked={reason != null}
-						disabled={reason != null} aria-pressed={picked === o.key}
-						onclick={() => { picked = picked === o.key ? null : o.key; }}>
-						<span class="choice-text">
-							<span class="choice-title">{o.label}</span>
-							{#if o.desc}<span class="choice-desc">{o.desc}</span>{/if}
-						</span>
-						{#if reason}<span class="choice-lock">{reason}</span>{/if}
-						{#if picked === o.key}
-							<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
-						{/if}
-					</button>
+					<OptionCard
+						title={o.label}
+						description={o.desc || undefined}
+						{reason}
+						selected={picked === o.key}
+						disabled={reason != null}
+						onclick={() => { picked = picked === o.key ? null : o.key; }}
+					/>
 				{/each}
 			</div>
 		{:else}

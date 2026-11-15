@@ -27,7 +27,7 @@
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import FormField from './FormField.svelte';
-	import ToneMark from '$lib/components/shared/ToneMark.svelte';
+	import OptionCard from '$lib/components/shared/OptionCard.svelte';
 	import { PLAN_SHORT, playerName, parseResolutionData } from './shared';
 
 	interface Props {
@@ -162,26 +162,15 @@
 				/>
 			{:else if plan.plan_type === 'make_demands'}
 				<FormField label="Demand against">
-					<div class="choice-list">
+					<div class="option-list">
 						{#each planChoices as p (p.id)}
 							{@const isPicked = pickedPlanID === p.id}
-							<button
-								type="button"
-								class="choice-card"
-								class:active={isPicked}
-								aria-pressed={isPicked}
+							<OptionCard
+								title="{playerName(players, p.preparer_id)}'s {PLAN_SHORT[p.plan_type] ?? p.plan_type}"
+								description={p.preparation_notes ? `“${p.preparation_notes}”` : undefined}
+								selected={isPicked}
 								onclick={() => (pickedPlanID = isPicked ? null : p.id)}
-							>
-								<span class="choice-text">
-									<span class="choice-title">{playerName(players, p.preparer_id)}'s {PLAN_SHORT[p.plan_type] ?? p.plan_type}</span>
-									{#if p.preparation_notes}
-										<span class="choice-desc">“{p.preparation_notes}”</span>
-									{/if}
-								</span>
-								{#if isPicked}
-									<span class="choice-picked"><ToneMark tone="success" label="Picked" /></span>
-								{/if}
-							</button>
+							/>
 						{/each}
 					</div>
 				</FormField>

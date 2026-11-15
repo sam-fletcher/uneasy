@@ -2,7 +2,7 @@
   Single die-face icon (values 0–6). Used wherever the user is picking or
   reading a die face — e.g. SimultaneousRevealInput, anywhere we display
   a chosen face for a reveal. Callers wrap this inside their own button
-  (`.chip-btn`) for selection.
+  (a `<Chip>`) for selection.
 
   The 0 face renders blank (no pips) for flows that allow "no submit"
   (currently: liaise cancel).

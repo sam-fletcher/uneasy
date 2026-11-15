@@ -59,7 +59,7 @@ async function tearMarginalia(page: Page, assetName: string) {
 }
 
 async function opponentChip(page: Page, name: string) {
-	await costForm(page).locator('.player-chip', { hasText: name }).click();
+	await costForm(page).getByRole('button', { name, exact: true }).click();
 }
 
 /** The war band at the top of Play, named for the war ("alice’s war on bob"). */
@@ -81,7 +81,7 @@ test('declaring war: enemies and a casus belli are both required, and the declar
 	const prepare = alice.getByRole('button', { name: 'Prepare Plan' });
 	await expect(prepare).toBeDisabled();
 
-	await alice.locator('.player-chip', { hasText: 'bob' }).click();
+	await alice.getByRole('button', { name: 'bob', exact: true }).click();
 	await expect(prepare).toBeDisabled(); // enemies alone are not enough
 	await alice.getByPlaceholder('Casus belli, opening move, rally cry, et cetera').fill(NOTES);
 	await expect(prepare).toBeEnabled();
