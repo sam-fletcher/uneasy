@@ -130,7 +130,7 @@ only games in a particular state, mobile layout, the action log.
 
 Behaviour changes worth a look before merging, open questions (each also
 gets a file in `docs/work/questions/`), and anything noticed but not fixed. Link the hand-over
-note (`docs/work/notes/<session-name>.md`) rather than repeating it.
+note (`docs/work/notes/<branch-name>.md`) rather than repeating it.
 
 ## 3. Check, then create
 

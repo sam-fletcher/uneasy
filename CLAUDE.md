@@ -76,7 +76,7 @@ than guessing — the `grilling` skill shows how to ask.
 - **Each work session deletes or edits its own item file in
   [docs/work/next/](docs/work/next/), adds a file per new item or owner
   question, and writes its hand-over note to
-  `docs/work/notes/<worktree-folder>.md` on its own branch**, so all of it
+  `docs/work/notes/<branch-name>.md` on its own branch**, so all of it
   merges with its code and can't drift from it. Open questions for the owner
   go in the note *and* a file in `docs/work/questions/`.
 - **No file that every PR edits.** Parallel PRs editing one shared file (a

@@ -18,7 +18,7 @@ and feel.
   item it came from). It's the spec this PR is judged against. If there is none — the
   owner asked you to review a PR from elsewhere — skip the Brief axis and
   say so in the review.
-- The hand-over note in the diff (`docs/work/notes/<session-name>.md`).
+- The hand-over note in the diff (`docs/work/notes/<branch-name>.md`).
 
 ## 2. Pre-checks
 
@@ -35,7 +35,8 @@ Cheap, mechanical, and enough to send it straight back:
 - **Tracker and hand-over note:** the item's file in `docs/work/next/` is
   deleted or updated, each owner question has its own file in
   `docs/work/questions/`, the note exists, and the PR edits no other
-  entry's file (that would bring back the shared-file conflicts). (A
+  entry's file and no other session's note (that would bring back the
+  shared-file conflicts, or overwrite another session's record). (A
   coordinator's own setup PR has no work session, so no note.)
 - **Public repo:** search the diff, PR body and commit messages for
   `_RULES`, `DESIGN_PRINCIPLES`, `adr/` and `/Users/`, and read each hit. A

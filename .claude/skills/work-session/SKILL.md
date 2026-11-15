@@ -91,9 +91,13 @@ On your branch, alongside the code:
   `docs/work/README.md`. Never edit another entry's file and never
   renumber: that's what made every parallel PR conflict. No "in progress"
   entry: open PRs are the list of work in flight.
-- **Hand-over note:** `docs/work/notes/<session-name>.md`, where
-  `<session-name>` is your worktree's folder name, with these
-  sections: *What changed and why* · *How it was verified* (say what did
+- **Hand-over note:** `docs/work/notes/<branch-name>.md`, where
+  `<branch-name>` is the last part of your branch's name
+  (`claude/checkbox-width-af6bae` → `checkbox-width-af6bae`). Not the
+  worktree's folder name: the app reuses old worktree folders, so a
+  folder's name can already have another session's note. If the file
+  already exists on `main`, it isn't yours: pick another name. The note
+  has these sections: *What changed and why* · *How it was verified* (say what did
   **not** run against your code) · *Behaviour changes to look at before
   merging* · *Open questions for the owner* · *Noticed, not fixed*.
 
