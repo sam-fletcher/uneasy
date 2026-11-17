@@ -347,6 +347,114 @@ func TestLog_SpreadRumors_TakeConsentIsLoggedBeforeTheTransfer(t *testing.T) {
 	_ = prepIdx
 }
 
+// refuseTransferOf makes the database reject any change of owner for the given
+// assets, so a take can be made to fail at a chosen asset. The trigger is
+// installed with OR REPLACE and removed by t.Cleanup, which is registered first,
+// so a run that dies half-way leaves nothing that breaks the next one.
+func refuseTransferOf(t *testing.T, h *planLifecycle, assetIDs ...int64) {
+	t.Helper()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = h.pool.Exec(ctx, `DROP TRIGGER IF EXISTS test_refuse_transfer ON assets`)
+		_, _ = h.pool.Exec(ctx, `DROP FUNCTION IF EXISTS test_refuse_transfer()`)
+	})
+	ids := make([]string, len(assetIDs))
+	for i, id := range assetIDs {
+		ids[i] = strconv.FormatInt(id, 10)
+	}
+	for _, stmt := range []string{
+		`CREATE OR REPLACE FUNCTION test_refuse_transfer() RETURNS trigger LANGUAGE plpgsql AS
+		 $$ BEGIN
+		      IF NEW.id = ANY (ARRAY[` + strings.Join(ids, ",") + `]::bigint[]) THEN
+		        RAISE EXCEPTION 'transfers of asset % are refused in this test', NEW.id;
+		      END IF;
+		      RETURN NEW;
+		    END $$`,
+		`DROP TRIGGER IF EXISTS test_refuse_transfer ON assets`,
+		`CREATE TRIGGER test_refuse_transfer BEFORE UPDATE OF owner_id ON assets
+		 FOR EACH ROW EXECUTE FUNCTION test_refuse_transfer()`,
+	} {
+		_, err := h.pool.Exec(ctx, stmt)
+		require.NoError(t, err)
+	}
+}
+
+// The victim's "consented" line is not posted until the transfer has gone
+// through. It used to be posted first, so a transfer that failed left the table
+// reading a consent for a take that never happened (and the victim, whose request
+// was still pending, agreeing again and adding a second one).
+func TestLog_SpreadRumors_FailedTransferLeavesNoConsentLine(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, _, victimIdx, loot := srTakeRequest(t, h)
+	refuseTransferOf(t, h, loot)
+
+	code, body := h.post(victimIdx, planPath(plan.ID, "respond-take-consent"), map[string]any{"agree": true})
+	require.Equalf(t, http.StatusInternalServerError, code, "the failed transfer is reported: %v", body)
+
+	for _, b := range allLogBodies(t, h) {
+		assert.NotContains(t, b, "consented to", "no consent line for a take that never happened")
+		assert.NotContains(t, b, "took **Crown Jewels**")
+	}
+	owner, err := h.q.GetAssetByID(ctx, loot)
+	require.NoError(t, err)
+	assert.Equal(t, h.tg.Players[victimIdx].ID, owner.OwnerID, "the asset never moved")
+}
+
+// A take of two assets whose second transfer fails has still moved the first:
+// it was broadcast as taken and now belongs to the aggressor. The log must say so
+// (with the consent that licensed it), because a retry finds that asset no longer
+// the victim's and lapses, so nothing else would ever record it.
+func TestLog_SpreadRumors_PartialTakeLogsWhatMoved(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+
+	prepIdx := h.focusPlayerIdx()
+	victimIdx := (prepIdx + 1) % len(h.tg.Players)
+	target := h.seedPeer(victimIdx, "rumor target")
+	first := h.seedPeer(victimIdx, "Crown Jewels")
+	second := h.seedPeer(victimIdx, "Royal Seal")
+	notes := "the king is a fraud"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType: model.PlanSpreadRumors, TargetAssetID: &target, PreparationNotes: &notes,
+	})
+	h.jumpToRow(*plan.RowNumber)
+	roll := h.resolveAndCast(plan.ID)
+	require.NotNil(t, roll)
+	h.forceRoll(roll.ID, makeOutcome, 2)
+	code, body := h.post(prepIdx, planPath(plan.ID, "request-take-consent"), map[string]any{
+		"result": makeOutcome, "choices": []string{"take_asset", "take_asset"},
+		"take_asset_ids": []int64{first, second},
+	})
+	require.Equalf(t, http.StatusOK, code, "request-take-consent: %v", body)
+	refuseTransferOf(t, h, second)
+
+	code, body = h.post(victimIdx, planPath(plan.ID, "respond-take-consent"), map[string]any{"agree": true})
+	require.Equalf(t, http.StatusInternalServerError, code, "the second transfer fails: %v", body)
+
+	moved, err := h.q.GetAssetByID(ctx, first)
+	require.NoError(t, err)
+	require.Equal(t, h.tg.Players[prepIdx].ID, moved.OwnerID, "the first asset did change hands")
+
+	bodies := allLogBodies(t, h)
+	consent, took, tookSecond := -1, -1, -1
+	for i, b := range bodies {
+		if strings.Contains(b, "consented to") {
+			consent = i
+		}
+		if strings.Contains(b, "took **Crown Jewels**") {
+			took = i
+		}
+		if strings.Contains(b, "took **Royal Seal**") {
+			tookSecond = i
+		}
+	}
+	require.NotEqual(t, -1, took, "the asset that moved is in the log")
+	require.NotEqual(t, -1, consent, "and so is the consent that licensed it")
+	assert.Less(t, consent, took, "consent still reads first")
+	assert.Equal(t, -1, tookSecond, "the asset that did not move is not logged as taken")
+}
+
 // ── Host Festivity ───────────────────────────────────────────────────────────
 
 // Opting out is announced at the table and is what earns the host a make.
