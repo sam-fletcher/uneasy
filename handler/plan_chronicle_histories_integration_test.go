@@ -139,6 +139,42 @@ func TestChronicleHistories_Make_EnforcesOptionBudget(t *testing.T) {
 	require.Equalf(t, http.StatusOK, code, "within budget should succeed: %v", body)
 }
 
+// The pre-roll's invocations set the difficulty but used to leave no trace in
+// the log: only an artifact invoked later, mid-scene, was ever announced. The
+// cast now says which artifacts the preparer invoked.
+func TestChronicleHistories_CastRoll_LogsTheInvokedArtifacts(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "what led to the war"
+	plan := h.prepare(PreparePlanRequest{PlanType: model.PlanChronicleHistories, PreparationNotes: &notes})
+	h.jumpToRow(*plan.RowNumber)
+	h.resolve(plan.ID)
+	crown, _ := chSeedArtifact(t, h, 1, "The Old Crown", 1)
+	ledger, _ := chSeedArtifact(t, h, 2, "The Ledger", 1)
+	chCastRoll(t, h, plan.ID, crown, ledger)
+
+	invoked := h.logBodies("plan.chronicle_histories")
+	require.Len(t, invoked, 1, "one line for the whole pre-roll, not one per artifact")
+	assert.Contains(t, invoked[0], h.mark(h.preparerIdxFor(plan.ID)), "names who invoked them")
+	assert.Contains(t, invoked[0], "invoked")
+	assert.Contains(t, invoked[0], "**The Old Crown**")
+	assert.Contains(t, invoked[0], "**The Ledger**")
+}
+
+// Invoking nothing is a valid pre-roll (difficulty falls back to the preparer's
+// rank), and there is nothing to announce.
+func TestChronicleHistories_CastRoll_NothingInvokedPostsNoInvocationLine(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+
+	notes := "what led to the war"
+	plan := h.prepare(PreparePlanRequest{PlanType: model.PlanChronicleHistories, PreparationNotes: &notes})
+	h.jumpToRow(*plan.RowNumber)
+	h.resolve(plan.ID)
+	chCastRoll(t, h, plan.ID)
+
+	assert.Empty(t, h.logBodies("plan.chronicle_histories"), "no invocations, no line")
+}
+
 // TestChronicleHistories_PreRollInvoke_RaisesDifficulty proves cast-roll invokes
 // the chosen artifacts and that invoking more than the preparer's knowledge rank
 // raises the difficulty to the number invoked (difficulty = max(rank, #invoked)).
