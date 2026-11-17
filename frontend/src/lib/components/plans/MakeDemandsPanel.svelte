@@ -41,6 +41,7 @@
 	const players = $derived(ctx.players);
 	const rankings = $derived(ctx.rankings);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const focusPlayerID = $derived(ctx.focusPlayerID);
 	const currentRow = $derived(ctx.currentRow);
 	const plans = $derived(ctx.plans);
 	const rollOutcome = $derived(ctx.rollOutcome);
@@ -55,8 +56,14 @@
 
 	// ── Prep ─────────────────────────────────────────────────────────────────
 
-	// A plan is targetable iff it is not own, not Make War, not another
-	// demand, still pending, has a row, and has not already spent its one
+	// The player whose prep form this is. The preparer's own form is the viewer's;
+	// a watcher's read-only mirror is the focus player's, so the list is the one
+	// the preparer picks from, not the watcher's. The Duel and War prep forms
+	// build their mirrors the same way.
+	const draftPreparerID = $derived(readOnly ? focusPlayerID : currentPlayerID);
+
+	// A plan is targetable iff it is not the preparer's own, not Make War, not
+	// another demand, still pending, has a row, and has not already spent its one
 	// demand slot (demandedPlanIDs — a resolved demand still holds it). Must
 	// stay in lockstep with the server-side filter in
 	// mdHandler.CheckPrepEligibility / ValidatePreparation
@@ -67,7 +74,7 @@
 		return plans.filter(p =>
 			p.plan_type !== 'make_demands' &&  // demand-on-demand: rejected server-side (Stage-4 routes can't service it)
 			p.plan_type !== 'make_war' &&
-			p.preparer_id !== currentPlayerID &&
+			p.preparer_id !== draftPreparerID &&
 			// A demand slots in *before* its target within the same row, so a
 			// target whose resolution has already started can't be demanded
 			// against — there's no "before" left.
