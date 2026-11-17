@@ -30,6 +30,7 @@
 	import LogMark from '$lib/components/LogMark.svelte';
 	import RetinueSheet from '$lib/components/RetinueSheet.svelte';
 	import BarbuteMark from '$lib/components/shared/BarbuteMark.svelte';
+	import Checkbox from '$lib/components/shared/Checkbox.svelte';
 	import ChecklistRow from '$lib/components/shared/ChecklistRow.svelte';
 	import Chip from '$lib/components/shared/Chip.svelte';
 	import ClockMark from '$lib/components/shared/ClockMark.svelte';
@@ -83,6 +84,7 @@
 		['buttons', 'Buttons'],
 		['chips', 'Chips'],
 		['options', 'Option cards'],
+		['checkboxes', 'Checkboxes'],
 		['rows', 'Rows'],
 		['status', 'Status words'],
 		['notices', 'Notices'],
@@ -220,6 +222,7 @@
 	let choice = $state<'aid' | 'interfere'>('aid');
 	let subTab = $state<'events' | 'laws' | 'rumors'>('events');
 	let option = $state<'one' | 'two'>('one');
+	let ticked = $state({ plain: false, explained: true });
 	let pickedPlayer = $state<number | null>(2);
 	let sheetOpen = $state(false);
 	let sheetChoice = $state<'one' | 'two' | 'out'>('one');
@@ -716,6 +719,48 @@
 			A card wears no meaning colour: its words tell it apart. Hover lightens the border and a
 			selected card keeps its gold. Focus draws the bright gold ring. Lock a card with
 			<code>disabled</code>, or with <code>aria-disabled</code> where a tap should say why.
+		</p>
+	</Section>
+
+	<Section
+		id="checkboxes"
+		title="Checkboxes"
+		blurb="A yes-or-no that is sent with the rest of a form, with its words beside it. It is the asset card's box: 24px, a neutral control border, and when ticked the 2px bright gold border with a tick and no fill. The whole row is the tap target (44px at least), and whatever it does goes in words under its label, never in a tooltip."
+	>
+		<div class="specimens wide">
+			<Cell label="rest and ticked · Checkbox (tap a row to switch it)">
+				<div class="sg-col">
+					<Checkbox bind:checked={ticked.plain} label="Surrender after this payment" />
+					<Checkbox checked label="Ticked" />
+				</div>
+			</Cell>
+			<Cell label="with an explanation under the words, in secondary text">
+				<div class="sg-col">
+					<Checkbox
+						bind:checked={ticked.explained}
+						label="Keep it secret for now"
+						description="Hide the rumor under one of your own assets instead of announcing it. Others won't see the text until you spread it."
+					/>
+				</div>
+			</Cell>
+			<Cell label="locked · a hairline and faint words, never opacity; the reason is in words under the explanation">
+				<div class="sg-col">
+					<Checkbox
+						disabled
+						label="Surrender after this payment"
+						description="After this payment is recorded you are marked surrendered."
+						reason="Doesn't apply when proposing peace."
+					/>
+					<Checkbox checked disabled label="Ticked, then locked" />
+				</div>
+			</Cell>
+		</div>
+		<p class="note">
+			There are no plain browser checkboxes in the app, and a test fails on one. The asset cards
+			in Game pieces draw the same box, from the same stylesheet. A setting that acts the moment
+			it is flipped (the chat's "Hide bookkeeping") is a switch, and a choice among a few words
+			is a chip. Hover raises the row; focus draws the bright gold ring on the box, so tab to
+			one to see it.
 		</p>
 	</Section>
 

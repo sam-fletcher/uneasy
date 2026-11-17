@@ -7,6 +7,7 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import type { Player, Asset } from '$lib/api';
+	import Checkbox from '$lib/components/shared/Checkbox.svelte';
 	import Chip from '$lib/components/shared/Chip.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
 	import CardPicker from '../CardPicker.svelte';
@@ -171,17 +172,15 @@
 {/if}
 
 {#if allowSurrender}
-	<label class="surrender-label"
-		title={kind === 'propose_peace'
-			? "Doesn't apply when proposing peace."
-			: 'After this payment is recorded you will be marked surrendered. ' +
-			  'Each opposing non-surrendered opponent will get to claim one of your assets.'}>
-		<input type="checkbox" bind:checked={surrender}
-			disabled={kind === 'propose_peace'} />
-		<span class:inert={kind === 'propose_peace'}>
-			Surrender after this payment
-		</span>
-	</label>
+	<!-- Surrender is irreversible, so what it does is said in words on the screen:
+	     a `title` can't be read on a phone. Peace has nothing to surrender from. -->
+	<Checkbox
+		bind:checked={surrender}
+		disabled={kind === 'propose_peace'}
+		label="Surrender after this payment"
+		description="After this payment is recorded you are marked surrendered, and each opposing opponent who hasn't surrendered gets to claim one of your assets."
+		reason="Doesn't apply when proposing peace."
+	/>
 {/if}
 
 <button class="action-btn primary" onclick={submit}
@@ -195,17 +194,4 @@
 		font-size: var(--text-small);
 		color: var(--color-text-secondary);
 	}
-
-	/* Surrender is a choice made alongside the payment, so the checkbox sits on
-	   the line with its words, at the 44px touch height. */
-	.surrender-label {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
-		min-height: var(--size-tap);
-		font-size: var(--text-small);
-		color: var(--color-text-secondary);
-	}
-	.surrender-label input { flex: none; }
-	.surrender-label .inert { color: var(--color-text-faint); }
 </style>

@@ -13,8 +13,9 @@
 	A card is a game piece: the warm piece border, the piece corner and the
 	raised surface. SELECTED is the 2px bright gold border with no fill, and a
 	tick in the checkbox (ToneMark's success tick, the same one a success notice
-	uses, painted gold by the card). Gold
-	alone says "you picked this"; the owner's colour is kept for saying whose
+	uses, painted gold by the card). The box itself is the house checkbox's:
+	shared/checkbox.css draws it, here and in <Checkbox>, so the two can't drift.
+	Gold alone says "you picked this"; the owner's colour is kept for saying whose
 	the card is. That shows as the owner's shape beside the name, derived from
 	`ownerColor` (so callers need not change); the card's own left edge no
 	longer wears the colour.
@@ -34,6 +35,7 @@
 	The parent owns draft state and the actual commit (on Ready).
 -->
 <script lang="ts">
+	import './shared/checkbox.css';
 	import './shared/chip.css';
 	import './shared/statusText.css';
 	import { untrack } from 'svelte';
@@ -219,7 +221,7 @@
 	>
 		{#if selectable}
 			<span
-				class="select-tap"
+				class="select-tap check-box"
 				role="checkbox"
 				tabindex={disabled ? -1 : 0}
 				aria-checked={selected}
@@ -347,7 +349,7 @@
 				<ul class="marginalia">
 					<li class:picked={blankPicked}>
 						<span
-							class="select-tap m-tap"
+							class="select-tap check-box m-tap"
 							role="checkbox"
 							tabindex={disabled ? -1 : 0}
 							aria-checked={blankPicked}
@@ -381,7 +383,7 @@
 								<span class="torn-mark" role="img" aria-label="torn"><LogMark family="tear" /></span>
 							{:else if marginaliaSelectable}
 								<span
-									class="select-tap m-tap"
+									class="select-tap check-box m-tap"
 									role="checkbox"
 									tabindex={disabled ? -1 : 0}
 									aria-checked={isPicked}
@@ -510,33 +512,10 @@
 		color: var(--color-you);
 	}
 
-	/* The checkbox: a control standing on a raised card, so it takes the
-	   raised-twice fill and a neutral control border. Picked is the bright gold
-	   border plus the tick; no fill. */
-	.select-tap {
-		width: 24px;
-		height: 24px;
-		box-sizing: border-box;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border-control);
-		border-radius: var(--radius-control);
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		cursor: pointer;
-		color: var(--color-you);
-	}
+	/* The checkbox's look (fill, border, corner, ticked, locked, focus) is
+	   shared/checkbox.css's .check-box, the same box <Checkbox> draws. What stays
+	   here is the card's own: the marginalia rows' smaller box. */
 	.m-tap { width: 20px; height: 20px; }
-	.select-tap[aria-checked='true'] {
-		border-color: var(--color-you);
-		box-shadow: inset 0 0 0 1px var(--color-you);
-	}
-	.select-tap[aria-disabled='true'] { cursor: not-allowed; }
-	.select-tap:focus-visible {
-		outline: 2px solid var(--color-you);
-		outline-offset: 2px;
-	}
 
 	/* Invisible tap target around the header checkbox: extends the 24px box
 	   out to ~44px. Scoped to .header: the per-line marginalia checkboxes

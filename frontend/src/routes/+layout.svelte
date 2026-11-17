@@ -154,8 +154,8 @@
 	   it also reached checkboxes and radios: width: 100% stretched a checkbox across
 	   its whole row, so the box sat in the middle and its words were pushed off the
 	   phone (the surrender checkbox on Make War's cost of battle). A checkbox or
-	   radio keeps its native size. A control that needs its own box sets it locally
-	   (Spread Rumors' "Keep it secret" toggle). */
+	   radio is left alone. The app has no plain ones now: <Checkbox> hides its input
+	   under the drawn box, and the chat's switch draws its own. */
 	:global(input:not([type='checkbox']):not([type='radio'])) {
 		font-size: var(--text-body);
 		padding: var(--space-2) var(--space-3);

@@ -22,7 +22,6 @@ Each was checked against the code on 2026-11-07, but re-check before building.
 - Insisting is one irreversible tap; consider two steps if playtesters trip on it.
 
 **Make War**
-- What surrender does is explained only in a `title`, though it's irreversible.
 - A war that hasn't reached its row still reads "War — ongoing".
 
 **Propose Duel**
