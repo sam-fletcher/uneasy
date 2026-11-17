@@ -22,7 +22,7 @@
 <script lang="ts">
 	import EndsNote from './shared/EndsNote.svelte';
 	import './planPanel.css';
-	import { onMount, onDestroy } from 'svelte';
+	import { useWindowEvents } from '$lib/useWindowEvents';
 	import {
 		endFestivity,
 		getRoll,
@@ -180,18 +180,16 @@
 		const d = (e as CustomEvent<{ plan_id: number }>).detail;
 		if (plan && d?.plan_id === plan.id) onPlansChanged();
 	}
-	const FEST_EVENTS = [
-		'uneasy:festivity.guest_rolled',
-		'uneasy:festivity.guest_chose',
-		'uneasy:festivity.host_chose',
-		'uneasy:festivity.insist_host_mar',
-		'uneasy:festivity.updated',
-		'uneasy:festivity.challenge_issued',
-		'uneasy:festivity.challenge_declined',
-		'uneasy:festivity.duel_triggered',
-	];
-	onMount(() => { for (const ev of FEST_EVENTS) window.addEventListener(ev, onFestEvent); });
-	onDestroy(() => { for (const ev of FEST_EVENTS) window.removeEventListener(ev, onFestEvent); });
+	useWindowEvents([
+		'festivity.guest_rolled',
+		'festivity.guest_chose',
+		'festivity.host_chose',
+		'festivity.insist_host_mar',
+		'festivity.updated',
+		'festivity.challenge_issued',
+		'festivity.challenge_declined',
+		'festivity.duel_triggered',
+	], onFestEvent);
 
 	// ── End the event (host) ─────────────────────────────────────────────────
 	let endBusy = $state(false);
