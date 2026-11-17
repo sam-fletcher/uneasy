@@ -4,6 +4,7 @@ import ExchangeCourtiersPanel from './ExchangeCourtiersPanel.svelte';
 import ClandestinelyLiaisePanel from './ClandestinelyLiaisePanel.svelte';
 import DuelPrepForm from './duel/PrepForm.svelte';
 import WarPrepForm from './war/PrepForm.svelte';
+import SpreadRumorsPanel from './SpreadRumorsPanel.svelte';
 import type { PlanContext } from './types';
 
 // While the focus player prepares a plan, everyone else sees a read-only mirror of
@@ -149,5 +150,44 @@ describe('Make War: the enemy chips', () => {
 		const names = playerChips(render_(seat));
 		expect(names).toEqual(['bob', 'carol']);
 		expect(names).not.toContain('alice');
+	});
+});
+
+describe("Spread Rumors: a watcher never sees the rumor's text as it is typed", () => {
+	// The preparer's draft is read by the whole table, and a rumor's text may become a secret
+	// (the box can be ticked after it is typed), so the draft never carries it. A watcher's
+	// mirror says what is going on where the text box would be: the rumor is kept secret, or
+	// the preparer is writing it. Either way an empty box would read as an unwritten rumor.
+	// The lines are read straight from the draft, so they are in these renders even though
+	// what a mirror copies from it in an effect is not.
+	const SECRET_DRAFT = { filter_owner_id: TARGET, target_asset_id: 11, keep_secret: true, secret_asset_id: 10 };
+	const OPEN_DRAFT = { filter_owner_id: TARGET, target_asset_id: 11, keep_secret: false, secret_asset_id: null };
+	const render_ = (seat: number, draft: Record<string, unknown> | null) =>
+		render(SpreadRumorsPanel, { props: { ctx: ctxFor(seat, draft), plan: null, mode: 'prep' } }).body;
+
+	it('is told a secret rumor is kept secret, and by whom, where the text would be', () => {
+		const html = render_(BYSTANDER, SECRET_DRAFT);
+		expect(text(html)).toContain('Kept secret for now. Only alice can read it.');
+		expect(html).not.toContain('<textarea');
+	});
+
+	it('is told an open rumor is being written, and by whom, instead of being shown a text box', () => {
+		const html = render_(BYSTANDER, OPEN_DRAFT);
+		expect(text(html)).toContain('alice is writing the rumor.');
+		expect(text(html)).not.toContain('Kept secret');
+		expect(html).not.toContain('<textarea');
+	});
+
+	it('is told the same while the preparer has not started the form', () => {
+		const html = render_(BYSTANDER, null);
+		expect(text(html)).toContain('alice is writing the rumor.');
+		expect(html).not.toContain('<textarea');
+	});
+
+	it("the preparer's own form keeps its text box and shows neither line", () => {
+		const html = render_(PREPARER, null);
+		expect(html).toContain('<textarea');
+		expect(text(html)).not.toContain('is writing the rumor');
+		expect(text(html)).not.toContain('Kept secret for now. Only');
 	});
 });

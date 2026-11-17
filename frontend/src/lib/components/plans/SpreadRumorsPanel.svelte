@@ -27,6 +27,7 @@
 		type Plan,
 	} from '$lib/api';
 	import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
+	import { spreadRumorsPrepDraft } from '$lib/plans/prepDraft';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
@@ -62,10 +63,14 @@
 	const prepDraft = $derived(ctx.prepDraft as {
 		filter_owner_id?: number | null;
 		target_asset_id?: number | null;
-		notes?: string;
 		keep_secret?: boolean;
 		secret_asset_id?: number | null;
 	} | null);
+
+	// Whether the preparer is keeping the rumor secret, as a watcher's mirror has it. Read
+	// straight from the draft (not from prepKeepSecret, which an effect copies in) so it
+	// holds on first paint.
+	const mirrorKeptSecret = $derived(prepDraft?.keep_secret === true);
 
 	let performStepsWinnerID = $state<number | null>(null);
 	// The preparer resolves their own plan; the perform_steps demand winner may
@@ -201,25 +206,25 @@
 		if (!readOnly) return;
 		prepFilterOwnerID = prepDraft?.filter_owner_id ?? null;
 		prepTargetAssetID = prepDraft?.target_asset_id ?? null;
-		prepNotes = prepDraft?.notes ?? '';
 		prepKeepSecret = prepDraft?.keep_secret ?? false;
 		prepSecretAssetID = prepDraft?.secret_asset_id ?? null;
 	});
 	let emitTimer: ReturnType<typeof setTimeout> | null = null;
 	$effect(() => {
 		if (readOnly || mode !== 'prep') return;
-		void prepFilterOwnerID; void prepTargetAssetID; void prepNotes;
+		// Not prepNotes: the draft never carries the rumor's text (lib/plans/prepDraft.ts), so
+		// typing it sends nothing.
+		void prepFilterOwnerID; void prepTargetAssetID;
 		void prepKeepSecret; void prepSecretAssetID;
 		if (emitTimer) clearTimeout(emitTimer);
 		emitTimer = setTimeout(() => {
 			emitTimer = null;
-			ctx.emitPrepDraft({
-				filter_owner_id: prepFilterOwnerID,
-				target_asset_id: prepTargetAssetID,
-				notes: prepNotes,
-				keep_secret: prepKeepSecret,
-				secret_asset_id: prepSecretAssetID,
-			});
+			ctx.emitPrepDraft(spreadRumorsPrepDraft({
+				filterOwnerID: prepFilterOwnerID,
+				targetAssetID: prepTargetAssetID,
+				keepSecret: prepKeepSecret,
+				secretAssetID: prepSecretAssetID,
+			}));
 		}, 150);
 	});
 	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
@@ -611,13 +616,26 @@
 					{readOnly}
 				/>
 			{/if}
-			<label class="form-label">
-				Rumor:
-				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
-					placeholder={prepKeepSecret
-						? 'Write the rumor — only you will see it until you spread it.'
-						: 'What are people starting to say?'}></textarea>
-			</label>
+			{#if readOnly}
+				<!-- A watcher is never sent the rumor's text, kept secret or not: the draft is read by
+				     the whole table, and the box can be ticked after the words are typed. An empty box
+				     would read as a rumor not yet written, so say what is going on instead. -->
+				<p class="form-hint">
+					{#if mirrorKeptSecret}
+						Kept secret for now. Only {playerName(players, ctx.focusPlayerID)} can read it.
+					{:else}
+						{playerName(players, ctx.focusPlayerID)} is writing the rumor.
+					{/if}
+				</p>
+			{:else}
+				<label class="form-label">
+					Rumor:
+					<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
+						placeholder={prepKeepSecret
+							? 'Write the rumor — only you will see it until you spread it.'
+							: 'What are people starting to say?'}></textarea>
+				</label>
+			{/if}
 
 			<Checkbox
 				bind:checked={prepKeepSecret}
