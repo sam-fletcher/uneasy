@@ -453,8 +453,14 @@ func applyLiaiseRedelayResult(
 		return
 	}
 	deps := &PlanDeps{Store: s, Manager: manager}
-	resData := loadResolutionData(plan.ResolutionData)
-	_ = clApplyRedelayOutcome(ctx, deps, &plan, &resData, resultDelay, cancelled)
+	resData := loadPlanResolutionData(&plan)
+	// Best-effort, but not silent: the follow-up meeting is scheduled and logged
+	// before the liaison's own state is saved, so a failure here can leave a
+	// scheduled meeting beside a plan still showing its last phase.
+	if err := clApplyRedelayOutcome(ctx, deps, &plan, &resData, resultDelay, cancelled); err != nil {
+		loggerFromContext(ctx).ErrorContext(ctx, "liaise redelay outcome failed",
+			"plan_id", planID, "game_id", plan.GameID, "err", err)
+	}
 }
 
 // ── requireRevealAccess ───────────────────────────────────────────────────────

@@ -569,7 +569,10 @@ func clScheduleNewMeeting(
 			PartnerPeerID:  origLD.PartnerPeerID,
 		},
 	}
-	_ = saveResolutionData(ctx, deps.Q, newPlan.ID, newResData)
+	if err := saveResolutionData(ctx, deps.Q, newPlan.ID, newResData); err != nil {
+		loggerFromContext(ctx).ErrorContext(ctx, "could not save the follow-up meeting's state",
+			"plan_id", newPlan.ID, "game_id", newPlan.GameID, "err", err)
+	}
 
 	broadcastEvent(deps.Manager, originalPlan.GameID, model.EventPlanPrepared, model.PlanPayload{Plan: newPlan})
 	EmitPlanPrepared(ctx, deps.Q, deps.Manager, newPlan)
