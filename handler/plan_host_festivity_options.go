@@ -233,7 +233,15 @@ func hfClaimCenteredDraft(ctx context.Context, fc *festivityOptionContext) error
 	centered := fc.state.CenteredDrafts
 	var asset dbgen.Asset
 	err = fc.deps.InTx(ctx, func(q *dbgen.Queries) error {
-		a, _, mErr := materializeDraftPeer(ctx, q, fc.deps.Manager, fc.plan.GameID, claimed, newOwner)
+		a, _, mErr := materializeDraftPeer(
+			ctx,
+			q,
+			fc.deps.Manager,
+			fc.plan.GameID,
+			claimed,
+			newOwner,
+			claimed.CreatorID,
+		)
 		if mErr != nil {
 			return mErr
 		}
@@ -511,7 +519,7 @@ func hfSettleUnclaimedCenteredDrafts(
 	assets := make([]dbgen.Asset, len(centered))
 	err := deps.InTx(ctx, func(q *dbgen.Queries) error {
 		for i, d := range centered {
-			a, _, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, d, owners[i])
+			a, _, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, d, owners[i], d.CreatorID)
 			if mErr != nil {
 				return mErr
 			}
