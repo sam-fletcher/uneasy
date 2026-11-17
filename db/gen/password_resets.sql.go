@@ -57,11 +57,20 @@ func (q *Queries) InsertPasswordResetToken(ctx context.Context, arg InsertPasswo
 	return i, err
 }
 
-const markPasswordResetTokenUsed = `-- name: MarkPasswordResetTokenUsed :exec
-UPDATE password_reset_tokens SET used_at = now() WHERE token_hash = $1
+const markPasswordResetTokenUsed = `-- name: MarkPasswordResetTokenUsed :execrows
+UPDATE password_reset_tokens SET used_at = now()
+WHERE token_hash = $1 AND used_at IS NULL
 `
 
-func (q *Queries) MarkPasswordResetTokenUsed(ctx context.Context, tokenHash string) error {
-	_, err := q.db.Exec(ctx, markPasswordResetTokenUsed, tokenHash)
-	return err
+// Single-use is enforced here, not by the handler's earlier read: the
+// `used_at IS NULL` condition makes the write itself the claim. Two redemptions
+// that both read the token as unused serialise on this row, and the loser's
+// UPDATE finds it already used and affects zero rows — the caller treats that
+// as "already used". :execrows is what lets it tell.
+func (q *Queries) MarkPasswordResetTokenUsed(ctx context.Context, tokenHash string) (int64, error) {
+	result, err := q.db.Exec(ctx, markPasswordResetTokenUsed, tokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
