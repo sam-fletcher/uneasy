@@ -129,13 +129,65 @@ func TestLoadResolutionData_RoundTrip(t *testing.T) {
 	assert.Equal(t, playerID, *result.Liaise.PartnerID)
 }
 
-// TestLoadResolutionData_InvalidJSON tests that invalid JSON is gracefully handled.
+// TestLoadResolutionData_InvalidJSON: the lenient reader doesn't panic or
+// return an error, but the value it hands back still remembers that it came
+// from an unreadable blob.
 func TestLoadResolutionData_InvalidJSON(t *testing.T) {
-	// The function silently ignores errors, so invalid JSON should return a zero struct
 	invalidJSON := `{this is not valid json`
 	result := LoadResolutionData(&invalidJSON)
-	// Should not panic and should return some struct (fields will be zero-valued)
 	assert.NotNil(t, result)
+	assert.ErrorIs(t, result.LoadErr(), ErrResolutionDataMalformed)
+}
+
+// A blob that isn't JSON used to read as an empty one, indistinguishable from a
+// plan with no state. ParseResolutionData says which it was.
+func TestParseResolutionData_BlobThatIsNotJSONSurfacesTheError(t *testing.T) {
+	for name, raw := range map[string]string{
+		"not json":  `{this is not valid json`,
+		"truncated": `{"make_mar_choices":[{"option":"a"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rd, err := ParseResolutionData(&raw)
+			require.ErrorIs(t, err, ErrResolutionDataMalformed)
+			assert.Equal(t, err, rd.LoadErr(), "the value carries the error it was decoded with")
+		})
+	}
+}
+
+// Saved fields have changed JSON type before: make_mar_choices was a list of
+// strings before it became a list of Choice; Spread Propaganda's give_peer_done
+// and break_self_done were booleans before they became counts; a Make
+// Introductions draft's marginalia was a list before it became a string. A plan
+// resolved under the old shape must still read: encoding/json skips the one
+// field and decodes the rest, the plan is not marked unreadable, and a later
+// save writes it back in the current shape.
+func TestParseResolutionData_OlderFieldShapesStillRead(t *testing.T) {
+	for name, raw := range map[string]string{
+		"make_mar_choices as strings": `{"choice_auto_applied":true,"make_mar_choices":["peers_arrive"]}`,
+		"a bool where a count is now": `{"choice_auto_applied":true,"spread_propaganda":{"give_peer_done":true}}`,
+		"a list where a string is now": `{"choice_auto_applied":true,` +
+			`"make_introductions":{"drafts":[{"id":"d1","name":"Ana","marginalia":["a note"],"creator_id":1}]}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rd, err := ParseResolutionData(&raw)
+			require.ErrorIs(t, err, ErrResolutionDataMistyped)
+			require.NotErrorIs(t, err, ErrResolutionDataMalformed)
+			require.NoError(t, rd.LoadErr(), "an older shape does not make the plan unreadable")
+			assert.True(t, rd.ChoiceAutoApplied, "the rest of the blob decoded")
+		})
+	}
+}
+
+func TestParseResolutionData_ReadableBlobsHaveNoError(t *testing.T) {
+	empty := ""
+	valid := `{"choice_auto_applied":true}`
+	for name, raw := range map[string]*string{"nil": nil, "empty": &empty, "valid": &valid} {
+		t.Run(name, func(t *testing.T) {
+			rd, err := ParseResolutionData(raw)
+			require.NoError(t, err)
+			assert.NoError(t, rd.LoadErr())
+		})
+	}
 }
 
 // TestEnsureDuel tests the EnsureDuel write-path helper.

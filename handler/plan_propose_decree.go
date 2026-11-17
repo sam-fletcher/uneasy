@@ -536,7 +536,7 @@ func (pdHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 // amenders and the pre-roll steps (start-debate, call-roll) stay with whoever they
 // were always strictly for.
 func (pdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	pd := loadResolutionData(plan.ResolutionData).ProposeDecree
+	pd := loadPlanResolutionData(plan).ProposeDecree
 	if pd == nil {
 		return model.RowState{}, false
 	}

@@ -77,7 +77,7 @@ func pendingPerformStepsChooser(ctx context.Context, q *dbgen.Queries, plan *dbg
 	if err != nil || roll.Outcome == nil {
 		return 0, false
 	}
-	resData := loadResolutionData(plan.ResolutionData)
+	resData := loadPlanResolutionData(plan)
 	if resData.ChoicesCommitted() {
 		return 0, false
 	}
@@ -107,7 +107,7 @@ func pendingControlLeverageChooser(ctx context.Context, q *dbgen.Queries, plan *
 		return 0
 	}
 	return pendingDemandChooser(ctx, q, plan, game.DemandOptionControlLeverage,
-		loadResolutionData(plan.ResolutionData).DemandLeverageFinalized)
+		loadPlanResolutionData(plan).DemandLeverageFinalized)
 }
 
 // demandRetargetPlans is the one list of plan types a keep_or_change_target
@@ -157,14 +157,14 @@ func pendingDemandRetargetChooser(ctx context.Context, q *dbgen.Queries, plan *d
 	if !demandCanRetarget(plan.PlanType) {
 		return 0
 	}
-	finalized := loadResolutionData(plan.ResolutionData).DemandRetargetFinalized
+	finalized := loadPlanResolutionData(plan).DemandRetargetFinalized
 	if demandAimSettlesFirst(plan.PlanType) {
 		if plan.Status != model.PlanResolving {
 			return 0
 		}
 		// A plan already under way (a game that was mid-duel when this shipped) is
 		// held up by nobody: the route is closed, so waiting would be a deadlock.
-		rd := loadResolutionData(plan.ResolutionData)
+		rd := loadPlanResolutionData(plan)
 		if demandAimLocked(ctx, q, plan, &rd) {
 			return 0
 		}

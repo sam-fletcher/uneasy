@@ -513,7 +513,7 @@ func (mdHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	if err != nil {
 		return model.RowState{}, false
 	}
-	resData := loadResolutionData(plan.ResolutionData)
+	resData := loadPlanResolutionData(plan)
 	switch outcome {
 	case makeOutcome:
 		return demandDraftSubPhase(ctx, q, plan, &target, &resData)

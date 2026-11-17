@@ -293,7 +293,7 @@ func (saHandler) AutoCompleteAfterChoice(_ *dbgen.Plan, _ *ResolutionData) bool 
 // all rides the generic case (the preparer completes). The actor alone, when it
 // is the preparer, also rides the generic case — only a winner needs naming.
 func (saHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	resData := loadResolutionData(plan.ResolutionData)
+	resData := loadPlanResolutionData(plan)
 	sa := resData.SeekAnswers
 	if sa == nil {
 		return model.RowState{}, false

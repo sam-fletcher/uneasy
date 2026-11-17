@@ -9,7 +9,11 @@
 // it there is what lets this package stay free of db/hub imports.
 package game
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+)
 
 // ResolutionData is the unmarshal target for the plans.resolution_data JSON
 // column. It's a discriminator-free umbrella: loading and saving don't need
@@ -90,6 +94,13 @@ type ResolutionData struct {
 	Festivity          *FestivityResolutionData          `json:"festivity,omitempty"`
 	MakeWar            *MakeWarResolutionData            `json:"make_war,omitempty"`
 	MakeDemands        *MakeDemandsResolutionData        `json:"make_demands,omitempty"`
+
+	// loadErr is set when this value was decoded from a malformed
+	// resolution_data blob (see ParseResolutionData). Unexported, so it never
+	// reaches JSON and no handler can set or clear it by accident; it travels
+	// with the value so the one place plan state is saved can refuse to write
+	// back a half-decoded copy over the original.
+	loadErr error
 }
 
 // ChoicesCommitted reports whether the plan's make/mar choice has been made —
@@ -126,13 +137,60 @@ type Choice struct {
 
 // ── Resolution data helpers ──────────────────────────────────────────────────
 
-// LoadResolutionData unmarshals the JSON resolution_data column into a
-// ResolutionData struct. Returns a zero-value struct if raw is nil or empty.
-func LoadResolutionData(raw *string) ResolutionData {
+// ErrResolutionDataMalformed is wrapped by the error ParseResolutionData
+// returns for a blob that is not valid JSON. Nothing of it can be read, so a
+// route refuses it and a save refuses to write over it.
+var ErrResolutionDataMalformed = errors.New("resolution_data is not valid JSON")
+
+// ErrResolutionDataMistyped is wrapped by the error ParseResolutionData returns
+// for a blob that is valid JSON but holds a field in a shape the struct no
+// longer has. That is expected of a plan saved before the field changed type
+// (make_mar_choices was once a list of strings; give_peer_done was a bool); the
+// rest of the blob decoded, and reading it is fine.
+var ErrResolutionDataMistyped = errors.New("resolution_data has a field in an older shape")
+
+// ParseResolutionData unmarshals the JSON resolution_data column into a
+// ResolutionData struct. A nil or empty column is a plan with no state yet:
+// the zero value and no error.
+//
+// Two things can go wrong, and they are not alike:
+//
+//   - The blob is not valid JSON (ErrResolutionDataMalformed): nothing decoded,
+//     and the returned value remembers it (LoadErr), so it can't be saved back
+//     over the stored blob.
+//   - A field has an older type (ErrResolutionDataMistyped): encoding/json skips
+//     just that field and decodes the rest, as it always did for plans saved
+//     before a field changed shape. The value is complete as far as it goes and
+//     is not marked, so the plan keeps working and a later save rewrites it in
+//     the current shape.
+//
+// Either way the value is returned together with the error.
+func ParseResolutionData(raw *string) (ResolutionData, error) {
 	if raw == nil || *raw == "" {
-		return ResolutionData{}
+		return ResolutionData{}, nil
 	}
 	var d ResolutionData
-	_ = json.Unmarshal([]byte(*raw), &d)
+	if err := json.Unmarshal([]byte(*raw), &d); err != nil {
+		if _, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
+			return d, fmt.Errorf("%w: %w", ErrResolutionDataMistyped, err)
+		}
+		d.loadErr = fmt.Errorf("%w: %w", ErrResolutionDataMalformed, err)
+		return d, d.loadErr
+	}
+	return d, nil
+}
+
+// LoadErr is the error ParseResolutionData met reading this value's blob when
+// nothing of it could be read (ErrResolutionDataMalformed), or nil. An older
+// field shape is not a LoadErr: that value is usable and saves normally.
+func (r *ResolutionData) LoadErr() error { return r.loadErr }
+
+// LoadResolutionData is ParseResolutionData for callers that only read: the
+// error is dropped and the value is whatever decoded. An unreadable blob still
+// leaves LoadErr set on the value, which is what stops a save from clobbering
+// it, but a caller that can answer with an error should use
+// ParseResolutionData and do so before changing anything else.
+func LoadResolutionData(raw *string) ResolutionData {
+	d, _ := ParseResolutionData(raw)
 	return d
 }

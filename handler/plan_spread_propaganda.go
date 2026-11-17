@@ -330,7 +330,7 @@ func (spHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 // nothing is owed the preparer completes (completion stays theirs), so both fall
 // through to the generic case.
 func (spHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	resData := loadResolutionData(plan.ResolutionData)
+	resData := loadPlanResolutionData(plan)
 	// A counter-propaganda step in flight (this plan's own, or its child's) names
 	// the interferer AND whoever must move a parent step still owed: everyone who
 	// can act is named, since push follows this set and the row stalls on any of
@@ -1141,7 +1141,7 @@ func spCounterWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, r
 		interferer = plan.PreparerID
 		if sp.OriginalPlanID != nil {
 			if pp, err := q.GetPlanByID(ctx, *sp.OriginalPlanID); err == nil {
-				pd := loadResolutionData(pp.ResolutionData)
+				pd := loadPlanResolutionData(&pp)
 				parent, parentData = &pp, &pd
 			}
 		}
@@ -1150,7 +1150,7 @@ func spCounterWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan, r
 		if err != nil {
 			return nil
 		}
-		cd := loadResolutionData(child.ResolutionData)
+		cd := loadPlanResolutionData(&child)
 		if !spCounterAwaitsInterferer(ctx, q, &child, &cd) {
 			return nil
 		}

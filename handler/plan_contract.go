@@ -389,7 +389,14 @@ func AllHandlers() map[model.PlanType]PlanHandler {
 // the only way plan state is saved (TestPlanStateSavedThroughOnePath), and the
 // save notes the change on the request so the table hears of it when the
 // request ends — see plan_announce.go.
+//
+// It refuses a value that was decoded from a malformed blob: what decoded is
+// partial, and writing it back would replace the stored state — the evidence
+// of what went wrong included — with a mostly-empty copy.
 func saveResolutionData(ctx context.Context, q *dbgen.Queries, planID int64, d ResolutionData) error {
+	if err := d.LoadErr(); err != nil {
+		return fmt.Errorf("not saving plan %d's state over an unreadable copy: %w", planID, err)
+	}
 	b, err := json.Marshal(d)
 	if err != nil {
 		return err

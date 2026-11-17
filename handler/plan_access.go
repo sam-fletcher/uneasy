@@ -7,6 +7,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 	"uneasy/model"
 )
 
@@ -36,6 +38,24 @@ func requirePlanAccess(
 	player, ok := requirePlayerInGame(w, r, q, plan.GameID)
 	if !ok {
 		return nil, nil, false
+	}
+	// A plan whose saved state isn't JSON can't be read, so nothing a route would
+	// decide from it can be trusted — and a route that acts first and saves last
+	// would leave its side effects behind when the save refuses. Fail here,
+	// before anything changes, and say which plan. A field in an older shape
+	// (a plan saved before it changed type) is not that: the rest decodes, as it
+	// always did, so it is logged and the route goes on.
+	if _, err := game.ParseResolutionData(plan.ResolutionData); err != nil {
+		if errors.Is(err, game.ErrResolutionDataMalformed) {
+			respondInternalErr(
+				w,
+				r,
+				"this plan's saved state could not be read",
+				fmt.Errorf("plan %d: %w", plan.ID, err),
+			)
+			return nil, nil, false
+		}
+		logResolutionDataProblem(&plan, err)
 	}
 	return &plan, player, true
 }

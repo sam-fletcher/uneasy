@@ -544,7 +544,7 @@ func srLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32
 // generic PlanResolving case and names the preparer. Once nothing is owed the
 // preparer completes (completion is always theirs), which is that same case.
 func (srHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	resData := loadResolutionData(plan.ResolutionData)
+	resData := loadPlanResolutionData(plan)
 	if sr := resData.SpreadRumors; sr != nil && sr.PendingTakeConsent != nil {
 		victim := sr.PendingTakeConsent.VictimID
 		return model.RowState{Kind: model.RowStateAwaitTakeConsent, ActingPlayerIDs: []int64{victim}}, true

@@ -802,7 +802,7 @@ func chStandInWrapper(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) i
 // nothing to a perform_steps winner, return false and ride the generic
 // plan_resolving case (the preparer completes).
 func (chHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	resData := loadResolutionData(plan.ResolutionData)
+	resData := loadPlanResolutionData(plan)
 	if !planRollIsMar(ctx, q, plan) {
 		// The make path is a run of make-steps; a perform_steps winner drives them
 		// all (and the preparer is refused), so name the winner until the budget is
