@@ -240,18 +240,30 @@ func clApplyRedelayOutcome(
 	ld := resData.EnsureLiaise()
 
 	scheduled := false
+	// overflowed separates "the pair chose not to" (a face of 0) from "they
+	// chose a delay the record has no room for": both leave no meeting planned,
+	// but only the second needs a cause, or it reads as a deliberate parting.
+	overflowed := false
 	if !cancelled && resultDelay > 0 && ld.PartnerID != nil {
 		if g, gerr := deps.Q.GetGameByID(ctx, plan.GameID); gerr == nil {
 			newRow := g.CurrentRow + resultDelay
 			if newRow <= publicRecordRowCount {
 				clScheduleNewMeeting(ctx, deps, plan, newRow, *ld.PartnerID)
 				scheduled = true
+			} else {
+				overflowed = true
 			}
 		}
 	}
-	if scheduled {
+	switch {
+	case scheduled:
 		clLog(ctx, deps, plan, model.SeverityDefault, "The pair arranged to meet again.")
-	} else {
+	case overflowed:
+		// The cause is worded as the fell-through plan post words its own
+		// ("the chosen delay landed past row 13").
+		clLog(ctx, deps, plan, model.SeverityDefault,
+			"The pair parted ways with no future meeting planned: the chosen delay landed past row 13.")
+	default:
 		clLog(ctx, deps, plan, model.SeverityDefault, "The pair parted ways with no future meeting planned.")
 	}
 

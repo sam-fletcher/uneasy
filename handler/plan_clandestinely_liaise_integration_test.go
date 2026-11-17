@@ -773,6 +773,37 @@ func TestLiaise_Redelay_CancelSchedulesNothing(t *testing.T) {
 	assert.Len(t, after, len(before), "a face-0 cancel must not schedule a follow-up plan")
 }
 
+// TestLiaise_Redelay_OverflowSaysWhyNoMeetingIsPlanned: a redelay whose chosen
+// delay lands past row 13 schedules nothing, like a face-0 cancel, but the log
+// has to say which it was. Both used to post the same "parted ways" line, so a
+// table that had simply asked for too long a wait read it as a deliberate
+// parting. The 0-face line is unchanged.
+func TestLiaise_Redelay_OverflowSaysWhyNoMeetingIsPlanned(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	m, redelayID := clDriveToRedelay(t, h)
+
+	before, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+
+	// Row 12 plus a ceil-average delay of 3 is row 15: no room on the record.
+	h.jumpToRow(12)
+	clSubmitReveal(t, h, redelayID, 0, 2)
+	clSubmitReveal(t, h, redelayID, 1, 3)
+
+	refreshed, err := h.q.GetPlanByID(ctx, m.plan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.PlanResolved, refreshed.Status, "an overflowing redelay still resolves the liaison")
+	after, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	assert.Len(t, after, len(before), "an overflowing delay must not schedule a follow-up plan")
+
+	lines := h.logBodies("plan.clandestinely_liaise")
+	assert.Contains(t, lines, "The pair parted ways with no future meeting planned: the chosen delay landed past row 13.")
+	assert.NotContains(t, lines, "The pair parted ways with no future meeting planned.",
+		"the bare line is for a deliberate zero; an overflow must give its cause")
+}
+
 // TestLiaise_PerformStepsWinnerDrivesPreparerSlot proves a Make Demands
 // perform_steps win transfers ONLY the preparer's Things We Share slot to the
 // winner (locking the preparer out), while the partner's slot stays the
