@@ -17,6 +17,7 @@
 	const gameID = $derived(ctx.gameID);
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const focusPlayerID = $derived(ctx.focusPlayerID);
 	const onPlanPrepared = $derived(ctx.onPlanPrepared);
 	const readOnly = $derived(ctx.readOnly);
 	const prepDraft = $derived(ctx.prepDraft as {
@@ -29,7 +30,11 @@
 	let prepBusy = $state(false);
 	let prepError = $state('');
 
-	const otherPlayers = $derived(playersExcept(players, currentPlayerID));
+	// The player whose prep form this is. The preparer's own form is the viewer's;
+	// a watcher's read-only mirror is the focus player's, so the chips are the ones
+	// the preparer chooses from, not the watcher's.
+	const draftPreparerID = $derived(readOnly ? focusPlayerID : currentPlayerID);
+	const otherPlayers = $derived(playersExcept(players, draftPreparerID));
 
 	function toggleEnemy(id: number) {
 		const next = new Set(enemyIDs);

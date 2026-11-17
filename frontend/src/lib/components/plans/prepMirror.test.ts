@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import ExchangeCourtiersPanel from './ExchangeCourtiersPanel.svelte';
 import ClandestinelyLiaisePanel from './ClandestinelyLiaisePanel.svelte';
+import DuelPrepForm from './duel/PrepForm.svelte';
+import WarPrepForm from './war/PrepForm.svelte';
 import type { PlanContext } from './types';
 
 // While the focus player prepares a plan, everyone else sees a read-only mirror of
 // their form. That mirror is drawn from the preparer, not from the viewer: its
 // partner chips are everyone but the preparer, and its "meeting peer" list is the
-// preparer's own peers, named as theirs. The preparer's own form is unchanged.
+// preparer's own peers, named as theirs. Propose Duel's challenger chips and Make
+// War's enemy chips work the same way. The preparer's own form is unchanged.
 //
 // svelte/server does not run $effect, so the chip that is picked (copied from the
 // draft in an effect) is not in these renders. What is pinned here is the list
@@ -51,6 +54,12 @@ const text = (html: string) => html
 /** The player chips only: the house chip, one per player the form offers. */
 const chipNames = (html: string) =>
 	(html.match(/<button\b[^>]*class="[^"]*\bchip\b[\s\S]*?<\/button>/g) ?? []).map(text);
+
+/** The player chips of a form that has other chips too (Duel's Arms and Wits): only the player-chips row. */
+const playerChips = (html: string) => {
+	const row = html.split('player-chips')[1]?.split('</div>')[0] ?? '';
+	return (row.match(/<button\b[\s\S]*?<\/button>/g) ?? []).map(text);
+};
 
 describe('Exchange Courtiers: the target chips', () => {
 	const DRAFT = { target_player_id: TARGET, target_asset_id: 11, notes: 'x' };
@@ -102,5 +111,43 @@ describe('Clandestinely Liaise: the partner chips and the meeting-peer list', ()
 		const noAlicePeers = ASSETS.filter(a => a.owner_id !== PREPARER);
 		expect(text(render_(TARGET, noAlicePeers))).toContain('alice has no peer to bring to the meeting.');
 		expect(text(render_(PREPARER, noAlicePeers))).toContain('You have no peer to bring to the meeting.');
+	});
+});
+
+describe('Propose Duel: the challenger chips', () => {
+	const DRAFT = { target_player_id: TARGET, duel_type: 'arms', notes: 'the square' };
+	const render_ = (seat: number) =>
+		render(DuelPrepForm, { props: { ctx: ctxFor(seat, DRAFT) } }).body;
+
+	it("the preparer's own chips are everyone but the preparer", () => {
+		expect(playerChips(render_(PREPARER))).toEqual(['bob', 'carol']);
+	});
+
+	it.each([
+		['the challenger (bob)', TARGET],
+		['a bystander (carol)', BYSTANDER],
+	])("a watcher, %s, is shown the preparer's list: everyone but alice", (_, seat) => {
+		const names = playerChips(render_(seat));
+		expect(names).toEqual(['bob', 'carol']);
+		expect(names).not.toContain('alice');
+	});
+});
+
+describe('Make War: the enemy chips', () => {
+	const DRAFT = { enemy_ids: [TARGET], notes: 'the border' };
+	const render_ = (seat: number) =>
+		render(WarPrepForm, { props: { ctx: ctxFor(seat, DRAFT) } }).body;
+
+	it("the preparer's own chips are everyone but the preparer", () => {
+		expect(playerChips(render_(PREPARER))).toEqual(['bob', 'carol']);
+	});
+
+	it.each([
+		['the enemy (bob)', TARGET],
+		['a bystander (carol)', BYSTANDER],
+	])("a watcher, %s, is shown the preparer's list: everyone but alice", (_, seat) => {
+		const names = playerChips(render_(seat));
+		expect(names).toEqual(['bob', 'carol']);
+		expect(names).not.toContain('alice');
 	});
 });
