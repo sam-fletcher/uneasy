@@ -209,14 +209,66 @@ export const DEMAND_EVENTS = [
 //      is in flight is newer than T, so we replay it *on top of* the
 //      snapshot rather than letting the snapshot overwrite it.
 //
-// Returns { disconnect, ready }. Await `ready` to block until the first
-// resync has finished (useful in onMount when you need state loaded before
-// reading from it).
+// `onResync` must say whether the snapshot landed: it resolves true when the
+// board has been replaced, and false (or rejects) when it could not be. The
+// caller has to say, because a resync that fails leaves the old board on screen
+// and nothing here can see that. A failed resync closes its socket, so the
+// retry loop below connects again and resyncs again, and the open socket does
+// not reset the backoff: a server that accepts sockets but fails the fetch is
+// retried at the growing delay, not every second.
+//
+// Returns { disconnect, ready, retryNow }. Await `ready` to block until the
+// first resync has settled, whether or not it succeeded (useful in onMount when
+// you need state loaded before reading from it; a failure retries by itself).
+//
+// ── Telling the player the table has gone quiet ──────────────────────────
+// The retry loop below heals most drops without anyone noticing, and for those
+// the right amount of UI is none. The ones worth a notice are the drops that
+// last: a laptop that slept, a phone in a tunnel, a server that is down. For
+// those `options.onStatus` is called with 'down' once the table has been
+// without a *live* connection for DISCONNECT_NOTICE_DELAY_MS, and with 'live'
+// when it is back.
+//
+// "Live" means the socket is open AND its resync has succeeded, not merely that
+// the socket opened. The notice says "this table isn't updating", and until
+// the snapshot is applied that is still true: the board on screen is the one
+// from before the drop. So when the notice goes away the board is current, and
+// a player who sees no notice can trust what they see. (A hole this doesn't
+// close: a socket the browser still thinks is open after the network has
+// silently gone, with no close event, is never marked down. See
+// docs/work/next/ws-heartbeat.md.)
+export type ConnectionStatus = 'live' | 'down';
+
+export interface ConnectionOptions {
+	/** Called with 'down' after DISCONNECT_NOTICE_DELAY_MS without a live
+	 *  connection, then with 'live' when it recovers. Never called for a drop
+	 *  that heals sooner, and never called after disconnect(). */
+	onStatus?: (status: ConnectionStatus) => void;
+}
+
+/** How long the table may go without a live connection before it says so.
+ *
+ *  The retry schedule is 1s, then 2s, then 4s after the drop, so retries start
+ *  at about 1s and 3s. A reconnect on this schedule isn't instant: the
+ *  handshake and the resync (several requests, ~0.4s each against production)
+ *  take 1–2s after the retry fires. A recovery on the first retry therefore
+ *  lands at about 2–3s, comfortably inside five seconds, which covers a server
+ *  restart, a wifi handoff, and the page waking from a lock screen (which
+ *  reconnects at once). A recovery on the *second* retry lands at about
+ *  4–5s, right at the edge: on production it can still show the notice for a
+ *  moment. Whether to move the edge out to 6s is the owner's call
+ *  (docs/work/questions/connection-notice-look.md). A drop that survives two
+ *  retries is not a blip, and the notice then stays up until a later retry
+ *  (7s, 15s…) or the player's "Try now" brings the table back. It is short
+ *  next to what it guards against, a board that has been wrong for hours. */
+export const DISCONNECT_NOTICE_DELAY_MS = 5_000;
+
 export function createConnection(
 	gameID: string | number,
 	onMessage: MessageHandler,
-	onResync: () => Promise<void>,
-): { disconnect: () => void; ready: Promise<void> } {
+	onResync: () => Promise<boolean>,
+	options: ConnectionOptions = {},
+): { disconnect: () => void; ready: Promise<void>; retryNow: () => Promise<void> } {
 	let ws: WebSocket | null = null;
 	let stopped = false;
 	let retryDelay = 1000; // ms; doubles on each failed attempt, capped at 30s
@@ -224,14 +276,61 @@ export function createConnection(
 	// onVisibility below). Null whenever no retry is scheduled.
 	let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Live = open socket whose resync succeeded (see the note above
+	// createConnection). It starts false: the first connect is an attempt too,
+	// so a table that can't be reached on first load is told about the same way
+	// as one that dropped later.
+	let live = false;
+	// Armed whenever we are not live; fires once to report 'down'. At most one
+	// is pending, and it is not re-armed by each failed retry, so the delay is
+	// measured from the drop and not from the latest attempt.
+	let downTimer: ReturnType<typeof setTimeout> | null = null;
+	let reportedDown = false;
+	// Callers of retryNow() waiting to hear how that attempt went.
+	let attemptWaiters: Array<() => void> = [];
+
+	function settleAttempts() {
+		const waiting = attemptWaiters;
+		attemptWaiters = [];
+		for (const done of waiting) done();
+	}
+	function markLive() {
+		live = true;
+		if (downTimer !== null) {
+			clearTimeout(downTimer);
+			downTimer = null;
+		}
+		if (reportedDown) {
+			reportedDown = false;
+			options.onStatus?.('live');
+		}
+		settleAttempts();
+	}
+	function markNotLive() {
+		live = false;
+		if (downTimer === null && !reportedDown && !stopped) {
+			downTimer = setTimeout(() => {
+				downTimer = null;
+				reportedDown = true;
+				options.onStatus?.('down');
+			}, DISCONNECT_NOTICE_DELAY_MS);
+		}
+		settleAttempts();
+	}
+	// The first attempt starts the clock, before connect() below.
+	markNotLive();
+
 	// While `syncing` is true, queue incoming events instead of dispatching
 	// them. We flush the queue when the resync resolves.
 	let syncing = false;
 	let buffer: WSMessage[] = [];
 
-	// `ready` resolves after the first successful resync, so onMount can
-	// wait for initial state. Subsequent resyncs (after reconnects) don't
-	// re-create this Promise — callers only care about the first one.
+	// `ready` resolves once the first resync has settled, so onMount can wait
+	// for initial state. It settles on failure too, deliberately: a caller
+	// that waited forever on a failed first load would never get to show its
+	// error, and the failure now retries by itself. Subsequent resyncs (after
+	// reconnects) don't re-create this Promise — callers only care about the
+	// first one.
 	let firstSyncDone = false;
 	let resolveReady!: () => void;
 	const ready = new Promise<void>((resolve) => { resolveReady = resolve; });
@@ -283,6 +382,40 @@ export function createConnection(
 	}
 	document.addEventListener('visibilitychange', onVisibility);
 
+	// The "Try now" button's action: a human asking for the retry that
+	// onVisibility gives a returning one. It makes the same two moves (reset
+	// the backoff, pre-empt a pending retry) for the same reason, and it is
+	// written out here rather than shared with onVisibility so that function
+	// stays free to change on its own.
+	//
+	// Resolves once that attempt has settled: the table is live again, or the
+	// attempt failed (or was already in flight and failed), so the button can
+	// show "Trying…" for exactly that long instead of looking dead when the
+	// network is still down. Resolves at once if the table is already live.
+	function retryNow(): Promise<void> {
+		if (stopped || live) return Promise.resolve();
+		const settled = new Promise<void>((resolve) => attemptWaiters.push(resolve));
+		retryDelay = 1000;
+		// Connect now if a retry is pending (pre-empting it), for the reason
+		// onVisibility gives: an attempt already in flight must not be doubled.
+		// Its outcome still settles `settled`.
+		//
+		// Also connect when the socket is CLOSED and no retry is pending. That
+		// is a loop that has died: the loop only continues from onclose, and a
+		// socket the browser failed without ever firing `close` (a connection
+		// blocked outright, say) never reaches it. Left alone, "Try now" would
+		// wait for an event that is not coming and read "Trying…" forever, so
+		// the button restarts the loop. (CLOSING is not that: its close event is
+		// still due, and will schedule the retry itself.)
+		const loopDied = retryTimer === null && ws !== null && ws.readyState === WebSocket.CLOSED;
+		if (retryTimer !== null || loopDied) {
+			if (retryTimer !== null) clearTimeout(retryTimer);
+			retryTimer = null;
+			connect();
+		}
+		return settled;
+	}
+
 	function send(msg: object) {
 		if (ws?.readyState === WebSocket.OPEN) {
 			ws.send(JSON.stringify(msg));
@@ -294,36 +427,77 @@ export function createConnection(
 
 		const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const url = `${protocol}//${location.host}/api/tables/${gameID}/ws`;
-		ws = new WebSocket(url);
+		const sock = new WebSocket(url);
+		ws = sock;
 
-		ws.onopen = () => {
+		// Every handler below ignores a socket that is no longer `ws`. connect()
+		// replaces `ws` while the old socket may still have events coming: a socket
+		// the browser reports CLOSED can fire its `close` a moment later, and
+		// "Try now" can reconnect in that gap. Without the check that late close
+		// would schedule a retry beside the new, live socket (two sockets, every
+		// event twice), and the old socket's resync would flip `syncing` under the
+		// new one's.
+		sock.onopen = () => {
+			if (sock !== ws) {
+				sock.close();
+				return;
+			}
 			console.log('[ws] connected');
-			retryDelay = 1000; // reset backoff on success
+			// No backoff reset here: an open socket proves nothing until its
+			// resync has landed (below). A server that accepts sockets but fails
+			// the fetch must be retried at the growing delay, not every second.
 
 			// Start buffering before we kick off the resync, so that any
 			// event arriving between now and the snapshot's arrival is held.
 			syncing = true;
 			buffer = [];
 
-			// `.finally` so we release the buffer even if the resync
-			// rejected — otherwise a transient fetch failure would freeze
-			// the UI from ever applying live events again.
-			onResync().finally(() => {
-				syncing = false;
-				// Drain the buffer in arrival order. JS is single-threaded,
-				// so no new events can sneak in between these two lines.
-				const pending = buffer;
-				buffer = [];
-				for (const msg of pending) onMessage(msg);
+			// A rejection counts as a failed resync, the same as `false`: either
+			// way the snapshot did not land.
+			onResync()
+				.then((landed) => landed === true, () => false)
+				.then((landed) => {
+					// A newer socket has taken over; its own resync owns the buffer
+					// and the flag now.
+					if (sock !== ws) return;
 
-				if (!firstSyncDone) {
-					firstSyncDone = true;
-					resolveReady();
-				}
-			});
+					if (landed) {
+						syncing = false;
+						// The snapshot is applied, so the board is current. Only if
+						// the socket is still open: if it dropped while the fetch was in
+						// flight, onclose has already marked us down and a late resync
+						// must not claim otherwise.
+						if (sock.readyState === WebSocket.OPEN) {
+							retryDelay = 1000; // reset the backoff on a real success
+							markLive();
+						}
+						// Drain the buffer in arrival order. JS is single-threaded,
+						// so no new events can sneak in between these two lines.
+						const pending = buffer;
+						buffer = [];
+						for (const msg of pending) onMessage(msg);
+					} else {
+						// The old board is still on screen, so nothing may claim it is
+						// current. The buffered events were newer than a snapshot we
+						// never got: applying them to the old board would half-update
+						// it, and the next snapshot covers them. `syncing` stays true so
+						// anything arriving while this socket closes is held and then
+						// discarded by the next onopen. Closing the socket is what makes
+						// the loop below connect and resync again.
+						buffer = [];
+						sock.close();
+					}
+
+					// Settles on failure too (see `ready` above).
+					if (!firstSyncDone) {
+						firstSyncDone = true;
+						resolveReady();
+					}
+				});
 		};
 
-		ws.onmessage = (event) => {
+		sock.onmessage = (event) => {
+			if (sock !== ws) return;
 			let msg: WSMessage;
 			try {
 				msg = JSON.parse(event.data as string) as WSMessage;
@@ -337,8 +511,9 @@ export function createConnection(
 			}
 		};
 
-		ws.onclose = () => {
-			if (stopped) return;
+		sock.onclose = () => {
+			if (stopped || sock !== ws) return;
+			markNotLive();
 			console.log(`[ws] disconnected — retrying in ${retryDelay}ms`);
 			retryTimer = setTimeout(() => {
 				retryTimer = null;
@@ -347,9 +522,9 @@ export function createConnection(
 			}, retryDelay);
 		};
 
-		ws.onerror = () => {
+		sock.onerror = () => {
 			// onerror is always followed by onclose, which handles reconnect.
-			ws?.close();
+			sock.close();
 		};
 	}
 
@@ -362,6 +537,13 @@ export function createConnection(
 				clearTimeout(retryTimer);
 				retryTimer = null;
 			}
+			// A player leaving the page is not a dropped connection, so no 'down'
+			// may fire after this. Anyone awaiting retryNow() is released.
+			if (downTimer !== null) {
+				clearTimeout(downTimer);
+				downTimer = null;
+			}
+			settleAttempts();
 			window.removeEventListener('uneasy:typing', onTyping);
 			window.removeEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
 			window.removeEventListener('uneasy:prepare_plan_draft', onPreparePlanDraft);
@@ -369,5 +551,6 @@ export function createConnection(
 			ws?.close();
 		},
 		ready,
+		retryNow,
 	};
 }

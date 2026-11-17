@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createConnection } from './ws';
+import { createConnection, DISCONNECT_NOTICE_DELAY_MS, type ConnectionStatus } from './ws';
 
 // createConnection talks to four browser globals (WebSocket, window, document,
 // location). The vitest env here is `node`, so stub all four. The fake socket
@@ -7,7 +7,10 @@ import { createConnection } from './ws';
 // waiting on a real network.
 class FakeWebSocket {
 	static instances: FakeWebSocket[] = [];
+	static readonly CONNECTING = 0;
 	static readonly OPEN = 1;
+	static readonly CLOSING = 2;
+	static readonly CLOSED = 3;
 
 	readyState = 0; // CONNECTING
 	onopen: (() => void) | null = null;
@@ -95,7 +98,7 @@ afterEach(() => {
 });
 
 function connect() {
-	return createConnection(7, () => {}, async () => { resyncCalls++; });
+	return createConnection(7, () => {}, async () => { resyncCalls++; return true; });
 }
 
 describe('createConnection reconnect backoff', () => {
@@ -200,5 +203,548 @@ describe('createConnection reconnect backoff', () => {
 		fireVisibility('visible');
 		expect(socketCount()).toBe(1);
 		expect(doc.listeners.get('visibilitychange')?.size ?? 0).toBe(0);
+	});
+});
+
+// ── Telling the player the table has gone quiet ───────────────────────────────
+//
+// "Live" is an open socket whose resync has settled. The page shows a notice
+// from the first 'down' to the next 'live', so these tests pin when each fires:
+// not for a blip, after the threshold for a real outage, and only once the
+// board is current again.
+
+/** A connection that records every status it reports. `resync` lets a test hold
+ *  the snapshot fetch open to look at the moment between "socket open" and
+ *  "board current". */
+function watched(resync: () => Promise<boolean> = async () => true) {
+	const statuses: ConnectionStatus[] = [];
+	const conn = createConnection(
+		7,
+		() => {},
+		async () => {
+			resyncCalls++;
+			return resync();
+		},
+		{ onStatus: (s) => statuses.push(s) },
+	);
+	return { conn, statuses };
+}
+
+/** Open the newest socket and let its resync settle. Unlike openAndSync this
+ *  works for the second and third socket too (it does not wait on the
+ *  cumulative resyncCalls). */
+async function openAndSettle() {
+	latestSocket().open();
+	await vi.advanceTimersByTimeAsync(0);
+}
+
+describe('createConnection status: the notice threshold', () => {
+	it('sits between "two retries have had their chance" and "still news to a player"', () => {
+		// After a drop the retries fire at 1s and 3s (1s, then 2s of backoff), and a
+		// successful one then needs another second or two for the resync. Below ~5s
+		// the notice would flash for blips the second retry heals; far above it the
+		// notice is not telling anyone anything they could use. The behavioural
+		// tests below pin each edge; this keeps the constant from drifting out of
+		// the band by itself.
+		expect(DISCONNECT_NOTICE_DELAY_MS).toBeGreaterThanOrEqual(4000);
+		expect(DISCONNECT_NOTICE_DELAY_MS).toBeLessThanOrEqual(10_000);
+	});
+
+	it('says nothing while the connection is healthy', async () => {
+		const { conn, statuses } = watched();
+		await openAndSettle();
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(statuses).toEqual([]);
+		conn.disconnect();
+	});
+
+	it('stays silent for a blip that heals on the first retry', async () => {
+		const { conn, statuses } = watched();
+		await openAndSettle();
+
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(1000); // the 1s retry fires...
+		await openAndSettle(); // ...and the table is back
+
+		// Well past the threshold: the drop's timer must have been cancelled, or
+		// it would fire here and flash a notice for a connection that is fine.
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS * 2);
+		expect(statuses).toEqual([]);
+		conn.disconnect();
+	});
+
+	it('stays silent when the second retry is the one that works', async () => {
+		const { conn, statuses } = watched();
+		await openAndSettle();
+
+		latestSocket().fail(); // t=0
+		await vi.advanceTimersByTimeAsync(1000); // retry 1 at t=1s
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(2000); // retry 2 at t=3s
+		await openAndSettle();
+
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS * 2);
+		expect(statuses).toEqual([]);
+		conn.disconnect();
+	});
+
+	it('reports down when the drop has lasted the threshold, not a moment before', async () => {
+		const { conn, statuses } = watched();
+		await openAndSettle();
+
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS - 1);
+		expect(statuses).toEqual([]);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(statuses).toEqual(['down']);
+		conn.disconnect();
+	});
+
+	it('measures from the drop, not from the latest failed retry', async () => {
+		const { conn, statuses } = watched();
+		await openAndSettle();
+
+		latestSocket().fail(); // t=0
+		await vi.advanceTimersByTimeAsync(1000); // retry at 1s fails
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(2000); // retry at 3s fails
+		latestSocket().fail();
+		// Re-arming on each failure would push 'down' out to 3s + 5s. It is due
+		// at 5s from the drop, two seconds from here.
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS - 3000);
+		expect(statuses).toEqual(['down']);
+		conn.disconnect();
+	});
+
+	it('reports down once per outage, however many retries fail', async () => {
+		const { conn, statuses } = watched();
+		await openAndSettle();
+
+		latestSocket().fail();
+		for (let i = 0; i < 8; i++) {
+			await vi.advanceTimersByTimeAsync(30_000);
+			latestSocket().fail();
+		}
+		expect(statuses).toEqual(['down']);
+		conn.disconnect();
+	});
+
+	it('counts a first connect that never succeeds as an outage too', async () => {
+		// Page opened with the server unreachable: the board is whatever was cached.
+		const { conn, statuses } = watched();
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS);
+		expect(statuses).toEqual(['down']);
+		conn.disconnect();
+	});
+
+	it('does not flash on a normal first load', async () => {
+		const { conn, statuses } = watched();
+		// Handshake and the first resync take a second or two, well inside the delay.
+		await vi.advanceTimersByTimeAsync(1500);
+		await openAndSettle();
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS * 2);
+		expect(statuses).toEqual([]);
+		conn.disconnect();
+	});
+});
+
+describe('createConnection status: coming back', () => {
+	async function downConnection(resync?: () => Promise<boolean>) {
+		const w = watched(resync);
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS);
+		expect(w.statuses).toEqual(['down']);
+		return w;
+	}
+
+	it('reports live when a later retry works', async () => {
+		const { conn, statuses } = await downConnection();
+		await vi.advanceTimersByTimeAsync(30_000); // some retry fires (the table is still failing)
+		await openAndSettle();
+		expect(statuses).toEqual(['down', 'live']);
+		conn.disconnect();
+	});
+
+	it('waits for the resync: an open socket alone is not a current board', async () => {
+		let release!: () => void;
+		const gate = new Promise<boolean>((resolve) => (release = () => resolve(true)));
+		// Hold only the resync that follows the outage.
+		let held = false;
+		const { conn, statuses } = await downConnection(() => (held ? gate : Promise.resolve(true)));
+		held = true;
+
+		await vi.advanceTimersByTimeAsync(30_000);
+		latestSocket().open();
+		await vi.advanceTimersByTimeAsync(0);
+		// Socket is open, the snapshot has not landed: the notice stays.
+		expect(statuses).toEqual(['down']);
+
+		release();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(statuses).toEqual(['down', 'live']);
+		conn.disconnect();
+	});
+
+	it('does not report live when the socket dropped while the resync was running', async () => {
+		let release!: () => void;
+		const gate = new Promise<boolean>((resolve) => (release = () => resolve(true)));
+		let held = false;
+		const { conn, statuses } = await downConnection(() => (held ? gate : Promise.resolve(true)));
+		held = true;
+
+		await vi.advanceTimersByTimeAsync(30_000);
+		latestSocket().open();
+		await vi.advanceTimersByTimeAsync(0);
+		latestSocket().fail(); // lost again before the snapshot arrived
+		release();
+		await vi.advanceTimersByTimeAsync(0);
+
+		// A late resync for a dead socket must not clear the notice.
+		expect(statuses).toEqual(['down']);
+		conn.disconnect();
+	});
+
+	it('reports a second outage after a recovery, with a fresh delay', async () => {
+		const { conn, statuses } = await downConnection();
+		await vi.advanceTimersByTimeAsync(30_000);
+		await openAndSettle();
+		expect(statuses).toEqual(['down', 'live']);
+
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS - 1);
+		expect(statuses).toEqual(['down', 'live']);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(statuses).toEqual(['down', 'live', 'down']);
+		conn.disconnect();
+	});
+
+	it('reports live when the page becoming visible reconnects at once', async () => {
+		const { conn, statuses } = await downConnection();
+		fireVisibility('visible');
+		await openAndSettle();
+		expect(statuses).toEqual(['down', 'live']);
+		conn.disconnect();
+	});
+
+	it('reports nothing after disconnect(), even with the timer pending', async () => {
+		const { conn, statuses } = watched();
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS - 1);
+		conn.disconnect(); // the player left the page
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(statuses).toEqual([]);
+	});
+});
+
+describe('createConnection retryNow', () => {
+	it('skips the wait: connects at once, and the backoff starts over', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(1000);
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(2000);
+		latestSocket().fail(); // now waiting 4s for the next attempt
+		const before = socketCount();
+
+		void conn.retryNow();
+		expect(socketCount()).toBe(before + 1);
+
+		// The timer it pre-empted must not also fire (a second socket for one
+		// drop)...
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(999);
+		expect(socketCount()).toBe(before + 1);
+		// ...and the backoff is back at 1s, not the 8s it had grown to.
+		await vi.advanceTimersByTimeAsync(1);
+		expect(socketCount()).toBe(before + 2);
+		conn.disconnect();
+	});
+
+	it('resolves when the table is live again', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		latestSocket().fail();
+
+		let settled = false;
+		void conn.retryNow().then(() => (settled = true));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(settled).toBe(false); // attempt still in flight
+
+		await openAndSettle();
+		expect(settled).toBe(true);
+		conn.disconnect();
+	});
+
+	it('resolves when the attempt fails, so "Trying…" does not stick on a dead network', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		latestSocket().fail();
+
+		let settled = false;
+		void conn.retryNow().then(() => (settled = true));
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(settled).toBe(true);
+		conn.disconnect();
+	});
+
+	it('does not double an attempt that is already in flight', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(1000); // retry fires: the new socket is CONNECTING
+		const before = socketCount();
+
+		void conn.retryNow();
+		expect(socketCount()).toBe(before);
+		conn.disconnect();
+	});
+
+	it('restarts a retry loop that has died, instead of waiting for an event that will not come', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(1000); // retry fires: socket #2 is CONNECTING
+		// The browser fails that socket without ever firing `close` (a blocked
+		// connection): nothing schedules another retry.
+		latestSocket().readyState = FakeWebSocket.CLOSED;
+		await vi.advanceTimersByTimeAsync(60_000);
+		const stuckAt = socketCount();
+		expect(stuckAt).toBe(2);
+
+		let settled = false;
+		void conn.retryNow().then(() => (settled = true));
+		expect(socketCount()).toBe(stuckAt + 1); // it started a new attempt itself
+		await openAndSettle();
+		expect(settled).toBe(true);
+		conn.disconnect();
+	});
+
+	it('leaves a socket that is closing alone: its close event will schedule the retry', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		latestSocket().readyState = FakeWebSocket.CLOSING;
+		const before = socketCount();
+		void conn.retryNow();
+		expect(socketCount()).toBe(before);
+		conn.disconnect();
+	});
+
+	it('resolves at once when the table is already live', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		const before = socketCount();
+		await expect(conn.retryNow()).resolves.toBeUndefined();
+		expect(socketCount()).toBe(before);
+		conn.disconnect();
+	});
+
+	it('is released by disconnect(), not left hanging', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		latestSocket().fail();
+
+		let settled = false;
+		void conn.retryNow().then(() => (settled = true));
+		conn.disconnect();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(settled).toBe(true);
+	});
+});
+
+// ── A resync that does not land ───────────────────────────────────────────────
+//
+// onResync says whether the snapshot landed. The page's loadGameState swallows
+// its own errors (so a background refresh never blanks the board), which means
+// that without that answer a reconnect whose fetch failed would look exactly
+// like one that worked: the notice would clear over a stale board and, with the
+// socket staying open, nothing would ever resync again. That is the case a tab
+// waking from sleep or a redeploy hits (the first fetch over a dead pooled
+// connection fails).
+
+/** A connection whose resyncs the test steers: `results` is consumed one per
+ *  resync (an Error rejects, a boolean resolves), then it keeps returning the
+ *  last. `received` collects what reaches the page's message handler. */
+function steered(results: Array<boolean | Error | Promise<boolean>>) {
+	const statuses: ConnectionStatus[] = [];
+	const received: string[] = [];
+	let n = 0;
+	const conn = createConnection(
+		7,
+		(msg) => received.push(msg.type),
+		async () => {
+			resyncCalls++;
+			const next = results[Math.min(n++, results.length - 1)];
+			if (next instanceof Error) throw next;
+			return next;
+		},
+		{ onStatus: (s) => statuses.push(s) },
+	);
+	return { conn, statuses, received };
+}
+
+const sendEvent = (type: string) =>
+	latestSocket().onmessage?.({ data: JSON.stringify({ type, payload: {} }) });
+
+describe('createConnection: a resync that does not land', () => {
+	it('does not report live, and closes the socket so the loop resyncs again', async () => {
+		const { conn, statuses } = steered([true, false, true]);
+		await openAndSettle(); // first load: fine
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS);
+		expect(statuses).toEqual(['down']);
+
+		// A retry reaches the server, but its fetch fails.
+		await vi.advanceTimersByTimeAsync(30_000);
+		const failing = latestSocket();
+		await openAndSettle();
+		expect(statuses, 'a socket whose resync failed is not a live table').toEqual(['down']);
+		expect(failing.readyState, 'it is closed so the loop retries').toBe(FakeWebSocket.CLOSED);
+
+		// The loop connects and resyncs again, and that one lands.
+		const before = socketCount();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(socketCount()).toBe(before + 1);
+		await openAndSettle();
+		expect(statuses).toEqual(['down', 'live']);
+		conn.disconnect();
+	});
+
+	it('treats a resync that rejects the same way', async () => {
+		const { conn, statuses } = steered([true, new Error('Failed to fetch'), true]);
+		await openAndSettle();
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS);
+		await vi.advanceTimersByTimeAsync(30_000);
+		const failing = latestSocket();
+		await openAndSettle();
+		expect(statuses).toEqual(['down']);
+		expect(failing.readyState).toBe(FakeWebSocket.CLOSED);
+		conn.disconnect();
+	});
+
+	it('does not let an open socket reset the backoff before its resync lands', async () => {
+		// A server that accepts sockets but fails the fetch. If opening reset the
+		// delay to 1s, this would be retried every second for as long as it lasted.
+		const { conn } = steered([false]);
+		await openAndSettle(); // socket 1 opens, resync fails, it is closed
+		let sockets = socketCount();
+
+		for (const wait of [1000, 2000, 4000]) {
+			await vi.advanceTimersByTimeAsync(wait - 1);
+			expect(socketCount(), `no new socket before ${wait}ms`).toBe(sockets);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(socketCount(), `a new socket at ${wait}ms`).toBe(sockets + 1);
+			sockets = socketCount();
+			await openAndSettle(); // it opens, its resync fails, it is closed
+		}
+		conn.disconnect();
+	});
+
+	it('still lets `ready` settle when the first resync fails, so the page can show its error', async () => {
+		const { conn } = steered([false]);
+		let ready = false;
+		void conn.ready.then(() => (ready = true));
+		await openAndSettle();
+		expect(ready).toBe(true);
+		conn.disconnect();
+	});
+
+	it('discards the events held during a failed resync instead of applying them to the old board', async () => {
+		let release!: (landed: boolean) => void;
+		const gate = new Promise<boolean>((resolve) => (release = resolve));
+		const { conn, received } = steered([gate]);
+		latestSocket().open();
+		await vi.advanceTimersByTimeAsync(0);
+		sendEvent('law.enacted'); // arrives while the snapshot is in flight: held
+		expect(received).toEqual([]);
+
+		release(false); // the snapshot never landed
+		await vi.advanceTimersByTimeAsync(0);
+		expect(received, 'newer than a snapshot we never got').toEqual([]);
+		conn.disconnect();
+	});
+
+	it('still replays the held events after a resync that lands', async () => {
+		let release!: (landed: boolean) => void;
+		const gate = new Promise<boolean>((resolve) => (release = resolve));
+		const { conn, received } = steered([gate]);
+		latestSocket().open();
+		await vi.advanceTimersByTimeAsync(0);
+		sendEvent('law.enacted');
+		release(true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(received).toEqual(['law.enacted']);
+		conn.disconnect();
+	});
+});
+
+describe('createConnection: a socket that has been replaced', () => {
+	/** The state "Try now" rescues: the table is down, a retry's socket has been
+	 *  failed by the browser (readyState CLOSED), but its `close` event has not
+	 *  fired yet, or never will. */
+	async function deadRetryAwaitingItsEvent() {
+		await openAndSettle();
+		latestSocket().fail(); // a real drop: the table is down, a retry is pending
+		await vi.advanceTimersByTimeAsync(1000); // the retry connects socket 2
+		const old = latestSocket();
+		old.readyState = FakeWebSocket.CLOSED;
+		return old;
+	}
+
+	it('cannot schedule a retry beside the live socket that replaced it', async () => {
+		const { conn, statuses } = steered([true]);
+		const old = await deadRetryAwaitingItsEvent();
+
+		void conn.retryNow(); // the loop is dead, so this connects socket 3 at once
+		await openAndSettle(); // ...and it is live
+		const live = socketCount();
+
+		old.onclose?.(); // the old socket's close event finally arrives
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(socketCount(), 'no second retry, no second live socket').toBe(live);
+		expect(statuses, 'and the live table is not marked down').toEqual([]);
+		conn.disconnect();
+	});
+
+	it('is closed, not synced, if it opens after being replaced', async () => {
+		const { conn } = steered([true]);
+		const old = await deadRetryAwaitingItsEvent();
+		void conn.retryNow();
+		const before = resyncCalls;
+
+		old.open(); // late `open` from the replaced socket
+		await vi.advanceTimersByTimeAsync(0);
+		expect(resyncCalls, 'it does not run a resync of its own').toBe(before);
+		expect(old.readyState).toBe(FakeWebSocket.CLOSED);
+		conn.disconnect();
+	});
+
+	it("cannot flip the new socket's buffering when its own resync finishes", async () => {
+		let release1!: (landed: boolean) => void;
+		let release2!: (landed: boolean) => void;
+		const gate1 = new Promise<boolean>((resolve) => (release1 = resolve));
+		const gate2 = new Promise<boolean>((resolve) => (release2 = resolve));
+		const { conn, received } = steered([gate1, gate2]);
+
+		latestSocket().open(); // socket 1, resync 1 in flight
+		await vi.advanceTimersByTimeAsync(0);
+		latestSocket().fail(); // it drops mid-resync
+		await vi.advanceTimersByTimeAsync(1000);
+		latestSocket().open(); // socket 2, resync 2 in flight
+		await vi.advanceTimersByTimeAsync(0);
+
+		release1(true); // the OLD resync finishes first
+		await vi.advanceTimersByTimeAsync(0);
+		sendEvent('law.enacted'); // still ahead of socket 2's snapshot: must be held
+		expect(received).toEqual([]);
+
+		release2(true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(received).toEqual(['law.enacted']);
+		conn.disconnect();
 	});
 });

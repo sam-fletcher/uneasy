@@ -592,7 +592,15 @@
 		chatInitialReadMarker = s.chatInitialReadMarker;
 	}
 
-	async function loadGameState() {
+	// Resolves true when the snapshot landed and false when it didn't. It never
+	// rejects, because a failed background refresh must leave the page showing what
+	// it already had; but the caller still has to hear about the failure, because
+	// createConnection decides from it whether the table is live. A resync that
+	// failed and said nothing would clear the connection notice over a stale
+	// board, with no second resync coming while the socket stays open: the
+	// dead-pooled-connection case the catch below describes, which is what a tab
+	// waking from sleep or a redeploy hits.
+	async function loadGameState(): Promise<boolean> {
 		try {
 			// One parallel round in place of four sequential ones. These fetches
 			// are mutually independent; the old code awaited them in series only
@@ -730,6 +738,7 @@
 			// here — this line used to erase action errors too, seconds after
 			// the player raised them.
 			loadError = '';
+			return true;
 		} catch (e) {
 			// Only the initial load may raise the banner. This function runs on
 			// every WS (re)connect — including the reconnect a returning player
@@ -743,6 +752,10 @@
 			if (!gameStateLoaded) {
 				loadError = e instanceof Error ? e.message : 'Could not load game state.';
 			}
+			// Quiet on screen, but not to the connection: it closes this socket
+			// and resyncs again at the growing backoff, rather than keeping a live
+			// socket over a board that never refreshed.
+			return false;
 		}
 	}
 
