@@ -395,7 +395,10 @@ func (c *Client) handleCommand(data []byte) {
 		// Ephemeral fan-out of the focus player's in-flight scene-setup
 		// selections. We don't validate (it's a UI hint, not a state
 		// change) but we do stamp PlayerID from the authenticated client
-		// so peers can trust the source.
+		// so peers can trust the source. Like every draft it goes to every
+		// client, so it must never carry text that could become a secret; its
+		// fields (holding, place, time, present peers) are all public the
+		// moment the scene opens.
 		var msg struct {
 			Payload model.SceneSetupDraftPayload `json:"payload"`
 		}
@@ -408,6 +411,8 @@ func (c *Client) handleCommand(data []byte) {
 		// Ephemeral fan-out of the focus player's currently-highlighted
 		// plan card. Like the scene-setup draft this is a UI hint, not a
 		// state change; PlayerID is stamped from the authenticated client.
+		// A draft goes to every client, so it must never carry text that could
+		// become a secret: see redactPreparePlanDraft.
 		var msg struct {
 			Payload model.PreparePlanDraftPayload `json:"payload"`
 		}
@@ -415,6 +420,39 @@ func (c *Client) handleCommand(data []byte) {
 			return
 		}
 		msg.Payload.PlayerID = c.player.ID
+		redactPreparePlanDraft(&msg.Payload)
 		c.hub.BroadcastEvent(model.EventPreparePlanDraft, msg.Payload)
+	}
+}
+
+// redactPreparePlanDraft strips from a draft whatever the table must not read before
+// it is fanned out to every client. A draft is public the moment it is relayed: the
+// watchers' read-only mirrors fill in from it as the focus player types.
+//
+// THE RULE: a draft must never carry text that could become a secret. Showing the words
+// as they are typed is the least important thing a watcher's read-only screen does, and it
+// must not cost anything else. A Spread Rumors rumor can be kept secret, and the box that
+// says so can be ticked after the text is typed, by which time every watcher would already
+// have read it. So the rumor's text is never part of its draft. That a secret exists, and
+// which asset holds it, is public, so the flag and the holder pass. The text reaches the
+// table when the plan is prepared. Every other plan's prep text is posted in full in
+// plan.prepared at that moment, so its draft may carry it.
+//
+// The current client never sends the text. This is the backstop for a tab still running the
+// previous client after a deploy, which sent it with every draft, ticked or not, and for any
+// client that does not play by the rules. A draft is a Spread Rumors one if it is labelled
+// so OR carries a keep_secret key of any value: the previous client stamps plan_type when its
+// 150ms send timer fires and keeps the old panel mounted while the next card's code loads,
+// so a preparer who types a rumor and taps another card sends the text and the flag under
+// the NEXT plan's label, and that plan's mirror copies `notes` into its box. Only Spread
+// Rumors' panel sends keep_secret, and it always did, so the key marks the draft whatever
+// the label says. Any value counts, since it is whatever the client's JSON said it was.
+func redactPreparePlanDraft(p *model.PreparePlanDraftPayload) {
+	if p.Prep == nil {
+		return
+	}
+	_, hasFlag := p.Prep["keep_secret"]
+	if p.PlanType == string(model.PlanSpreadRumors) || hasFlag {
+		delete(p.Prep, "notes")
 	}
 }
