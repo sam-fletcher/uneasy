@@ -60,6 +60,10 @@ export interface PlanContext {
 	 * Called by panels (focus player only) when their prep inputs change.
 	 * Fans out an EventPreparePlanDraft over the WS, stitched with the
 	 * currently-selected plan_type by PlanPanel.
+	 *
+	 * The draft goes to EVERY client at the table as it is typed, so it is public:
+	 * leave out anything the table must not read (a kept-secret rumor's text), and
+	 * build it in lib/plans/prepDraft.ts where a test can pin what is left out.
 	 */
 	emitPrepDraft: (prep: Record<string, unknown>) => void;
 }

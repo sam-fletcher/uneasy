@@ -889,7 +889,9 @@ type SceneSetupDraftPayload struct {
 // or empty string when nothing is selected (the card was deselected).
 // Prep is an opaque per-plan-type snapshot of the prep form's current
 // inputs (notes, target IDs, etc.) — its shape is owned by the frontend;
-// the server just relays it. May be nil when the focus player has only
+// the server relays it to every client at the table, so it is public: it must never
+// carry text that could become a secret. The one thing the server removes is a
+// Spread Rumors rumor's text (hub.redactPreparePlanDraft). May be nil when the focus player has only
 // highlighted a card but not started filling out the form.
 type PreparePlanDraftPayload struct {
 	PlayerID int64          `json:"player_id"`
