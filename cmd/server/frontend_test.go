@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // prodFrontend builds the router the production branch of setupFrontend
@@ -63,18 +65,12 @@ func TestStaticAssetsAreCompressed(t *testing.T) {
 	asset := anImmutableAsset(t)
 
 	resp := get(t, r, "/"+asset, true)
-	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
-		t.Errorf("Content-Encoding = %q, want gzip — JS is shipping uncompressed", got)
-	}
+	assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"), "JS is shipping uncompressed")
 
 	// A client that doesn't ask for gzip must still get a working response.
 	resp = get(t, r, "/"+asset, false)
-	if got := resp.Header.Get("Content-Encoding"); got != "" {
-		t.Errorf("Content-Encoding = %q for a client that didn't accept gzip, want none", got)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d, want 200", resp.StatusCode)
-	}
+	assert.Empty(t, resp.Header.Get("Content-Encoding"), "for a client that didn't accept gzip")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func TestCacheControlByPath(t *testing.T) {
@@ -96,9 +92,7 @@ func TestCacheControlByPath(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("status = %d, want 200", resp.StatusCode)
 			}
-			if got := resp.Header.Get("Cache-Control"); got != tt.want {
-				t.Errorf("Cache-Control = %q, want %q", got, tt.want)
-			}
+			assert.Equal(t, tt.want, resp.Header.Get("Cache-Control"))
 		})
 	}
 }
@@ -117,13 +111,9 @@ func TestSPAFallbackIsNotCachedAsImmutable(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Fatalf("Content-Type = %q, want text/html — expected the SPA fallback here", ct)
 	}
-	if got := resp.Header.Get("Cache-Control"); got != cacheRevalidate {
-		t.Errorf("Cache-Control = %q, want %q", got, cacheRevalidate)
-	}
+	assert.Equal(t, cacheRevalidate, resp.Header.Get("Cache-Control"))
 
 	// Same for a plain client-side route.
 	resp = get(t, r, "/table/42", true)
-	if got := resp.Header.Get("Cache-Control"); got != cacheRevalidate {
-		t.Errorf("client-side route: Cache-Control = %q, want %q", got, cacheRevalidate)
-	}
+	assert.Equal(t, cacheRevalidate, resp.Header.Get("Cache-Control"), "client-side route")
 }

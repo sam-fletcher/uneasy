@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 var sqlcQueryName = regexp.MustCompile(`(?m)^-- name: (\w+) :`)
@@ -45,9 +47,8 @@ func TestEverySQLCQueryIsCalled(t *testing.T) {
 			t.Fatalf("read %s: %v", path, err)
 		}
 		for _, m := range sqlcQueryName.FindAllStringSubmatch(string(src), -1) {
-			if prev, dup := definedIn[m[1]]; dup {
-				t.Errorf("query %s defined in both %s and %s", m[1], prev, path)
-			}
+			prev, dup := definedIn[m[1]]
+			assert.False(t, dup, "query %s defined in both %s and %s", m[1], prev, path)
 			definedIn[m[1]] = filepath.Base(path)
 		}
 	}
@@ -102,12 +103,10 @@ func TestEverySQLCQueryIsCalled(t *testing.T) {
 	var dead []string
 	for name := range definedIn {
 		if !called[name] {
-			dead = append(dead, name)
+			dead = append(dead, name+" (queries/"+definedIn[name]+")")
 		}
 	}
 	sort.Strings(dead)
-	for _, name := range dead {
-		t.Errorf("sqlc query %s (queries/%s) has no caller outside db/gen — "+
-			"delete its block and run `make sqlc`", name, definedIn[name])
-	}
+	assert.Empty(t, dead, "sqlc queries with no caller outside db/gen — "+
+		"delete each one's block and run `make sqlc`")
 }

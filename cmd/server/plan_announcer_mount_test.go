@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/stretchr/testify/assert"
+
 	"uneasy/db"
 	"uneasy/hub"
 )
@@ -25,12 +27,14 @@ func TestPlanRoutesRunUnderAnnouncer(t *testing.T) {
 			return nil
 		}
 		seen++
+		wrapped := false
 		for _, mw := range mws {
 			if strings.Contains(runtime.FuncForPC(reflectPtr(mw)).Name(), "handler.announcePlanChanges") {
-				return nil
+				wrapped = true
+				break
 			}
 		}
-		t.Errorf("%s %s is not wrapped by handler.AnnouncePlanChanges", method, route)
+		assert.True(t, wrapped, "%s %s is not wrapped by handler.AnnouncePlanChanges", method, route)
 		return nil
 	})
 	if err != nil {
