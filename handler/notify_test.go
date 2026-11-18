@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,4 +88,58 @@ func TestNotifyDiscord_NoopWhenURLUnset(t *testing.T) {
 	// (dev-default) path doesn't attempt a POST or panic.
 	SetDiscordWebhookURL("")
 	NotifyDiscord(model.FeedbackKindFeedback, "alice", "", "", "hello", "")
+}
+
+// captureLog points slog's default logger at a buffer for the test and returns
+// the buffer, restoring the previous default (and the package settings the
+// tests flip) afterwards. NotifyDiscord logs through slog.Default().
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(prev)
+		SetDiscordWebhookURL("")
+		SetFeedbackLogBodies(false)
+	})
+	return &buf
+}
+
+// With no webhook configured outside dev, the fallback line must not carry the
+// body or the contact: a submission may quote a secret, and the server log is
+// not where it should end up. The row in feedback_submissions is the record.
+func TestNotifyDiscord_UnsetURLKeepsBodyAndContactOutOfLog(t *testing.T) {
+	buf := captureLog(t)
+	SetDiscordWebhookURL("")
+	SetFeedbackLogBodies(false)
+
+	NotifyDiscord(
+		model.FeedbackKindFeedback,
+		"alice",
+		"game #3",
+		"/tables/3",
+		"my secret is hidden-body-text",
+		"reach-me@example.com",
+	)
+
+	out := buf.String()
+	assert.Contains(t, out, "feedback submission", "the log still says a submission arrived")
+	assert.Contains(t, out, "alice")
+	assert.NotContains(t, out, "hidden-body-text")
+	assert.NotContains(t, out, "reach-me@example.com")
+}
+
+// In a dev stack (UNEASY_DEV=1) the log is the developer's only view of a
+// submission, so the whole message is written there.
+func TestNotifyDiscord_UnsetURLLogsFullMessageInDev(t *testing.T) {
+	buf := captureLog(t)
+	SetDiscordWebhookURL("")
+	SetFeedbackLogBodies(true)
+
+	NotifyDiscord(model.FeedbackKindFeedback, "alice", "", "", "dev-visible-body", "dev-contact@example.com")
+
+	out := buf.String()
+	assert.Contains(t, out, "dev-visible-body")
+	assert.Contains(t, out, "dev-contact@example.com")
 }

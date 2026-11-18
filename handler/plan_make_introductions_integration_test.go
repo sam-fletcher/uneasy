@@ -22,6 +22,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -289,6 +290,62 @@ func TestMakeIntroductions_Mar_BrokenArrival_AuthorWritesMarginalia(t *testing.T
 	require.Len(t, margs, 1)
 	assert.Equal(t, "a cruel rumor", margs[0].Text)
 	assert.False(t, margs[0].IsTorn)
+}
+
+// When another player writes a newcomer (the two mar outcomes that hand the
+// marginalia to someone else), the arrival used to read twice, and the first
+// reading credited the wrong player: the generic "created" line named the
+// preparer, who introduced the peer but never saw the words, then a plan line
+// repeated the act as "defined the newcomer". Now the "created" line credits
+// the writer, and the plan line only says where the newcomer landed.
+func TestMakeIntroductions_Mar_OtherAuthor_ArrivalReadsOnceAndCreditsTheWriter(t *testing.T) {
+	cases := []struct {
+		name    string
+		outcome string
+	}{
+		{"broken_arrival", "broken_arrival"},
+		{"other_retinue", "other_retinue"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPlanLifecycle(t, 3)
+			planID, preparerIdx, drafts := miToMar(t, h, 1)
+			writerIdx := (preparerIdx + 1) % len(h.tg.Players)
+
+			marPath := "/api/plans/" + strconv.FormatInt(planID, 10) + "/introductions-mar"
+			code, body := h.post(preparerIdx, marPath, map[string]any{
+				"draft_id": drafts[0].ID, "outcome": tc.outcome,
+				"target_player_id": h.tg.Players[writerIdx].ID,
+			})
+			require.Equalf(t, http.StatusOK, code, "%s: %v", tc.outcome, body)
+
+			margPath := "/api/plans/" + strconv.FormatInt(planID, 10) + "/introductions-marginalia"
+			code, body = h.post(writerIdx, margPath, map[string]any{
+				"draft_id": drafts[0].ID, "text": "a stranger with a ledger",
+			})
+			require.Equalf(t, http.StatusOK, code, "writer: %v", body)
+
+			var created, arrived []string
+			for _, b := range allLogBodies(t, h) {
+				if strings.Contains(b, "created the peer") && strings.Contains(b, drafts[0].Name) {
+					created = append(created, b)
+				}
+				if strings.Contains(b, "defined the newcomer") {
+					arrived = append(arrived, b)
+				}
+			}
+			require.Lenf(t, created, 1, "the newcomer is created once")
+			assert.Contains(t, created[0], h.mark(writerIdx), "the created line credits the player who wrote them")
+			assert.NotContains(t, created[0], h.mark(preparerIdx), "not the preparer, who only introduced them")
+			assert.Empty(t, arrived, "the arrival is not announced a second time as the writer's act")
+
+			ownerIdx := preparerIdx
+			if tc.outcome == "other_retinue" {
+				ownerIdx = writerIdx
+			}
+			logWith(t, h, drafts[0].Name, "joined", h.mark(ownerIdx), "retinue")
+		})
+	}
 }
 
 // TestMakeIntroductions_Mar_OutcomeMustDifferPerPeer proves rulebook p.52:

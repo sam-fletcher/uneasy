@@ -46,6 +46,8 @@ var logCoverageAllowed = map[string]string{
 	"asset_effects.go:breakAsset":                  "primitive: posts asset.destroyed via emitAssetDestruction; the actor line is the caller's",
 	"asset_effects.go:takeAssetEffect":             "primitive: transfers and grants secret visibility; the caller words the post",
 	"plan_chronicle_histories.go:chApplyMarEffect": "returns the log body to chMarChoiceHandler, which posts it",
+	"plan_spread_rumors_routes.go:takeRumorAsset": "moves the asset only; srCommitTakeConsent posts it with " +
+		"announceRumorTake, after the victim's consent line, so the effect and its post are split on purpose",
 }
 
 // isLogEmitter reports whether a call name writes to the action log: the

@@ -21,8 +21,25 @@ import (
 // discordWebhookURL is set once at startup by SetDiscordWebhookURL, mirroring
 // the secureCookies pattern in config.go. Left empty in dev (and any deploy
 // that hasn't set DISCORD_WEBHOOK_URL yet) — NotifyDiscord falls back to a
-// structured stdout log line instead of posting.
+// structured stdout log line instead of posting. What that line may contain
+// depends on feedbackLogBodies, below.
 var discordWebhookURL string
+
+// feedbackLogBodies reports whether the no-webhook fallback may write the whole
+// message — body and contact included — to the server log. Set once at startup
+// from UNEASY_DEV=1, so only a dev stack does: there the log is the only place
+// a developer sees a submission, and nobody else reads it. Anywhere else (a
+// production deploy that has lost DISCORD_WEBHOOK_URL) the log is a retained,
+// shared stream, and a feedback body may quote a secret or carry a contact
+// address; the row in feedback_submissions is the record, so the log just says
+// that one arrived.
+var feedbackLogBodies bool
+
+// SetFeedbackLogBodies configures feedbackLogBodies. Call once from main.go
+// before serving requests.
+func SetFeedbackLogBodies(on bool) {
+	feedbackLogBodies = on
+}
 
 // SetDiscordWebhookURL configures discordWebhookURL. Call once from main.go
 // before serving requests.
@@ -55,7 +72,13 @@ func NotifyDiscord(kind model.FeedbackKind, username, gameLabel, route, body, co
 	msg := formatDiscordMessage(kind, username, gameLabel, route, body, contact)
 
 	if discordWebhookURL == "" {
-		logger.InfoContext(ctx, "feedback submission (DISCORD_WEBHOOK_URL unset)", "kind", kind, "message", msg)
+		if feedbackLogBodies {
+			logger.InfoContext(ctx, "feedback submission (DISCORD_WEBHOOK_URL unset)", "kind", kind, "message", msg)
+		} else {
+			logger.InfoContext(ctx, "feedback submission (DISCORD_WEBHOOK_URL unset; body and contact not logged — "+
+				"read the feedback_submissions row)",
+				"kind", kind, "username", username, "game", gameLabel, "route", route)
+		}
 		return
 	}
 

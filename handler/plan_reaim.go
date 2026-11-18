@@ -201,7 +201,7 @@ const fizzledOutcome = "fizzled"
 // paused, so there is no real wait to lose; the preparer is the whole acting set.
 // ok is false when no re-aim is owed, leaving the plan's own answer to stand.
 func reaimWaitees(plan *dbgen.Plan) (model.RowState, bool) {
-	if !loadResolutionData(plan.ResolutionData).ReAim.ReAimOwed() {
+	if !loadPlanResolutionData(plan).ReAim.ReAimOwed() {
 		return model.RowState{}, false
 	}
 	return model.RowState{

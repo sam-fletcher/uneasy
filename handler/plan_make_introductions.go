@@ -158,7 +158,7 @@ func (miHandler) CanComplete(_ *dbgen.Plan, resData *ResolutionData) error {
 // swapping one for the other. Nothing owed → the generic case, where the preparer
 // completes.
 func (miHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	mi := loadResolutionData(plan.ResolutionData).MakeIntroductions
+	mi := loadPlanResolutionData(plan).MakeIntroductions
 	if mi == nil {
 		return model.RowState{}, false
 	}
@@ -517,7 +517,15 @@ func introductionsArrivalHandler(deps *PlanDeps) http.HandlerFunc {
 
 		var asset dbgen.Asset
 		err = deps.InTx(ctx, func(q *dbgen.Queries) error {
-			a, _, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, arriving, recipient)
+			a, _, mErr := materializeDraftPeer(
+				ctx,
+				q,
+				deps.Manager,
+				plan.GameID,
+				arriving,
+				recipient,
+				arriving.CreatorID,
+			)
 			if mErr != nil {
 				return mErr
 			}
@@ -905,7 +913,15 @@ func applyMIBrokenJourney(
 
 	var asset dbgen.Asset
 	err = deps.InTx(ctx, func(q *dbgen.Queries) error {
-		a, written, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, arriving, recipient)
+		a, written, mErr := materializeDraftPeer(
+			ctx,
+			q,
+			deps.Manager,
+			plan.GameID,
+			arriving,
+			recipient,
+			arriving.CreatorID,
+		)
 		if mErr != nil {
 			return mErr
 		}
@@ -1014,7 +1030,7 @@ func introductionsMarginaliaHandler(deps *PlanDeps) http.HandlerFunc {
 
 		var asset dbgen.Asset
 		err := deps.InTx(ctx, func(q *dbgen.Queries) error {
-			a, _, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, arriving, owner)
+			a, _, mErr := materializeDraftPeer(ctx, q, deps.Manager, plan.GameID, arriving, owner, player.ID)
 			if mErr != nil {
 				return mErr
 			}
@@ -1029,11 +1045,12 @@ func introductionsMarginaliaHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
+		// The generic "created" line (credited to the player who wrote them) says
+		// who made the newcomer and how they read; this one adds only where they
+		// landed. It used to repeat the author's act as "defined the newcomer",
+		// so one arrival was announced twice.
 		miLog(ctx, deps, plan, model.SeverityDefault,
-			fmt.Sprintf("%s defined the newcomer %s, who joined %s's retinue.",
-				playerDisplayName(ctx, deps.Q, player.ID),
-				assetMark(asset.Name),
-				playerDisplayName(ctx, deps.Q, owner)))
+			fmt.Sprintf("%s joined %s's retinue.", assetMark(asset.Name), playerDisplayName(ctx, deps.Q, owner)))
 		if err := autoCompleteIfDone(ctx, deps.Q, deps.Manager, plan.ID); err != nil {
 			respondInternalErr(w, r, "could not complete the plan", err)
 			return

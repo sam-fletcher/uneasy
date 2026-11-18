@@ -12,10 +12,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -206,4 +208,77 @@ func TestPasswordReset_RejectsOverlongPassword(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusBadRequest, code, "overlong password rejected: %v", out)
 	assert.Contains(t, out["error"], "password too long")
+}
+
+// TestPasswordReset_MarkUsedClaimsOnlyOnce pins the claim itself: marking a
+// token used affects one row the first time and none after. This is what the
+// handler relies on to tell a lost race from a win, and it is deterministic,
+// unlike the simultaneous-redemption test below.
+func TestPasswordReset_MarkUsedClaimsOnlyOnce(t *testing.T) {
+	h := newPasswordResetHarness(t)
+	h.insertToken(h.tg.Players[0].AccountID, "claim-raw-token", time.Now().Add(time.Hour))
+	ctx := context.Background()
+
+	first, err := h.q.MarkPasswordResetTokenUsed(ctx, hashResetToken("claim-raw-token"))
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, first, "the first claim takes the token")
+
+	second, err := h.q.MarkPasswordResetTokenUsed(ctx, hashResetToken("claim-raw-token"))
+	require.NoError(t, err)
+	assert.Zero(t, second, "a second claim of an already-used token affects no rows")
+}
+
+// TestPasswordReset_SimultaneousRedemptionsOnlyOneWins fires several
+// redemptions of one link at once, each choosing a different password. bcrypt
+// runs between the handler's "is it used?" read and its write, so every
+// request reads the token as unused before any of them writes — the old
+// check-then-write let all of them through, each setting its own password and
+// the last one silently winning. Exactly one may succeed, and the account must
+// end up with that one's password.
+func TestPasswordReset_SimultaneousRedemptionsOnlyOneWins(t *testing.T) {
+	h := newPasswordResetHarness(t)
+	acctID := h.tg.Players[0].AccountID
+	h.insertToken(acctID, "race-raw-token", time.Now().Add(time.Hour))
+
+	const racers = 6
+	type attempt struct {
+		password string
+		code     int
+	}
+	attempts := make([]attempt, racers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range racers {
+		password := fmt.Sprintf("racer-password-%d", i)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			payload, _ := json.Marshal(map[string]any{"token": "race-raw-token", "new_password": password})
+			req := httptest.NewRequest(http.MethodPost, "/api/password-resets", bytes.NewReader(payload))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			<-start
+			h.router.ServeHTTP(rec, req)
+			attempts[i] = attempt{password: password, code: rec.Code}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var winners []string
+	for _, a := range attempts {
+		switch a.code {
+		case http.StatusOK:
+			winners = append(winners, a.password)
+		default:
+			assert.Equalf(t, http.StatusBadRequest, a.code,
+				"a losing redemption gets the uniform invalid-link response (%s)", a.password)
+		}
+	}
+	require.Lenf(t, winners, 1, "exactly one redemption of a single-use link may succeed: %+v", attempts)
+
+	acct, err := h.q.GetAccountByID(context.Background(), acctID)
+	require.NoError(t, err)
+	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(acct.PasswordHash), []byte(winners[0])),
+		"the account must hold the winning redemption's password, not a loser's")
 }

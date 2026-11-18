@@ -270,6 +270,7 @@ func setupRouter(
 	// mounted — mirrors how UNEASY_DEV is read once at startup below.
 	handler.SetSecureCookies(secureMode)
 	handler.SetDiscordWebhookURL(discordWebhookURL)
+	handler.SetFeedbackLogBodies(devRoutesEnabled())
 	handler.SetVAPIDKeys(vapidPublicKey, vapidPrivateKey, vapidSubject)
 	wsOriginPatterns := []string{"*"}
 	if publicHost != "" {

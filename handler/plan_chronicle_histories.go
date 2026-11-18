@@ -249,6 +249,29 @@ func chLogSuccess(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan) {
 		playerDisplayName(ctx, deps.Q, plan.PreparerID)))
 }
 
+// chLogInvoked announces the artifacts the pre-roll invoked. They set the
+// difficulty (the higher of the preparer's knowledge rank and how many are
+// invoked), so the table should be able to read them in the log. Worded like
+// the in-scene "invoked" line (chApplyMarEffect). Nothing invoked, nothing to
+// announce.
+func chLogInvoked(
+	ctx context.Context,
+	deps *PlanDeps,
+	plan *dbgen.Plan,
+	invoked []int64,
+	assetByID map[int64]dbgen.Asset,
+) {
+	if len(invoked) == 0 {
+		return
+	}
+	names := make([]string, 0, len(invoked))
+	for _, id := range invoked {
+		names = append(names, assetMark(assetByID[id].Name))
+	}
+	chLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+		"%s invoked %s.", playerDisplayName(ctx, deps.Q, plan.PreparerID), joinWithAnd(names)))
+}
+
 // chLog emits a Chronicle Histories action-log entry anchored to the plan row.
 func chLog(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, severity int32, body string) {
 	planID := plan.ID
@@ -415,6 +438,8 @@ func chCastRollHandler(deps *PlanDeps) http.HandlerFunc {
 				}
 			}
 		}
+
+		chLogInvoked(ctx, deps, plan, invoked, assetByID)
 
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id": plan.ID,
@@ -802,7 +827,7 @@ func chStandInWrapper(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) i
 // nothing to a perform_steps winner, return false and ride the generic
 // plan_resolving case (the preparer completes).
 func (chHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	resData := loadResolutionData(plan.ResolutionData)
+	resData := loadPlanResolutionData(plan)
 	if !planRollIsMar(ctx, q, plan) {
 		// The make path is a run of make-steps; a perform_steps winner drives them
 		// all (and the preparer is refused), so name the winner until the budget is

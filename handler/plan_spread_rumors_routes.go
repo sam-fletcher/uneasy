@@ -715,7 +715,7 @@ func srRequestTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 
 		// Self-consent: taking from yourself needs no one else's agreement.
 		if req.VictimID == player.ID {
-			if err := srCommitTakeConsent(ctx, deps, plan, req); err != nil {
+			if err := srCommitTakeConsent(ctx, deps, plan, req, nil); err != nil {
 				respondInternalErr(w, r, "could not apply choices", err)
 				return
 			}
@@ -836,10 +836,16 @@ func srRespondTakeConsentHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
-			"%s consented to %s's request.",
-			playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, req.RequestedBy)))
-		if err := srCommitTakeConsent(ctx, deps, plan, req); err != nil {
+		// The consent is announced by srCommitTakeConsent once the transfer has
+		// gone through (and still ahead of the "took" line it licenses): posted
+		// here, before the commit, a failed commit would leave a "consented" line
+		// for a take that never happened.
+		announceConsent := func() {
+			srLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
+				"%s consented to %s's request.",
+				playerDisplayName(ctx, deps.Q, player.ID), playerDisplayName(ctx, deps.Q, req.RequestedBy)))
+		}
+		if err := srCommitTakeConsent(ctx, deps, plan, req, announceConsent); err != nil {
 			respondInternalErr(w, r, "could not apply consented choices", err)
 			return
 		}
@@ -901,11 +907,19 @@ func srAssetListOr(ctx context.Context, q *dbgen.Queries, ids []int64, fallback 
 // then transfers each named asset to the aggressor and marks the take resolved.
 // Clears the pending request. Mirrors the commit half of MakeChoice so the two
 // paths stay in sync.
+//
+// announceConsent, when non-nil, is called once the assets have changed hands
+// and before the "took" lines are posted: the victim's "consented" line reads
+// ahead of the take it licenses, but is never posted for a take in which nothing
+// moved. If a transfer fails part-way, the assets that did move are announced
+// (consent first) before the error is returned. A self-consented take has no one
+// else's consent to announce and passes nil.
 func srCommitTakeConsent(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	req *gamepkg.TakeConsentRequest,
+	announceConsent func(),
 ) error {
 	resData := loadResolutionData(plan.ResolutionData)
 	resData.MakeMarChoices = make([]Choice, len(req.Choices))
@@ -927,10 +941,32 @@ func srCommitTakeConsent(
 			return fmt.Errorf("resolve asset recipient: %w", rerr)
 		}
 	}
+	taken := make([]rumorTake, 0, len(req.AssetIDs))
+	var takeErr error
 	for _, aid := range req.AssetIDs {
-		if err := transferRumorAsset(ctx, deps, plan, aid, recipient); err != nil {
-			return err
+		t, err := takeRumorAsset(ctx, deps, plan, aid, recipient)
+		if err != nil {
+			takeErr = err
+			break
 		}
+		taken = append(taken, t)
+	}
+	// Announce what actually moved: the whole take, or the part of it that went
+	// through before a failure. An asset that has changed hands has already been
+	// broadcast as taken, so the log must say so even though the take didn't
+	// finish — a retry then finds the asset no longer the victim's and lapses,
+	// and without these lines it would never be logged at all. Nothing moved,
+	// nothing to announce.
+	if len(taken) > 0 {
+		if announceConsent != nil {
+			announceConsent()
+		}
+		for _, t := range taken {
+			announceRumorTake(ctx, deps, plan, t, recipient)
+		}
+	}
+	if takeErr != nil {
+		return takeErr
 	}
 	sr := resData.EnsureSpreadRumors()
 	sr.TakeResolved = true
@@ -942,37 +978,49 @@ func srCommitTakeConsent(
 	return nil
 }
 
-// transferRumorAsset transfers a single asset to newOwnerID and emits the
-// asset.taken event + action-log post. Shared by the consent-grant path.
-func transferRumorAsset(
+// rumorTake is one asset a consented take has moved, held until the take's
+// "took" line is posted (see srCommitTakeConsent).
+type rumorTake struct {
+	asset            dbgen.Asset
+	oldOwnerID       int64
+	wasMainCharacter bool
+}
+
+// takeRumorAsset transfers a single asset to newOwnerID and broadcasts the
+// asset.taken event, but posts nothing: the caller announces the take with
+// announceRumorTake once the whole take has gone through.
+func takeRumorAsset(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	assetID, newOwnerID int64,
-) error {
+) (rumorTake, error) {
 	asset, err := deps.Q.GetAssetByID(ctx, assetID)
 	if err != nil {
-		return fmt.Errorf("asset not found: %w", err)
+		return rumorTake{}, fmt.Errorf("asset not found: %w", err)
 	}
-	oldOwnerID := asset.OwnerID
-	updated, err := takeAssetEffect(ctx, deps.Q, deps.Manager, plan.GameID, asset.ID, oldOwnerID, newOwnerID)
+	updated, err := takeAssetEffect(ctx, deps.Q, deps.Manager, plan.GameID, asset.ID, asset.OwnerID, newOwnerID)
 	if err != nil {
-		return fmt.Errorf("could not transfer asset: %w", err)
+		return rumorTake{}, fmt.Errorf("could not transfer asset: %w", err)
 	}
+	return rumorTake{asset: updated, oldOwnerID: asset.OwnerID, wasMainCharacter: asset.IsMainCharacter}, nil
+}
+
+// announceRumorTake posts the action-log line for a take takeRumorAsset made.
+func announceRumorTake(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, t rumorTake, newOwnerID int64) {
 	if g, gErr := deps.Q.GetGameByID(ctx, plan.GameID); gErr == nil {
 		EmitAssetTaken(
 			ctx,
 			deps.Q,
 			deps.Manager,
 			plan.GameID,
-			updated,
-			oldOwnerID,
+			t.asset,
+			t.oldOwnerID,
 			newOwnerID,
-			asset.IsMainCharacter,
+			t.wasMainCharacter,
 			logRow(g),
 		)
 	}
-	return nil
 }
 
 // ── Hide Source ───────────────────────────────────────────────────────────────

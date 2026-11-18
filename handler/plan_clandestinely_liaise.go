@@ -303,7 +303,7 @@ func (clHandler) OnPrepare(ctx context.Context, deps *PlanDeps, plan *dbgen.Plan
 // point the table at the one person who cannot act (see clSeatsFor). Both seats
 // held by one player (the demander is also the partner) name that player once.
 func (clHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *dbgen.Plan) (model.RowState, bool) {
-	resData := loadResolutionData(plan.ResolutionData)
+	resData := loadPlanResolutionData(plan)
 	ld := resData.Liaise
 	if ld == nil || ld.PartnerID == nil {
 		return model.RowState{}, false

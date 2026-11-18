@@ -990,11 +990,11 @@ func (ecHandler) ResolvingWaitees(ctx context.Context, q *dbgen.Queries, plan *d
 	target := *plan.TargetPlayerID
 	blockTarget := model.RowState{Kind: model.RowStateAwaitCourtierResponse, ActingPlayerIDs: []int64{target}}
 
-	switch loadResolutionData(plan.ResolutionData).ExchangeCourtiers.CurrentPhase() {
+	switch loadPlanResolutionData(plan).ExchangeCourtiers.CurrentPhase() {
 	case gamepkg.ECPhaseFairTrade:
 		// Target owes the opening offer until one is made; then the preparer
 		// owes accept/decline (generic).
-		ec := loadResolutionData(plan.ResolutionData).ExchangeCourtiers
+		ec := loadPlanResolutionData(plan).ExchangeCourtiers
 		if ec == nil || ec.FairTradeAssetID == nil {
 			return blockTarget, true
 		}

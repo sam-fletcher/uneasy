@@ -7,7 +7,8 @@
 <script lang="ts">
 	import './planPanel.css';
 	import { onMount } from 'svelte';
-	import { getReveal, submitReveal, type SimultaneousReveal } from '$lib/api';
+	import { submitReveal, type SimultaneousReveal } from '$lib/api';
+	import { loadReveal } from './revealLoad';
 	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { REVEAL_EVENTS } from '$lib/ws';
 	import D6Face from './D6Face.svelte';
@@ -21,7 +22,9 @@
 	}
 
 	interface Props {
-		revealID: number;
+		/** The plan's reveal id. Null once the plan has finished and cleared it: a
+		 *  pick still in flight then has nothing left to refresh (see revealLoad.ts). */
+		revealID: number | null;
 		currentPlayerID: number;
 		participants: Participant[];
 		/** If true, 0 is a valid face (used by liaise cancel). Default: false. */
@@ -79,7 +82,9 @@
 
 	async function refresh() {
 		try {
-			reveal = await getReveal(revealID);
+			const loaded = await loadReveal(revealID);
+			if (loaded == null) return;
+			reveal = loaded;
 			// Restore the local highlight after a reload: the server returns the
 			// viewer's own face even before completion, so re-seed `picked` from it.
 			if (picked == null && mySubmission?.face != null) {
@@ -91,7 +96,7 @@
 	}
 
 	async function submit() {
-		if (picked == null || busy) return;
+		if (picked == null || busy || revealID == null) return;
 		busy = true;
 		error = '';
 		try {

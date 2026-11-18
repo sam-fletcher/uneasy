@@ -25,6 +25,12 @@ import (
 // response never tells a caller which of the three applies.
 const resetTokenInvalidMsg = "link invalid or expired"
 
+// errResetTokenUsed is what the redemption transaction returns when another
+// redemption claimed the token between this request's read and its write. It
+// rolls the transaction back (no password change, no session wipe) and maps to
+// the same uniform 400 as every other way a token can fail.
+var errResetTokenUsed = errors.New("reset token already used")
+
 // hashResetToken returns the hex-encoded SHA-256 hash of a raw reset token,
 // for looking up password_reset_tokens by hash — never by a raw string
 // compare, which would be a timing oracle on the token itself.
@@ -84,18 +90,32 @@ func CreatePasswordReset(s *db.Store) http.HandlerFunc {
 			return
 		}
 
+		// The read above is only a cheap early exit: it and this write are not
+		// atomic, so two simultaneous redemptions can both see an unused token.
+		// The claim is the first statement of the transaction — a conditional
+		// UPDATE (`used_at IS NULL`) whose row lock makes the second redemption
+		// wait for the first to commit and then match nothing. Zero rows means
+		// someone else already used the link, so this one changes nothing.
 		err = s.InTx(ctx, func(q *dbgen.Queries) error {
+			claimed, err := q.MarkPasswordResetTokenUsed(ctx, tokenHash)
+			if err != nil {
+				return err
+			}
+			if claimed == 0 {
+				return errResetTokenUsed
+			}
 			if _, err := q.UpdateAccountPassword(ctx, dbgen.UpdateAccountPasswordParams{
 				ID:           tok.AccountID,
 				PasswordHash: string(hash),
 			}); err != nil {
 				return err
 			}
-			if err := q.MarkPasswordResetTokenUsed(ctx, tokenHash); err != nil {
-				return err
-			}
 			return q.DeleteSessionsForAccount(ctx, tok.AccountID)
 		})
+		if errors.Is(err, errResetTokenUsed) {
+			respondErr(w, http.StatusBadRequest, resetTokenInvalidMsg)
+			return
+		}
 		if err != nil {
 			respondInternalErr(w, r, "could not reset password", err)
 			return

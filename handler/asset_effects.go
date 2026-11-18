@@ -280,7 +280,7 @@ func materializeDraftPeer(
 	manager *hub.Manager,
 	gameID int64,
 	draft game.DraftPeer,
-	ownerID int64,
+	ownerID, creditedTo int64,
 ) (dbgen.Asset, []dbgen.Marginalium, error) {
 	if strings.TrimSpace(draft.Marginalia) == "" {
 		return dbgen.Asset{}, nil, errors.New("a peer needs one marginalia before they arrive")
@@ -299,7 +299,7 @@ func materializeDraftPeer(
 		Asset: assetWithMarginalia{Asset: asset, Marginalia: marginalia},
 	})
 	if g, gErr := q.GetGameByID(ctx, gameID); gErr == nil {
-		EmitAssetCreated(ctx, q, manager, gameID, asset, marginalia, logRow(g))
+		EmitAssetCreatedBy(ctx, q, manager, gameID, asset, marginalia, logRow(g), creditedTo)
 	}
 	return asset, marginalia, nil
 }

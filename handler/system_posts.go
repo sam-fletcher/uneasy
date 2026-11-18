@@ -718,7 +718,23 @@ func EmitAssetCreated(
 	marginalia []dbgen.Marginalium,
 	rowNumber *int16,
 ) {
-	creator := playerDisplayName(ctx, q, asset.CreatorID)
+	EmitAssetCreatedBy(ctx, q, manager, gameID, asset, marginalia, rowNumber, asset.CreatorID)
+}
+
+// EmitAssetCreatedBy is EmitAssetCreated with the credited player named
+// explicitly, for an asset whose recorded creator isn't the player who made it
+// at the table (a peer another player wrote into being; see materializeDraftPeer).
+func EmitAssetCreatedBy(
+	ctx context.Context,
+	q *dbgen.Queries,
+	manager *hub.Manager,
+	gameID int64,
+	asset dbgen.Asset,
+	marginalia []dbgen.Marginalium,
+	rowNumber *int16,
+	creditedTo int64,
+) {
+	creator := playerDisplayName(ctx, q, creditedTo)
 	body := fmt.Sprintf("%s created the %s %s", creator, asset.AssetType, assetMark(asset.Name))
 	if len(marginalia) > 0 {
 		quoted := make([]string, 0, len(marginalia))
@@ -730,7 +746,7 @@ func EmitAssetCreated(
 	EmitSystemPost(ctx, q, manager, gameID, "asset.created",
 		model.SeverityDefault, body,
 		rowNumber, nil, nil,
-		map[string]any{"asset_id": asset.ID, "creator_id": asset.CreatorID})
+		map[string]any{"asset_id": asset.ID, "creator_id": creditedTo})
 }
 
 // EmitAssetRenamed writes the Trace asset.renamed post naming both the old and

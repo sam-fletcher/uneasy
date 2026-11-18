@@ -326,7 +326,10 @@ func consumePendingCounterDemandFor(
 	if origin, err := q.GetPlanByID(ctx, pending.OriginPlanID); err == nil {
 		resData := loadResolutionData(origin.ResolutionData)
 		resData.EnsureMakeDemands().CounterDemandPlaced = true
-		_ = saveResolutionData(ctx, q, origin.ID, resData)
+		if err := saveResolutionData(ctx, q, origin.ID, resData); err != nil {
+			loggerFromContext(ctx).ErrorContext(ctx, "could not mark the demand's counter-demand as placed",
+				"plan_id", origin.ID, "game_id", origin.GameID, "err", err)
+		}
 	}
 
 	return &counter.ID

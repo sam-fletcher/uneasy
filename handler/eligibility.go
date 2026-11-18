@@ -165,7 +165,7 @@ func (b *eligibilityBoard) hasEsteemLockout(playerID int64) bool {
 	for i, p := range recent {
 		v := game.PlanLockoutView{Category: p.Category, PlanType: p.PlanType}
 		if p.PlanType == model.PlanSpreadPropaganda {
-			rd := game.LoadResolutionData(p.ResolutionData)
+			rd := loadPlanResolutionData(&p)
 			v.EsteemLockout = rd.SpreadPropaganda != nil && rd.SpreadPropaganda.EsteemLockout
 		}
 		views[i] = v
