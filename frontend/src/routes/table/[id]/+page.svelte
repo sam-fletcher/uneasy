@@ -51,6 +51,7 @@
 	import PublicRecord from '$lib/components/PublicRecord.svelte';
 	import TableTitleBar from '$lib/components/table/TableTitleBar.svelte';
 	import PlayerRow from '$lib/components/table/PlayerRow.svelte';
+	import ConnectionNotice from '$lib/components/table/ConnectionNotice.svelte';
 	import ShellColumn from '$lib/components/table/ShellColumn.svelte';
 	import PaneName from '$lib/components/table/PaneName.svelte';
 	import PaneTabs from '$lib/components/table/PaneTabs.svelte';
@@ -489,6 +490,24 @@
 
 	// ── WebSocket ─────────────────────────────────────────────────────────────
 	let disconnect: (() => void) | null = null;
+	let retryConnectionNow: (() => Promise<void>) | null = null;
+
+	// True while ws.ts says the live connection has been down long enough to
+	// matter (it waits out short blips itself, so this never flickers). The
+	// board on screen is the last one we had until it clears, and it clears only
+	// after the reconnect's resync (loadGameState, below) has replaced it.
+	let connectionDown = $state(false);
+	// A "Try now" the player pressed is still in flight.
+	let tryingConnection = $state(false);
+
+	async function tryConnectionNow() {
+		tryingConnection = true;
+		try {
+			await retryConnectionNow?.();
+		} finally {
+			tryingConnection = false;
+		}
+	}
 
 	// Reactive context handed to the extracted WS dispatcher (ws-handlers.ts).
 	// Each accessor is backed by a $state rune above, so the dispatcher's
@@ -592,7 +611,15 @@
 		chatInitialReadMarker = s.chatInitialReadMarker;
 	}
 
-	async function loadGameState() {
+	// Resolves true when the snapshot landed and false when it didn't. It never
+	// rejects, because a failed background refresh must leave the page showing what
+	// it already had; but the caller still has to hear about the failure, because
+	// createConnection decides from it whether the table is live. A resync that
+	// failed and said nothing would clear the connection notice over a stale
+	// board, with no second resync coming while the socket stays open: the
+	// dead-pooled-connection case the catch below describes, which is what a tab
+	// waking from sleep or a redeploy hits.
+	async function loadGameState(): Promise<boolean> {
 		try {
 			// One parallel round in place of four sequential ones. These fetches
 			// are mutually independent; the old code awaited them in series only
@@ -730,6 +757,7 @@
 			// here — this line used to erase action errors too, seconds after
 			// the player raised them.
 			loadError = '';
+			return true;
 		} catch (e) {
 			// Only the initial load may raise the banner. This function runs on
 			// every WS (re)connect — including the reconnect a returning player
@@ -743,6 +771,10 @@
 			if (!gameStateLoaded) {
 				loadError = e instanceof Error ? e.message : 'Could not load game state.';
 			}
+			// Quiet on screen, but not to the connection: it closes this socket
+			// and resyncs again at the growing backoff, rather than keeping a live
+			// socket over a board that never refreshed.
+			return false;
 		}
 	}
 
@@ -801,8 +833,11 @@
 			// — so they run concurrently, saving one ~390ms round trip off the
 			// front of every table load.
 			mePromise = getMe();
-			const conn = createConnection(gameID, handleWSMessage, loadGameState);
+			const conn = createConnection(gameID, handleWSMessage, loadGameState, {
+				onStatus: (status) => (connectionDown = status === 'down'),
+			});
 			disconnect = conn.disconnect;
+			retryConnectionNow = conn.retryNow;
 
 			me = await mePromise;
 			if (!me) {
@@ -952,6 +987,13 @@
 		{atRiskByPlayer}
 		onSelect={(playerID) => (retinueOpenForPlayer = playerID)}
 	/>
+
+	<!-- Across the whole frame, above all three panes: a dropped connection is
+	     about the table, not one pane, and the board below looks fine while it
+	     is stale. -->
+	{#if connectionDown}
+		<ConnectionNotice trying={tryingConnection} onTry={tryConnectionNow} />
+	{/if}
 
 	{#if loadError}
 		<ErrorText message={loadError} extra="error" />

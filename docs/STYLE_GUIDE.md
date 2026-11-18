@@ -610,7 +610,7 @@ Reuse before writing new CSS — these live in
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
 | `HelpDisclosure.svelte` | the collapsible "? How X works" panel: a `tapRow.css` row with the help mark and a caret, and its body below. **The** way step-local rules reach a play screen — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
-| `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), and `TonesSheet`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
+| `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ConnectionNotice` (the strip that says the live connection is down, between the player row and the panes), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), and `TonesSheet`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`, `clock`, `war`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below. The newer marks have a component of their own that adds the size, colour rule and label |
 
 † `LogMark.svelte` lives in `components/`, not `shared/` — the name
@@ -706,7 +706,13 @@ more; `/dev/styleguide` shows every state.
   notice sits inside a step, so it is a group and gets no box or tint. Pass a
   house mark of the noun as `mark` when one fits better than the tone's default.
   The update banner is the one place that keeps a tinted background, since it is
-  app chrome rather than game content.
+  app chrome rather than game content. The one notice that is not inside a step
+  is the **connection notice** (`table/ConnectionNotice.svelte`): a warning
+  `Notice` with a "Try now" button, shown across the table's frame while the live
+  connection is down, because a dropped connection is about the whole table and
+  the board looks fine while it is stale. It is untinted like every other notice;
+  whether it should take the banner's tint is an open question
+  (`docs/work/questions/connection-notice-look.md`).
 - **Sheets** (`RetinueSheet.svelte`, `modalShell.css`). A raised surface, rounded
   on its top corners, with a scrim and a soft shadow: the one layer that floats
   above the panes, so the only thing that casts a shadow. A 44px close button,
