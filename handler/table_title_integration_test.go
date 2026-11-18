@@ -21,7 +21,6 @@ import (
 	dbgen "uneasy/db/gen"
 	"uneasy/gametest"
 	"uneasy/hub"
-	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -39,12 +38,10 @@ type titleRow struct {
 }
 
 // titleRowsFor calls ListMyTables as the account and returns its tables by game.
-func titleRowsFor(t *testing.T, store *db.Store, accountID int64) map[int64]titleRow {
+func titleRowsFor(t *testing.T, q *dbgen.Queries, store *db.Store, accountID int64) map[int64]titleRow {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/accounts/me/tables", nil)
-	req = req.WithContext(appMiddleware.AccountContext(req.Context(), &appMiddleware.Account{ID: accountID}))
-	w := httptest.NewRecorder()
-	ListMyTables(store, hub.NewManager())(w, req)
+	w := serveAs(t, q, accountID, ListMyTables(store, hub.NewManager()), req)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	var resp struct {
@@ -73,7 +70,7 @@ func TestListMyTablesTitleFields_EveryPhase(t *testing.T) {
 	game, viewer := tg.Game, tg.Players[0]
 	row := func() titleRow {
 		t.Helper()
-		got, ok := titleRowsFor(t, store, viewer.AccountID)[game.ID]
+		got, ok := titleRowsFor(t, q, store, viewer.AccountID)[game.ID]
 		require.True(t, ok, "the table must be listed")
 		return got
 	}
@@ -205,7 +202,7 @@ func TestListMyTablesTitleFields_AcrossTables(t *testing.T) {
 	// A plan on A's current row, but in another game: it must not leak into C.
 	createPlanOnRow(t, q, &tgA.Game, &tgA.Players[1], model.PlanSpreadRumors, model.CategoryEsteem, 9)
 
-	rows := titleRowsFor(t, store, viewer.AccountID)
+	rows := titleRowsFor(t, q, store, viewer.AccountID)
 	require.Len(t, rows, 3)
 
 	a, b, c := rows[tgA.Game.ID], rows[tgB.Game.ID], rows[tgC.Game.ID]
@@ -236,7 +233,7 @@ func TestListMyTablesTitleFields_FestivityUnderADuel(t *testing.T) {
 		ResolutionData: new(`{"festivity":{"pending_duel_plan_id":` + itoa(duel.ID) + `}}`),
 	}))
 
-	got := titleRowsFor(t, store, tg.Players[0].AccountID)[tg.Game.ID]
+	got := titleRowsFor(t, q, store, tg.Players[0].AccountID)[tg.Game.ID]
 	require.Equal(t, "propose_duel", *got.PlanType)
 }
 
@@ -266,7 +263,7 @@ func TestTitlePlan_TwoPlansOnARow_FollowsTheFollowScene(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, rs.TitlePlanType, why)
 		require.Equal(t, want, *rs.TitlePlanType, "row state: "+why)
-		listed := titleRowsFor(t, store, first.AccountID)[game.ID]
+		listed := titleRowsFor(t, q, store, first.AccountID)[game.ID]
 		require.NotNil(t, listed.PlanType, why)
 		require.Equal(t, string(want), *listed.PlanType, "profile list: "+why)
 	}

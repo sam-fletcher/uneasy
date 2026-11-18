@@ -21,16 +21,12 @@ import (
 
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
-	appMiddleware "uneasy/middleware"
 )
 
-func patchMe(t *testing.T, store *db.Store, acctID int64, body string) *httptest.ResponseRecorder {
+func patchMe(t *testing.T, q *dbgen.Queries, store *db.Store, acctID int64, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPatch, "/api/accounts/me", strings.NewReader(body))
-	req = req.WithContext(appMiddleware.AccountContext(req.Context(), &appMiddleware.Account{ID: acctID}))
-	w := httptest.NewRecorder()
-	UpdateMe(store)(w, req)
-	return w
+	return serveAs(t, q, acctID, UpdateMe(store), req)
 }
 
 func TestUpdateMe_NotifyCadenceRoundTrip(t *testing.T) {
@@ -47,7 +43,7 @@ func TestUpdateMe_NotifyCadenceRoundTrip(t *testing.T) {
 	assert.EqualValues(t, 24, *acct.NotifyCadenceHours)
 
 	// Omitting the field entirely leaves the existing cadence untouched.
-	w := patchMe(t, store, acct.ID, `{"username":"`+acct.Username+`"}`)
+	w := patchMe(t, q, store, acct.ID, `{"username":"`+acct.Username+`"}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	reloaded, err := q.GetAccountByID(ctx, acct.ID)
 	require.NoError(t, err)
@@ -55,7 +51,7 @@ func TestUpdateMe_NotifyCadenceRoundTrip(t *testing.T) {
 	assert.EqualValues(t, 24, *reloaded.NotifyCadenceHours, "omitted field must not change the cadence")
 
 	// Setting an explicit valid value.
-	w = patchMe(t, store, acct.ID, `{"notify_cadence_hours": 3}`)
+	w = patchMe(t, q, store, acct.ID, `{"notify_cadence_hours": 3}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	reloaded, err = q.GetAccountByID(ctx, acct.ID)
 	require.NoError(t, err)
@@ -64,7 +60,7 @@ func TestUpdateMe_NotifyCadenceRoundTrip(t *testing.T) {
 
 	// An explicit JSON null turns notifications off — presence-aware, not
 	// just "field absent".
-	w = patchMe(t, store, acct.ID, `{"notify_cadence_hours": null}`)
+	w = patchMe(t, q, store, acct.ID, `{"notify_cadence_hours": null}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	reloaded, err = q.GetAccountByID(ctx, acct.ID)
 	require.NoError(t, err)
@@ -72,7 +68,7 @@ func TestUpdateMe_NotifyCadenceRoundTrip(t *testing.T) {
 
 	// An invalid cadence value is rejected and leaves the stored value
 	// (still NULL, from the previous step) untouched.
-	w = patchMe(t, store, acct.ID, `{"notify_cadence_hours": 5}`)
+	w = patchMe(t, q, store, acct.ID, `{"notify_cadence_hours": 5}`)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	reloaded, err = q.GetAccountByID(ctx, acct.ID)
 	require.NoError(t, err)

@@ -25,7 +25,6 @@ import (
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/hub"
-	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -51,11 +50,7 @@ func TestJoinTablePhaseGate(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, "/api/tables/join",
 			strings.NewReader(`{"join_code":"`+code+`"}`))
-		req = req.WithContext(appMiddleware.AccountContext(req.Context(),
-			&appMiddleware.Account{ID: acct.ID, Username: acct.Username}))
-		w := httptest.NewRecorder()
-		JoinTable(store, hub.NewManager())(w, req)
-		return w
+		return serveAs(t, q, acct.ID, JoinTable(store, hub.NewManager()), req)
 	}
 
 	// newcomer is an account with no seat anywhere — the attacker/stranger in
@@ -166,9 +161,7 @@ func TestListMyTablesEnrichment(t *testing.T) {
 		2*time.Second, 5*time.Millisecond, "registered client never showed online")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/accounts/me/tables", nil)
-	req = req.WithContext(appMiddleware.AccountContext(req.Context(), &appMiddleware.Account{ID: viewer.AccountID}))
-	w := httptest.NewRecorder()
-	ListMyTables(store, m)(w, req)
+	w := serveAs(t, q, viewer.AccountID, ListMyTables(store, m), req)
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var resp struct {
@@ -245,10 +238,7 @@ func TestListMyTablesUnreadCount(t *testing.T) {
 	unreadFor := func(player dbgen.Player) int64 {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/api/accounts/me/tables", nil)
-		req = req.WithContext(appMiddleware.AccountContext(req.Context(),
-			&appMiddleware.Account{ID: player.AccountID}))
-		w := httptest.NewRecorder()
-		ListMyTables(store, hub.NewManager())(w, req)
+		w := serveAs(t, q, player.AccountID, ListMyTables(store, hub.NewManager()), req)
 		require.Equal(t, http.StatusOK, w.Code)
 		var resp struct {
 			Tables []struct {
@@ -341,10 +331,7 @@ func TestListMyTablesAcrossTables(t *testing.T) {
 	say(tgB, tgB.Players[1].ID, 3)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/accounts/me/tables", nil)
-	req = req.WithContext(appMiddleware.AccountContext(req.Context(),
-		&appMiddleware.Account{ID: viewer.AccountID}))
-	w := httptest.NewRecorder()
-	ListMyTables(store, hub.NewManager())(w, req)
+	w := serveAs(t, q, viewer.AccountID, ListMyTables(store, hub.NewManager()), req)
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var resp struct {
@@ -411,9 +398,7 @@ func TestListMyTablesReminderFlags(t *testing.T) {
 	read := func() (muted, exhausted bool) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/api/accounts/me/tables", nil)
-		req = req.WithContext(appMiddleware.AccountContext(req.Context(), &appMiddleware.Account{ID: viewer.AccountID}))
-		w := httptest.NewRecorder()
-		ListMyTables(store, hub.NewManager())(w, req)
+		w := serveAs(t, q, viewer.AccountID, ListMyTables(store, hub.NewManager()), req)
 		require.Equal(t, http.StatusOK, w.Code)
 		var resp struct {
 			Tables []struct {
