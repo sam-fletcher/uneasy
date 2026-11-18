@@ -5,13 +5,15 @@ import ClandestinelyLiaisePanel from './ClandestinelyLiaisePanel.svelte';
 import DuelPrepForm from './duel/PrepForm.svelte';
 import WarPrepForm from './war/PrepForm.svelte';
 import SpreadRumorsPanel from './SpreadRumorsPanel.svelte';
+import MakeDemandsPanel from './MakeDemandsPanel.svelte';
 import type { PlanContext } from './types';
 
 // While the focus player prepares a plan, everyone else sees a read-only mirror of
 // their form. That mirror is drawn from the preparer, not from the viewer: its
 // partner chips are everyone but the preparer, and its "meeting peer" list is the
-// preparer's own peers, named as theirs. Propose Duel's challenger chips and Make
-// War's enemy chips work the same way. The preparer's own form is unchanged.
+// preparer's own peers, named as theirs. Propose Duel's challenger chips, Make
+// War's enemy chips and Make Demands' target plans work the same way. The
+// preparer's own form is unchanged.
 //
 // svelte/server does not run $effect, so the chip that is picked (copied from the
 // draft in an effect) is not in these renders. What is pinned here is the list
@@ -33,9 +35,19 @@ const ASSETS = [
 	{ id: 12, name: 'Ines', owner_id: BYSTANDER, asset_type: 'peer', is_destroyed: false, marginalia: [] },
 ];
 
-function ctxFor(seat: number, prepDraft: Record<string, unknown> | null, assets = ASSETS): PlanContext {
+// The public record: the preparer's own plan, the target's, and a bystander's.
+const PLANS = [
+	{ id: 20, plan_type: 'seek_answers', preparer_id: PREPARER, status: 'pending', row_number: 5 },
+	{ id: 21, plan_type: 'spread_propaganda', preparer_id: TARGET, status: 'pending', row_number: 5 },
+	{ id: 22, plan_type: 'chronicle_histories', preparer_id: BYSTANDER, status: 'pending', row_number: 8 },
+];
+
+function ctxFor(
+	seat: number, prepDraft: Record<string, unknown> | null,
+	assets = ASSETS, plans: unknown[] = [],
+): PlanContext {
 	return {
-		gameID: 1, currentRow: 5, endingMode: null, plans: [] as never,
+		gameID: 1, currentRow: 5, endingMode: null, plans: plans as never,
 		assets: assets as never, players: PLAYERS as never, rankings: [],
 		currentPlayerID: seat, focusPlayerID: PREPARER, isFocusPlayer: seat === PREPARER,
 		rollActive: false, rollOutcome: null, activeRoll: null,
@@ -61,6 +73,12 @@ const playerChips = (html: string) => {
 	const row = html.split('player-chips')[1]?.split('</div>')[0] ?? '';
 	return (row.match(/<button\b[\s\S]*?<\/button>/g) ?? []).map(text);
 };
+
+/** The target-plan options of a Make Demands prep form, without the placeholder. */
+const targetOptions = (html: string) =>
+	(html.match(/<option\b[\s\S]*?<\/option>/g) ?? [])
+		.map(text)
+		.filter(o => o !== '— pick a plan to demand against —');
 
 describe('Exchange Courtiers: the target chips', () => {
 	const DRAFT = { target_player_id: TARGET, target_asset_id: 11, notes: 'x' };
@@ -189,5 +207,30 @@ describe("Spread Rumors: a watcher never sees the rumor's text as it is typed", 
 		expect(html).toContain('<textarea');
 		expect(text(html)).not.toContain('is writing the rumor');
 		expect(text(html)).not.toContain('Kept secret for now. Only');
+	});
+});
+
+describe('Make Demands: the target plans', () => {
+	const DRAFT = { target_plan_id: 21, notes: 'the square' };
+	const render_ = (seat: number) =>
+		render(MakeDemandsPanel, { props: { ctx: ctxFor(seat, DRAFT, ASSETS, PLANS), plan: null, mode: 'prep' } }).body;
+
+	it("the preparer's own target list is everyone's plans but their own", () => {
+		expect(targetOptions(render_(PREPARER))).toEqual([
+			'Spread Propaganda by bob (row 5)',
+			'Chronicle Histories by carol (row 8)',
+		]);
+	});
+
+	it.each([
+		['the target (bob)', TARGET],
+		['a bystander (carol)', BYSTANDER],
+	])("a watcher, %s, is shown the preparer's list: everyone's plans but alice's", (_, seat) => {
+		const options = targetOptions(render_(seat));
+		expect(options).toEqual([
+			'Spread Propaganda by bob (row 5)',
+			'Chronicle Histories by carol (row 8)',
+		]);
+		expect(options.some(o => o.startsWith('Seek Answers'))).toBe(false);
 	});
 });
