@@ -1064,7 +1064,11 @@ func TestProposeDuelHTTP_FinalBoutTie_SaysTheDiceAreLost(t *testing.T) {
 		require.Equalf(t, http.StatusOK, code, "bout-respond: %v", body)
 	}
 
+	firstDeclarer := duelInitiative(t, h, planID)
 	playBout() // bout 1 of 2 — another follows
+	// A tie still passes initiative on: the next bout is declared by the other duellist.
+	assert.NotEqual(t, firstDeclarer, duelInitiative(t, h, planID),
+		"initiative should swap after a tied bout, so the other duellist declares next")
 	line, ok := duelPostWith(duelSystemPosts(t, h.q, h.tg.Game.ID), "Bout 1: ")
 	require.True(t, ok)
 	assert.Contains(t, line, "The stakes rise")

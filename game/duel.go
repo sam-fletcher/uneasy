@@ -51,13 +51,14 @@ type BoutOutcome struct {
 	// WinnerSide is the side that won (if !Match). Both dice are accumulated
 	// by the winner.
 	WinnerSide DuelSide
-	// NextDeclarer is the side that gets initiative for the next bout. Always
-	// swaps from the current declarer regardless of outcome.
-	NextDeclarer DuelSide
 }
 
 // ResolveBout computes the outcome of a bout given the declarer's call and
 // both revealed dice. Dice are d6 (1–6).
+//
+// It does not say who declares next. Initiative swaps after every bout, match
+// or not, and the bout handler hands it to the other duellist itself
+// (pduelOpponentID in handler/plan_propose_duel_bouts.go).
 //
 // Returns an error if either die is out of range.
 func ResolveBout(declarerSide DuelSide, decl Declaration, declarerDie, responderDie int16) (BoutOutcome, error) {
@@ -69,10 +70,9 @@ func ResolveBout(declarerSide DuelSide, decl Declaration, declarerDie, responder
 	}
 
 	opponent := opposingSide(declarerSide)
-	next := opponent // initiative always swaps
 
 	if declarerDie == responderDie {
-		return BoutOutcome{Match: true, NextDeclarer: next}, nil
+		return BoutOutcome{Match: true}, nil
 	}
 
 	declarerHigher := declarerDie > responderDie
@@ -82,7 +82,7 @@ func ResolveBout(declarerSide DuelSide, decl Declaration, declarerDie, responder
 	if declarerWins {
 		winner = declarerSide
 	}
-	return BoutOutcome{WinnerSide: winner, NextDeclarer: next}, nil
+	return BoutOutcome{WinnerSide: winner}, nil
 }
 
 // opposingSide returns the other side.
