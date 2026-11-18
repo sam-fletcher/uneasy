@@ -4,16 +4,57 @@ import { paint, playShakeUpToEnd, playerContext, resolveToken, seedGame } from '
 
 // The Shake-Up and the end of the game, read at phone width.
 //
-// The first two specs play one spend through the real screens, as the three
+// The first spec loads the board the seed gives at row 14, which is the board a
+// real table gets: the rolling step with the first roll open. It loads it as each
+// of the three seats and checks the table's error boundary shows no fallback.
+//
+// The next two specs play one spend through the real screens, as the three
 // players would: announce, react, pay or abandon. They check the behaviour (the
 // reaction gate, the cost floor, pay-or-abandon) and, with it, what the
 // redesign ruled for the screen: an option is a chip and the pick is the bright
 // gold border with no fill, a raised cost is a notice (a mark and coloured
 // words) and not a tinted strip, the reaction buttons are plain buttons with no
-// main one, and nothing is framed. The third plays a whole Shake-Up out to reach
+// main one, and nothing is framed. The last plays a whole Shake-Up out to reach
 // the ended screen, which the seed endpoint has no way to produce.
 
 const track = cleanupGameAfterEach();
+
+// What the table's error boundary shows in place of a phase view that threw.
+const ERROR_FALLBACK = 'Something went wrong displaying this part of the table.';
+
+test('the seeded Shake-Up board loads for every seat, with no error fallback', async ({ browser }) => {
+  // Default seed: the rolling step, zero tokens, first roll open.
+  const seeded = await seedGame({
+    phase: 'shake_up',
+    players: ['alice', 'bob', 'carol'],
+  });
+  track(seeded.game_id);
+  const ctxs = Object.fromEntries(
+    await Promise.all(
+      ['alice', 'bob', 'carol'].map(async (n) => [n, await playerContext(browser, n)] as const),
+    ),
+  );
+  // The first roller is whoever the server says rolls first (reverse rank).
+  const st = await (await ctxs.alice.request.get(`/api/tables/${seeded.game_id}/shake-up`)).json();
+  const rollerName = seeded.players.find((p) => p.id === st.current_roller_id)!.display_name;
+  // The roller's own button reads "(you)" after the name.
+  const rollerOnTheClock = new RegExp(`View ${rollerName}'s retinue( \\(you\\))? — (your|their) move`);
+  for (const name of Object.keys(ctxs)) {
+    const page = await ctxs[name].newPage();
+    await page.goto(`/table/${seeded.game_id}`);
+    await expect(tableTitle(page), `${name} sees the Shake-Up`).toContainText('Shake-Up');
+    // The Players bar names the roller only once the view has fetched the
+    // Shake-Up state, so that is the sign the board has drawn. If the view threw
+    // instead, the fallback shows, and the wait ends on it so the assertion below
+    // reports it.
+    await expect(
+      page.getByText(ERROR_FALLBACK).or(page.getByRole('button', { name: rollerOnTheClock })),
+      `${name}'s board draws`,
+    ).toBeVisible();
+    await expect(page.getByText(ERROR_FALLBACK), `${name} sees no error fallback`).toHaveCount(0);
+  }
+  await Promise.all(Object.values(ctxs).map((c) => c.close()));
+});
 
 async function openShakeUp(browser: import('@playwright/test').Browser, tokens: number) {
   const seeded = await seedGame({
