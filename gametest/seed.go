@@ -55,7 +55,7 @@ type SeededGame struct {
 // Returns an error rather than panicking so callers can choose between
 // require.NoError (tests) and HTTP error responses (dev seed handler).
 func SeedMainEvent(ctx context.Context, q *dbgen.Queries, usernames []string, opts ...Option) (SeededGame, error) {
-	cfg := applyOptions(1, opts)
+	cfg := applyOptions(1, lastRecordRow, opts)
 	seeded, err := seedBase(ctx, q, usernames, cfg)
 	if err != nil {
 		return SeededGame{}, err
@@ -93,7 +93,7 @@ func SeedPrologueClosing(
 	usernames []string,
 	opts ...Option,
 ) (SeededGame, error) {
-	cfg := applyOptions(1, opts)
+	cfg := applyOptions(1, lastRecordRow, opts)
 	cfg.boardSetup = false // the prologue has no Public Record board yet
 	seeded, err := seedBase(ctx, q, usernames, cfg)
 	if err != nil {

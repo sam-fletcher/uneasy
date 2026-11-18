@@ -188,6 +188,10 @@ func TestSeedShakeUp_Default_MirrorsBeginShakeUp(t *testing.T) {
 	assert.Equal(t, gamepkg.ShakeUpCategoryEsteem, *seeded.Game.ShakeUpCategory)
 	require.NotNil(t, seeded.Game.ShakeUpStep)
 	assert.Equal(t, gamepkg.ShakeUpStepRolling, *seeded.Game.ShakeUpStep)
+	// Live play enters the Shake-Up at row 14 (advanceRowInner moves past the
+	// last public-record row). A seed at 13 would anchor posts that live play
+	// leaves unanchored, so the default has to match.
+	assert.EqualValues(t, 14, seeded.Game.CurrentRow, "the Shake-Up sits at row 14, as in live play")
 
 	// Freshly-entered shake-up: every player's token pool is zero.
 	for _, p := range seeded.Players {

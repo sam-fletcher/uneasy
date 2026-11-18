@@ -11,8 +11,9 @@ import (
 
 // SeedShakeUp creates a game in phase shake_up, mirroring the real BeginShakeUp
 // transition (handler/shake_up.go): assets refreshed, tokens zeroed, the
-// rolling step opened on the esteem category. current_row defaults to 13 (the
-// shake-up follows the final public-record row).
+// rolling step opened on the esteem category. current_row defaults to 14, the
+// row live play reaches: advanceRowInner moves past the final public-record row
+// (13) into the Shake-Up.
 //
 // A freshly-entered shake-up has ZERO tokens — players earn them by rolling in
 // step 1. To exercise the spending step (step 2) in tests, pass
@@ -21,7 +22,7 @@ import (
 // The skeleton (players, seat order, rankings, public record) and the shared
 // options (WithCurrentRow, WithRankings, WithPlan) come from seedBase.
 func SeedShakeUp(ctx context.Context, q *dbgen.Queries, usernames []string, opts ...Option) (SeededGame, error) {
-	cfg := applyOptions(13, opts)
+	cfg := applyOptions(shakeUpRow, shakeUpRow, opts)
 	seeded, err := seedBase(ctx, q, usernames, cfg)
 	if err != nil {
 		return SeededGame{}, err

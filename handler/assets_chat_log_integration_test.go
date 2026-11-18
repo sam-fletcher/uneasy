@@ -423,8 +423,9 @@ func TestReplaceMainCharacter_RejectedWhenPeerAvailable(t *testing.T) {
 //
 // logRow is the fix: it yields nil outside rows 1–13, and an unanchored post
 // still reaches the feed. These tests pin the two phases that regressed.
-// Note SeedShakeUp leaves current_row at 13, which is why the seeded fixtures
-// never reproduced the Shake-Up half — these set the row explicitly.
+// SeedShakeUp now leaves current_row at 14, as live play does, but these tests
+// still set the row themselves, so each phase is pinned by its own row rather
+// than by a seed default.
 
 // setPhaseAndRow forces the game off a valid public-record row, standing in for
 // the prologue (row 0) and the Shake-Up (row 14).
