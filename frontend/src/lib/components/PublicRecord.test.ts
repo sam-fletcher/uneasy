@@ -283,7 +283,7 @@ describe('the Shake-Up row', () => {
 });
 
 describe('before play starts', () => {
-	for (const phase of ['lobby', 'tone_setting', 'prologue'] as const) {
+	for (const phase of ['lobby', 'prologue'] as const) {
 		it(`says when play starts, over the thirteen blank rows (${phase})`, () => {
 			const html = draw([], { phase, currentRow: 0 });
 			expect(html).toContain('Play starts when the Prologue ends');

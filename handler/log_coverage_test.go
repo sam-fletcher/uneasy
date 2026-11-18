@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // The structural guard for adr/audit/FINDINGS.md pattern 3, "mutations without a
@@ -119,8 +121,6 @@ func TestSilentEffectsAreLoggedByTheirCallers(t *testing.T) {
 		}
 	}
 	sort.Strings(offenders)
-	for _, o := range offenders {
-		t.Errorf("%s — post the change to the action log (see adr/audit/FINDINGS.md pattern 3), "+
-			"or add it to logCoverageAllowed with the reason", o)
-	}
+	assert.Empty(t, offenders, "each change below must post to the action log (see adr/audit/FINDINGS.md pattern 3), "+
+		"or be added to logCoverageAllowed with the reason")
 }

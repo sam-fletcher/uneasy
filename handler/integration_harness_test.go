@@ -19,6 +19,8 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
@@ -29,6 +31,7 @@ import (
 	"uneasy/db"
 	dbgen "uneasy/db/gen"
 	"uneasy/gametest"
+	appMiddleware "uneasy/middleware"
 	"uneasy/model"
 )
 
@@ -156,6 +159,22 @@ func destroyPlayerAssets(t *testing.T, q *dbgen.Queries, playerID int64) {
 	for i := range assets {
 		require.NoError(t, q.DestroyAsset(ctx, assets[i].ID))
 	}
+}
+
+// serveAs runs h on req as accountID, the way a browser holding that account's
+// session cookie would reach it: a real sessions row, the cookie EnsureSession
+// reads, and EnsureSession itself, so the handler sees the account exactly as
+// it does in production. Returns the recorded response.
+func serveAs(t *testing.T, q *dbgen.Queries, accountID int64, h http.HandlerFunc, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	tok, err := db.NewCookieToken()
+	require.NoError(t, err)
+	_, err = q.CreateSession(t.Context(), dbgen.CreateSessionParams{Token: tok, AccountID: accountID})
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: appMiddleware.SessionCookie, Value: tok})
+	w := httptest.NewRecorder()
+	appMiddleware.EnsureSession(q)(h).ServeHTTP(w, req)
+	return w
 }
 
 // randSuffix returns a short random string for distinct join codes /

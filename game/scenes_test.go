@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"uneasy/model"
 )
 
@@ -27,19 +29,15 @@ func TestFollowOnPrompt_AllPlanTypesCovered(t *testing.T) {
 	}
 	for _, pt := range all {
 		got := FollowOnPrompt(pt)
-		if got == "" {
-			t.Errorf("FollowOnPrompt(%s) returned empty string", pt)
-		}
+		assert.NotEmpty(t, got, "FollowOnPrompt(%s) returned empty string", pt)
 		// Every prompt should start with the rules' canonical "Set a scene"
 		// stem so the surrounding UI can rely on a consistent shape.
-		if !strings.HasPrefix(got, "Set a scene") {
-			t.Errorf("FollowOnPrompt(%s) = %q; want prefix \"Set a scene\"", pt, got)
-		}
+		assert.True(t, strings.HasPrefix(got, "Set a scene"),
+			"FollowOnPrompt(%s) = %q; want prefix \"Set a scene\"", pt, got)
 	}
 }
 
 func TestFollowOnPrompt_UnknownReturnsEmpty(t *testing.T) {
-	if got := FollowOnPrompt(model.PlanType("not_a_real_plan")); got != "" {
-		t.Errorf("FollowOnPrompt(unknown) = %q; want \"\"", got)
-	}
+	got := FollowOnPrompt(model.PlanType("not_a_real_plan"))
+	assert.Empty(t, got, "FollowOnPrompt(unknown)")
 }

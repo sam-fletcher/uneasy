@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"uneasy/model"
 )
 
@@ -78,12 +80,9 @@ func TestPreparePlanDraftStripsWhateverKeepSecretSays(t *testing.T) {
 		raw, got := relayDraft(t, `{"type":"prepare_plan.draft","payload":{
 			"plan_type":"spread_rumors",
 			"prep":{"notes":"`+secretRumor+`","keep_secret":`+flag+`}}}`)
-		if strings.Contains(string(raw), secretRumor) {
-			t.Errorf("keep_secret=%s let the text through: %s", flag, raw)
-		}
-		if _, has := got.Prep["notes"]; has {
-			t.Errorf("keep_secret=%s left a notes key: %v", flag, got.Prep)
-		}
+		assert.NotContains(t, string(raw), secretRumor, "keep_secret=%s let the text through", flag)
+		_, has := got.Prep["notes"]
+		assert.False(t, has, "keep_secret=%s left a notes key: %v", flag, got.Prep)
 	}
 }
 
@@ -99,17 +98,10 @@ func TestPreparePlanDraftStripsASpreadRumorsDraftWhateverPlanItIsLabelled(t *tes
 			raw, got := relayDraft(t, `{"type":"prepare_plan.draft","payload":{
 				"plan_type":"`+planType+`",
 				"prep":{"notes":"`+secretRumor+`","keep_secret":`+flag+`,"secret_asset_id":11}}}`)
-			if strings.Contains(string(raw), secretRumor) {
-				t.Errorf(
-					"plan_type=%q keep_secret=%s: the text got through under another label: %s",
-					planType,
-					flag,
-					raw,
-				)
-			}
-			if _, has := got.Prep["notes"]; has {
-				t.Errorf("plan_type=%q keep_secret=%s: a notes key survived: %v", planType, flag, got.Prep)
-			}
+			assert.NotContains(t, string(raw), secretRumor,
+				"plan_type=%q keep_secret=%s: the text got through under another label", planType, flag)
+			_, has := got.Prep["notes"]
+			assert.False(t, has, "plan_type=%q keep_secret=%s: a notes key survived: %v", planType, flag, got.Prep)
 		}
 	}
 }

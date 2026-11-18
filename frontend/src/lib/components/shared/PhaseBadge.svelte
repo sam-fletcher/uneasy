@@ -8,7 +8,6 @@
 <script lang="ts" module>
 	const PHASE_LABELS: Record<string, string> = {
 		lobby: 'Lobby',
-		tone_setting: 'Tone Setting',
 		prologue: 'Prologue',
 		main_event: 'Main Event',
 		shake_up: 'Shake-Up',

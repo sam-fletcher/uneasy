@@ -74,7 +74,7 @@ function prologueStepName(step: PrologueRankingStep | null): string {
  * | Shake-Up, before the first         | Shake-Up                       |
  * | game over                          | Game over                      |
  * | Main Event before row 1            | Main Event      (unreachable)  |
- * | the retired tone-setting phase     | Tone setting    (unreachable)  |
+ * | a retired or unknown phase        | its name, plainly               |
  *
  * A row with a scene and a row with nothing yet read alike, "Row 6": the title
  * names the plan, and the scene is a step, which belongs to the play area. Only
@@ -85,11 +85,6 @@ export function tableTitle(t: TableTitleInput): string {
 	switch (t.phase) {
 		case 'lobby':
 			return 'Lobby';
-		case 'tone_setting':
-			// Unreachable: the server stopped entering this phase and migration 023
-			// moved every existing game out of it, though the column's CHECK still
-			// allows it. Named so a stray row would read as something.
-			return 'Tone setting';
 		case 'prologue':
 			return ['Prologue', prologueStepName(t.prologue_ranking_step)].join(SEPARATOR);
 		case 'main_event': {

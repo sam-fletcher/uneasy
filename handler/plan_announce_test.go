@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // Plan state reaches the table because every save leaves a note that the
@@ -47,6 +49,7 @@ func TestPlanStateSavedThroughOnePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read handler dir: %v", err)
 	}
+	var offenders []string
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -57,10 +60,10 @@ func TestPlanStateSavedThroughOnePath(t *testing.T) {
 			t.Fatalf("read %s: %v", name, rerr)
 		}
 		for _, q := range planWriteQueries {
-			if !strings.Contains(string(src), "."+q+"(") || slices.Contains(planWriteAllowed[name].queries, q) {
-				continue
+			if strings.Contains(string(src), "."+q+"(") && !slices.Contains(planWriteAllowed[name].queries, q) {
+				offenders = append(offenders, name+" calls "+q+" directly; use the announced wrapper (set"+
+					strings.TrimPrefix(q, "Set")+")")
 			}
-			t.Errorf("%s calls %s directly; use the announced wrapper (set%s)", name, q, strings.TrimPrefix(q, "Set"))
 		}
 	}
 	// And nothing outside handler/ writes plans at all.
@@ -75,7 +78,10 @@ func TestPlanStateSavedThroughOnePath(t *testing.T) {
 			src, _ := os.ReadFile(path)
 			for _, q := range planWriteQueries {
 				if strings.Contains(string(src), "."+q+"(") {
-					t.Errorf("%s calls %s outside handler/; plan writes belong in the announced wrappers", path, q)
+					offenders = append(
+						offenders,
+						path+" calls "+q+" outside handler/; plan writes belong in the announced wrappers",
+					)
 				}
 			}
 			return nil
@@ -83,6 +89,7 @@ func TestPlanStateSavedThroughOnePath(t *testing.T) {
 			t.Fatalf("walk %s: %v", dir, err)
 		}
 	}
+	assert.Empty(t, offenders, "plan writes must go through the announced wrappers")
 }
 
 // (That the middleware wraps every plan route is checked against the real
@@ -125,12 +132,8 @@ func TestAnnouncePlanChangesSendsOncePerPlan(t *testing.T) {
 			}
 			notePlanChanged(r.Context(), 6)
 		})
-		if len(rec.updated) != 2 {
-			t.Errorf("plan.updated sent %d times, want once per plan (2): %v", len(rec.updated), rec.updated)
-		}
-		if len(rec.rowState) != 1 || rec.rowState[0] != 1 {
-			t.Errorf("row state sent %v, want once for game 1", rec.rowState)
-		}
+		assert.Len(t, rec.updated, 2, "plan.updated: want once per plan (2), got %v", rec.updated)
+		assert.Equal(t, []int64{1}, rec.rowState, "row state: want once for game 1")
 	})
 
 	t.Run("handler already broadcast row state after its saves", func(t *testing.T) {
@@ -139,9 +142,8 @@ func TestAnnouncePlanChangesSendsOncePerPlan(t *testing.T) {
 			notePlanChanged(r.Context(), 7)
 			noteRowStateBroadcast(r.Context(), 2)
 		})
-		if len(rec.updated) != 1 || len(rec.rowState) != 0 {
-			t.Errorf("updated=%v rowState=%v, want one event and no repeated row state", rec.updated, rec.rowState)
-		}
+		assert.Len(t, rec.updated, 1, "want one event")
+		assert.Empty(t, rec.rowState, "want no repeated row state")
 	})
 
 	t.Run("a save after the row-state broadcast still owes one", func(t *testing.T) {
@@ -150,9 +152,7 @@ func TestAnnouncePlanChangesSendsOncePerPlan(t *testing.T) {
 			noteRowStateBroadcast(r.Context(), 2)
 			notePlanChanged(r.Context(), 7)
 		})
-		if len(rec.rowState) != 1 {
-			t.Errorf("rowState=%v, want one", rec.rowState)
-		}
+		assert.Len(t, rec.rowState, 1, "want one row state")
 	})
 
 	t.Run("error status still announces", func(t *testing.T) {
@@ -161,9 +161,7 @@ func TestAnnouncePlanChangesSendsOncePerPlan(t *testing.T) {
 			notePlanChanged(r.Context(), 5)
 			w.WriteHeader(http.StatusInternalServerError)
 		})
-		if len(rec.updated) != 1 {
-			t.Errorf("updated=%v, want the save announced", rec.updated)
-		}
+		assert.Len(t, rec.updated, 1, "want the save announced")
 	})
 
 	t.Run("a panic after a save still announces", func(t *testing.T) {
@@ -175,9 +173,7 @@ func TestAnnouncePlanChangesSendsOncePerPlan(t *testing.T) {
 				panic("boom")
 			})
 		}()
-		if len(rec.updated) != 1 {
-			t.Errorf("updated=%v, want the save announced despite the panic", rec.updated)
-		}
+		assert.Len(t, rec.updated, 1, "want the save announced despite the panic")
 	})
 
 	t.Run("a save made while sending the row state is announced too", func(t *testing.T) {
@@ -192,17 +188,14 @@ func TestAnnouncePlanChangesSendsOncePerPlan(t *testing.T) {
 			}
 		}
 		serve(sink, func(w http.ResponseWriter, r *http.Request) { notePlanChanged(r.Context(), 5) })
-		if len(rec.updated) != 2 {
-			t.Errorf("updated=%v, want plans 5 and 7 (the save made during the flush)", rec.updated)
-		}
+		assert.Len(t, rec.updated, 2, "want plans 5 and 7 (the save made during the flush), got %v", rec.updated)
 	})
 
 	t.Run("no saves, no events", func(t *testing.T) {
 		rec := &announceRecord{}
 		serve(recordingSink(rec, games), func(w http.ResponseWriter, r *http.Request) {})
-		if len(rec.updated)+len(rec.rowState) != 0 {
-			t.Errorf("got %v %v, want nothing", rec.updated, rec.rowState)
-		}
+		assert.Empty(t, rec.updated, "want no plan.updated")
+		assert.Empty(t, rec.rowState, "want no row state")
 	})
 
 	t.Run("outside a request the notes are a no-op", func(t *testing.T) {

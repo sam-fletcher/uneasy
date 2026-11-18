@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/stretchr/testify/assert"
+
 	appMiddleware "uneasy/middleware"
 )
 
@@ -174,9 +176,7 @@ func TestFrontendWarmsOnlyForCookiedIndex(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200", w.Code)
 			}
-			if got := calls.Load(); got != tt.want {
-				t.Errorf("warm calls = %d, want %d", got, tt.want)
-			}
+			assert.Equal(t, tt.want, calls.Load(), "warm calls")
 		})
 	}
 }

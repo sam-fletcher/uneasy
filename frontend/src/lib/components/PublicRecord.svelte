@@ -75,7 +75,7 @@
 	// Before the Main Event there is nothing to read here yet, so the list says
 	// when play starts instead of looking broken.
 	const beforePlay = $derived(
-		phase === 'lobby' || phase === 'tone_setting' || phase === 'prologue'
+		phase === 'lobby' || phase === 'prologue'
 	);
 
 	// ── The Shake-Up row ──────────────────────────────────────────────────────

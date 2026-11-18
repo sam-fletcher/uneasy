@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // The Shake-Up / focus-pass counterpart of TestSilentEffectsAreLoggedByTheirCallers
@@ -109,8 +111,6 @@ func TestShakeUpAndFocusWritesAreLogged(t *testing.T) {
 		t.Fatal("no shake_up*/turn files scanned — the guard is looking in the wrong place")
 	}
 	sort.Strings(offenders)
-	for _, o := range offenders {
-		t.Errorf("%s — post the change to the action log (Shake-Up posts take a nil row anchor, "+
-			"never game.CurrentRow), or add it to shakeUpLogAllowed with the reason", o)
-	}
+	assert.Empty(t, offenders, "each change below must post to the action log (Shake-Up posts take a nil row anchor, "+
+		"never game.CurrentRow), or be added to shakeUpLogAllowed with the reason")
 }

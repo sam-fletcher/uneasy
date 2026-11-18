@@ -1,6 +1,10 @@
 package game
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 // maxExampleLen bounds every suggestion string in both example pools.
 //
@@ -21,10 +25,9 @@ func TestExamplePoolsFitOneLine(t *testing.T) {
 	for pool, byType := range pools {
 		for assetType, examples := range byType {
 			for _, s := range examples {
-				if n := len([]rune(s)); n > maxExampleLen {
-					t.Errorf("%s/%s: %q is %d chars, over the %d-char one-line budget",
-						pool, assetType, s, n, maxExampleLen)
-				}
+				n := len([]rune(s))
+				assert.LessOrEqual(t, n, maxExampleLen, "%s/%s: %q is %d chars, over the %d-char one-line budget",
+					pool, assetType, s, n, maxExampleLen)
 			}
 		}
 	}

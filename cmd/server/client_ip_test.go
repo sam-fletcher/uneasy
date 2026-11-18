@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // keyForRequest runs req through clientIPResolver(behindProxy) and reports the
@@ -43,9 +45,7 @@ func request(remoteAddr string, xff ...string) *http.Request {
 // us: the TCP peer is the client and forwarding headers are worthless.
 func TestClientIPDevTrustsOnlyTheSocket(t *testing.T) {
 	got := keyForRequest(t, false, request("203.0.113.7:54321", "198.51.100.9"))
-	if got != "203.0.113.7" {
-		t.Errorf("dev key = %q, want the socket peer %q (header must be ignored)", got, "203.0.113.7")
-	}
+	assert.Equal(t, "203.0.113.7", got, "dev key: want the socket peer (header must be ignored)")
 }
 
 // TestClientIPProxyTakesRightmostEntry pins the trust model: behind Railway we
@@ -64,9 +64,8 @@ func TestClientIPProxyTakesRightmostEntry(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := keyForRequest(t, true, request("10.0.0.1:443", tt.xff...)); got != tt.want {
-				t.Errorf("key = %q, want %q", got, tt.want)
-			}
+			got := keyForRequest(t, true, request("10.0.0.1:443", tt.xff...))
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -85,10 +84,8 @@ func TestClientIPProxyIgnoresSpoofedPrefix(t *testing.T) {
 	}
 	for _, xff := range spoofs {
 		got := keyForRequest(t, true, request("10.0.0.1:443", xff))
-		if got != "203.0.113.7" {
-			t.Errorf("XFF %q gave bucket %q, want the edge-appended %q — the limit is evadable",
-				xff, got, "203.0.113.7")
-		}
+		assert.Equal(t, "203.0.113.7", got,
+			"XFF %q gave a bucket other than the edge-appended one — the limit is evadable", xff)
 	}
 }
 
@@ -106,9 +103,8 @@ func TestClientIPProxyFailsClosed(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := keyForRequest(t, true, request("10.0.0.1:443", tt.xff...)); got != "" {
-				t.Errorf("key = %q, want \"\" (errNoClientIP) — must not fall back to the proxy IP", got)
-			}
+			got := keyForRequest(t, true, request("10.0.0.1:443", tt.xff...))
+			assert.Empty(t, got, "want no key (errNoClientIP): must not fall back to the proxy IP")
 		})
 	}
 }
@@ -119,12 +115,8 @@ func TestClientIPProxyFailsClosed(t *testing.T) {
 func TestClientIPBucketsIPv6BySlash64(t *testing.T) {
 	first := keyForRequest(t, true, request("10.0.0.1:443", "2001:db8:1:2::1"))
 	second := keyForRequest(t, true, request("10.0.0.1:443", "2001:db8:1:2:ffff:ffff:ffff:ffff"))
-	if first != second {
-		t.Errorf("addresses in one /64 gave different buckets %q and %q", first, second)
-	}
-	if first != "2001:db8:1:2::" {
-		t.Errorf("bucket = %q, want the /64 prefix %q", first, "2001:db8:1:2::")
-	}
+	assert.Equal(t, first, second, "addresses in one /64 should share a bucket")
+	assert.Equal(t, "2001:db8:1:2::", first, "bucket should be the /64 prefix")
 }
 
 // TestClientIPFoldsV4MappedIPv6 checks that a client cannot alias one address
@@ -132,7 +124,5 @@ func TestClientIPBucketsIPv6BySlash64(t *testing.T) {
 func TestClientIPFoldsV4MappedIPv6(t *testing.T) {
 	plain := keyForRequest(t, true, request("10.0.0.1:443", "203.0.113.7"))
 	mapped := keyForRequest(t, true, request("10.0.0.1:443", "::ffff:203.0.113.7"))
-	if plain != mapped {
-		t.Errorf("v4 %q and v4-mapped %q landed in different buckets", plain, mapped)
-	}
+	assert.Equal(t, plain, mapped, "v4 and v4-mapped addresses should land in one bucket")
 }

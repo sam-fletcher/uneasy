@@ -102,8 +102,8 @@ describe('tableTitle: the Shake-Up and the end', () => {
 });
 
 describe('tableTitle: states nobody enters today', () => {
-	it('still reads something for the retired tone-setting phase', () => {
-		expect(title({ phase: 'tone_setting' })).toBe('Tone setting');
+	it('reads the name of a retired phase plainly', () => {
+		expect(title({ phase: 'tone_setting' as never })).toBe('Tone setting');
 	});
 
 	it('says a phase it has not heard of plainly', () => {

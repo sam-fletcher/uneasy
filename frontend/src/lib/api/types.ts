@@ -2,7 +2,7 @@
 // Split out of the former monolithic api.ts. Domain modules import these;
 // the barrel (index.ts) re-exports everything for `$lib/api` consumers.
 
-export type GamePhase = 'lobby' | 'tone_setting' | 'prologue' | 'main_event' | 'shake_up' | 'ended';
+export type GamePhase = 'lobby' | 'prologue' | 'main_event' | 'shake_up' | 'ended';
 export type ToneTopicStatus = 'default' | 'include' | 'avoid_detail' | 'never';
 export type RankingCategory = 'power' | 'knowledge' | 'esteem';
 export type AssetType = 'peer' | 'holding' | 'artifact' | 'resource';

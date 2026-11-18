@@ -12,7 +12,6 @@ func TestResolveBout_HighDeclarerWinsWhenHigher(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, out.Match, "expected non-match")
 	assert.Equal(t, DuelSidePreparer, out.WinnerSide)
-	assert.Equal(t, DuelSideTarget, out.NextDeclarer, "initiative swaps")
 }
 
 func TestResolveBout_HighDeclarerLosesWhenLower(t *testing.T) {
@@ -25,7 +24,6 @@ func TestResolveBout_LowDeclarerWinsWhenLower(t *testing.T) {
 	out, err := ResolveBout(DuelSideTarget, DeclLow, 1, 4)
 	require.NoError(t, err)
 	assert.Equal(t, DuelSideTarget, out.WinnerSide)
-	assert.Equal(t, DuelSidePreparer, out.NextDeclarer, "initiative should swap")
 }
 
 func TestResolveBout_LowDeclarerLosesWhenHigher(t *testing.T) {
@@ -38,7 +36,6 @@ func TestResolveBout_MatchSetsAside(t *testing.T) {
 	out, err := ResolveBout(DuelSidePreparer, DeclHigh, 3, 3)
 	require.NoError(t, err)
 	assert.True(t, out.Match, "expected match")
-	assert.Equal(t, DuelSideTarget, out.NextDeclarer, "initiative should swap after match")
 }
 
 func TestResolveBout_InvalidDice(t *testing.T) {

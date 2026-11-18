@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // createSecretCallers are the only files besides secrets.go that may store a
@@ -34,20 +36,15 @@ func TestSecretsAreCreatedThroughTheHelper(t *testing.T) {
 			t.Fatalf("read %s: %v", name, err)
 		}
 		text := string(src)
-		if strings.Contains(text, ".CreateSecret(") {
-			t.Errorf(
-				"%s calls CreateSecret directly; use writeSecret (secrets.go) so the secret is broadcast and logged",
-				name,
-			)
-		}
-		if strings.Contains(text, "createSecret(") && !createSecretCallers[name] {
-			t.Errorf(
-				"%s calls createSecret, which stores without announcing; use writeSecret, or add the file to createSecretCallers with a reason",
-				name,
-			)
-		}
-		if createSecretCallers[name] && !strings.Contains(text, "announceSecret(") {
-			t.Errorf("%s stores a secret with createSecret but never calls announceSecret", name)
-		}
+		assert.NotContains(t, text, ".CreateSecret(",
+			"%s calls CreateSecret directly; use writeSecret (secrets.go) so the secret is broadcast and logged", name)
+		assert.False(
+			t,
+			strings.Contains(text, "createSecret(") && !createSecretCallers[name],
+			"%s calls createSecret, which stores without announcing; use writeSecret, or add the file to createSecretCallers with a reason",
+			name,
+		)
+		assert.False(t, createSecretCallers[name] && !strings.Contains(text, "announceSecret("),
+			"%s stores a secret with createSecret but never calls announceSecret", name)
 	}
 }

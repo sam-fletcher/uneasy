@@ -12,6 +12,11 @@ import (
 type seedConfig struct {
 	currentRow int16
 
+	// maxRow is the highest current_row this phase may be seeded at: lastRecordRow
+	// for the Main Event, shakeUpRow for the Shake-Up. A Main Event seed at the
+	// Shake-Up's row would be a board live play cannot reach.
+	maxRow int16
+
 	// boardSetup controls whether seedBase lays down the Public Record board
 	// (record rows, current_row, focus player). True for phases that begin at
 	// or after the Main Event; false for pre-Main-Event phases (the prologue),
@@ -59,8 +64,17 @@ type SeedPlan struct {
 	RowOrder    int16
 }
 
+// lastRecordRow is the last public-record row; the Main Event plays rows 1 to
+// lastRecordRow.
+const lastRecordRow = 13
+
+// shakeUpRow is the current_row of a game in the Shake-Up: one past the last
+// public-record row, which advanceRowInner pushes it to on leaving the Main
+// Event.
+const shakeUpRow = lastRecordRow + 1
+
 // WithCurrentRow overrides the game's current_row. Default is 1 for main_event
-// and 13 for shake_up.
+// and shakeUpRow for shake_up.
 func WithCurrentRow(row int16) Option {
 	return func(c *seedConfig) { c.currentRow = row }
 }
@@ -120,8 +134,8 @@ func WithShakeUpStep(step int16) Option {
 // applyOptions builds a seedConfig from the per-phase default row plus opts.
 // boardSetup defaults on (the Main-Event / Shake-Up phases have a board); the
 // prologue seed turns it off after this.
-func applyOptions(defaultRow int16, opts []Option) seedConfig {
-	c := seedConfig{currentRow: defaultRow, boardSetup: true}
+func applyOptions(defaultRow, maxRow int16, opts []Option) seedConfig {
+	c := seedConfig{currentRow: defaultRow, maxRow: maxRow, boardSetup: true}
 	for _, o := range opts {
 		o(&c)
 	}
@@ -134,8 +148,8 @@ func applyOptions(defaultRow int16, opts []Option) seedConfig {
 // reachability is the job of the play-forward layer / engine decoupling, not
 // the seed.
 func (c *seedConfig) validate(n int) error {
-	if c.currentRow < 1 || c.currentRow > 13 {
-		return fmt.Errorf("current_row %d out of range 1..13", c.currentRow)
+	if c.currentRow < 1 || c.currentRow > c.maxRow {
+		return fmt.Errorf("current_row %d out of range 1..%d", c.currentRow, c.maxRow)
 	}
 	for cat, order := range c.rankings {
 		if err := validatePermutation(order, n); err != nil {
@@ -146,8 +160,8 @@ func (c *seedConfig) validate(n int) error {
 		if p.PreparerIdx < 0 || p.PreparerIdx >= n {
 			return fmt.Errorf("plans[%d]: preparer index %d out of range 0..%d", i, p.PreparerIdx, n-1)
 		}
-		if p.Row < 1 || p.Row > 13 {
-			return fmt.Errorf("plans[%d]: row %d out of range 1..13", i, p.Row)
+		if p.Row < 1 || p.Row > lastRecordRow {
+			return fmt.Errorf("plans[%d]: row %d out of range 1..%d", i, p.Row, lastRecordRow)
 		}
 	}
 	return nil

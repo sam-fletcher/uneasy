@@ -41,8 +41,7 @@ the bug — they get slower and flakier going down:
 2. **Integration test** in `handler/` — the real handler, a real database,
    a game seeded straight into the right phase with `gametest` (`SeedMainEvent`,
    `SeedShakeUp` and their options). Seeds aren't always exactly what live
-   play produces — `SeedShakeUp` leaves the game on row 13 where a live one
-   is on row 14, and there is no seed for a finished game — so check the
+   play produces — there is no seed for a finished game — so check the
    seeded state matches the reported one before trusting a green result. `make test-integration-run RUN=TestX
    PKG=./handler/...` on a **private** database (the `test-worktree` skill).
 3. **Vitest** for frontend logic in `frontend/src/lib/` (`waitingOn.ts`,

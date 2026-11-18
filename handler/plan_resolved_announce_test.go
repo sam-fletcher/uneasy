@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // A plan that closes with a result must say so the same way everywhere: the
@@ -37,11 +39,9 @@ func TestPlansResolveThroughResolvePlan(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
-		if strings.Contains(string(src), ".SetPlanResult(") || strings.Contains(string(src), "setPlanResult(") {
-			t.Errorf(
-				"%s calls SetPlanResult directly; close the plan with resolvePlan so the event and the log line go with it",
-				name,
-			)
-		}
+		direct := strings.Contains(string(src), ".SetPlanResult(") || strings.Contains(string(src), "setPlanResult(")
+		assert.False(t, direct,
+			"%s calls SetPlanResult directly; close the plan with resolvePlan so the event and the log line go with it",
+			name)
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // The regression net for rule 3 of adr/LOG_MARKS_PLAN.md — "never bake a mark
@@ -60,6 +62,7 @@ func TestNoMarkCharactersInGoStringLiterals(t *testing.T) {
 
 	fset := token.NewFileSet()
 	scanned := 0
+	var offenders []string
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -86,10 +89,8 @@ func TestNoMarkCharactersInGoStringLiterals(t *testing.T) {
 			}
 			for _, r := range value {
 				if desc, bad := forbiddenMarkRunes[r]; bad {
-					pos := fset.Position(lit.Pos())
-					t.Errorf("%s:%d: string literal contains the %s — marks belong in "+
-						"LogMark.svelte's mark slot, never a Go body string (adr/LOG_MARKS_PLAN.md rule 3)",
-						name, pos.Line, desc)
+					offenders = append(offenders, name+":"+strconv.Itoa(fset.Position(lit.Pos()).Line)+
+						": string literal contains the "+desc)
 				}
 			}
 			return true
@@ -99,4 +100,6 @@ func TestNoMarkCharactersInGoStringLiterals(t *testing.T) {
 	if scanned == 0 {
 		t.Fatal("scanned no handler source files — is the test running in handler/?")
 	}
+	assert.Empty(t, offenders, "marks belong in LogMark.svelte's mark slot, never a Go body string "+
+		"(adr/LOG_MARKS_PLAN.md rule 3)")
 }
