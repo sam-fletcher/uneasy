@@ -442,7 +442,7 @@ for (const outcome of ['make', 'mar'] as const) {
 		const { alice, bob, carol } = await openAll(g);
 
 		for (const p of [alice, bob, carol]) {
-			await expect(p.getByText(outcome === 'make' ? '✓ Make' : '✗ Mar')).toBeVisible();
+			await expect(p.getByText(outcome === 'make' ? 'Result: Make' : 'Result: Mar', { exact: true })).toBeVisible();
 			await expect(p.getByText('Invoked artifacts (1)')).toBeVisible();
 			await expectNoHorizontalScroll(p);
 		}

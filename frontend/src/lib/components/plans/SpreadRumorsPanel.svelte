@@ -880,7 +880,7 @@
 				class:resolve-mirror={!isActor} disabled={!isActor}>
 				<p class="choices-header">
 					Result: <span class="outcome-{rollOutcome}">
-						{rollOutcome === 'make' ? '✓ Make' : '✗ Mar'}
+						{rollOutcome === 'make' ? 'Make' : 'Mar'}
 					</span>
 				</p>
 				<p class="choices-note">

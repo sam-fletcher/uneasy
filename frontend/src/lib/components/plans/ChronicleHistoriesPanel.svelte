@@ -434,7 +434,7 @@
 		{#if rollOutcome === 'make'}
 			<div class="choices-section">
 				<p class="choices-header">
-					Result: <span class="outcome-make">✓ Make</span>
+					Result: <span class="outcome-make">Make</span>
 				</p>
 
 				{#if makeRemaining > 0}
@@ -560,7 +560,7 @@
 			<!-- Every player picks one option during mar ─────────────────── -->
 			<div class="choices-section">
 				<p class="choices-header">
-					Result: <span class="outcome-mar">✗ Mar</span>
+					Result: <span class="outcome-mar">Mar</span>
 				</p>
 				<p class="choices-note">
 					Each player (including the preparer) chooses one option from the

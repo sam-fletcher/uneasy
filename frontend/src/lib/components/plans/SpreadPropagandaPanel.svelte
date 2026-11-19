@@ -468,7 +468,7 @@
 		{:else if rollOutcome === 'mar' && !choicesDone && amChoiceActor}
 			<div class="choices-section">
 				<p class="choices-header">
-					Result: <span class="outcome-mar">✗ Mar</span>
+					Result: <span class="outcome-mar">Mar</span>
 				</p>
 				<p class="choices-note">
 					Pick options equal to (difficulty − result) (repeatable){#if marPicksNeeded != null}: choose exactly {marPicksNeeded}{/if}.
