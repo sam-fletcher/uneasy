@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createConnection, DISCONNECT_NOTICE_DELAY_MS, type ConnectionStatus } from './ws';
+import {
+	createConnection,
+	DISCONNECT_NOTICE_DELAY_MS,
+	FOREGROUND_MIN_GAP_MS,
+	type ConnectionStatus,
+} from './ws';
 
 // createConnection talks to four browser globals (WebSocket, window, document,
 // location). The vitest env here is `node`, so stub all four. The fake socket
@@ -55,6 +60,7 @@ function listenerStub(extra: Record<string, unknown> = {}) {
 }
 
 let doc: ReturnType<typeof listenerStub>;
+let win: ReturnType<typeof listenerStub>;
 
 /** Number of sockets the module has created so far. */
 const socketCount = () => FakeWebSocket.instances.length;
@@ -83,7 +89,7 @@ beforeEach(() => {
 	vi.spyOn(console, 'log').mockImplementation(() => {});
 
 	doc = listenerStub({ visibilityState: 'visible' });
-	const win = listenerStub();
+	win = listenerStub();
 
 	vi.stubGlobal('WebSocket', FakeWebSocket);
 	vi.stubGlobal('document', doc.target);
@@ -745,6 +751,188 @@ describe('createConnection: a socket that has been replaced', () => {
 		release2(true);
 		await vi.advanceTimersByTimeAsync(0);
 		expect(received).toEqual(['law.enacted']);
+		conn.disconnect();
+	});
+});
+
+// ── Coming back to the foreground ─────────────────────────────────────────────
+//
+// A tab with a live socket used to do nothing when it became visible, so it
+// never looked at the player's "seen" markers again: open Laws on one device and
+// the dot stayed up on the phone in your pocket. The page now supplies
+// `onForeground`, and these tests pin when it is called: on a live connection,
+// for both a tab switch and a window gaining focus, never while a reconnect is
+// already going to read everything, and not more than once per burst.
+
+function pressFocus() {
+	for (const fn of win.listeners.get('focus') ?? []) fn(new Event('focus'));
+}
+
+function foregrounded(onForeground?: () => void | Promise<void>) {
+	let calls = 0;
+	const conn = createConnection(
+		7,
+		() => {},
+		async () => {
+			resyncCalls++;
+			return true;
+		},
+		{
+			onForeground: () => {
+				calls++;
+				return onForeground?.();
+			},
+		},
+	);
+	return { conn, calls: () => calls };
+}
+
+describe('createConnection: the page returns to the foreground', () => {
+	it('calls onForeground when the tab becomes visible on a live connection', async () => {
+		const { conn, calls } = foregrounded();
+		await openAndSettle();
+		expect(calls()).toBe(0);
+
+		fireVisibility('visible');
+		expect(calls()).toBe(1);
+		expect(socketCount(), 'it needs no new socket').toBe(1);
+		conn.disconnect();
+	});
+
+	it('calls it when the window gains focus: a second window never changes visibility', async () => {
+		const { conn, calls } = foregrounded();
+		await openAndSettle();
+
+		pressFocus();
+		expect(calls()).toBe(1);
+		conn.disconnect();
+	});
+
+	it('is not called when the tab is hidden', async () => {
+		const { conn, calls } = foregrounded();
+		await openAndSettle();
+
+		fireVisibility('hidden');
+		expect(calls()).toBe(0);
+		conn.disconnect();
+	});
+
+	it('is not called before the first resync has landed: that fetch reads the markers itself', async () => {
+		let release!: (landed: boolean) => void;
+		const gate = new Promise<boolean>((resolve) => (release = resolve));
+		let calls = 0;
+		const conn = createConnection(7, () => {}, () => gate, { onForeground: () => { calls++; } });
+		latestSocket().open(); // open, but the snapshot is still in flight
+		await vi.advanceTimersByTimeAsync(0);
+
+		fireVisibility('visible');
+		pressFocus();
+		expect(calls).toBe(0);
+
+		release(true);
+		await vi.advanceTimersByTimeAsync(0);
+		await vi.advanceTimersByTimeAsync(FOREGROUND_MIN_GAP_MS);
+		fireVisibility('visible');
+		expect(calls).toBe(1);
+		conn.disconnect();
+	});
+
+	it('is not called while a reconnect is pending: the reconnect resync reads everything', async () => {
+		const { conn, calls } = foregrounded();
+		await openAndSettle();
+		latestSocket().fail(); // dropped; a retry is 1s away
+
+		fireVisibility('visible');
+		expect(socketCount(), 'visible reconnects at once, as before').toBe(2);
+		expect(calls(), 'a second fetch of the same markers would only race the resync').toBe(0);
+
+		await openAndSettle();
+		expect(calls()).toBe(0);
+		conn.disconnect();
+	});
+
+	it('is not called on a socket that is down and not yet retrying', async () => {
+		const { conn, calls } = foregrounded();
+		await openAndSettle();
+		latestSocket().fail();
+		await vi.advanceTimersByTimeAsync(1000); // retry fires, socket 2 is CONNECTING
+
+		fireVisibility('visible');
+		pressFocus();
+		expect(calls()).toBe(0);
+		expect(socketCount(), 'it must not leak a second socket').toBe(2);
+		conn.disconnect();
+	});
+
+	it('is called once for the visibility-and-focus pair one return produces', async () => {
+		const { conn, calls } = foregrounded();
+		await openAndSettle();
+
+		fireVisibility('visible');
+		pressFocus();
+		expect(calls()).toBe(1);
+		conn.disconnect();
+	});
+
+	it('is called again after the burst window, not only the first time', async () => {
+		const { conn, calls } = foregrounded();
+		await openAndSettle();
+
+		fireVisibility('visible');
+		await vi.advanceTimersByTimeAsync(FOREGROUND_MIN_GAP_MS - 1);
+		fireVisibility('visible');
+		expect(calls(), 'still inside the window').toBe(1);
+
+		await vi.advanceTimersByTimeAsync(1);
+		fireVisibility('visible');
+		expect(calls()).toBe(2);
+		conn.disconnect();
+	});
+
+	it('is not called after disconnect(), and drops its window listener', async () => {
+		const { conn, calls } = foregrounded();
+		await openAndSettle();
+
+		conn.disconnect();
+		fireVisibility('visible');
+		pressFocus();
+		expect(calls()).toBe(0);
+		expect(win.listeners.get('focus')?.size ?? 0).toBe(0);
+	});
+
+	it('survives a callback that throws or rejects: the connection carries on', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			const { conn, calls } = foregrounded(() => {
+				throw new Error('sync');
+			});
+			await openAndSettle();
+			expect(() => fireVisibility('visible')).not.toThrow();
+			expect(calls()).toBe(1);
+			conn.disconnect();
+
+			const second = foregrounded(() => Promise.reject(new Error('async')));
+			await openAndSettle();
+			expect(() => fireVisibility('visible')).not.toThrow();
+			await vi.advanceTimersByTimeAsync(0);
+			// Node reports an unhandled rejection a tick after the microtasks drain.
+			await new Promise<void>((resolve) => process.nextTick(resolve));
+			await new Promise<void>((resolve) => process.nextTick(resolve));
+			expect(second.calls()).toBe(1);
+			expect(unhandled, 'a rejection from the callback must not escape').toEqual([]);
+			second.conn.disconnect();
+		} finally {
+			process.off('unhandledRejection', onUnhandled);
+		}
+	});
+
+	it('works without a callback: the option is optional', async () => {
+		const conn = createConnection(7, () => {}, async () => true);
+		await openAndSettle();
+		expect(() => fireVisibility('visible')).not.toThrow();
+		expect(() => pressFocus()).not.toThrow();
 		conn.disconnect();
 	});
 });

@@ -244,7 +244,25 @@ export interface ConnectionOptions {
 	 *  connection, then with 'live' when it recovers. Never called for a drop
 	 *  that heals sooner, and never called after disconnect(). */
 	onStatus?: (status: ConnectionStatus) => void;
+	/** Called when the player comes back to this page while the connection is
+	 *  live: the tab becomes visible, or its window gains focus. For work that
+	 *  events can't do, chiefly looking again at state the server keeps per
+	 *  player and never pushes (the "seen" markers: another device may have moved
+	 *  them). Not called when a reconnect is already under way, because its
+	 *  resync reads everything; not called before the first resync has landed;
+	 *  and at most once per FOREGROUND_MIN_GAP_MS, so one return that raises both
+	 *  events (or a player flicking between apps) costs one call. A throw or a
+	 *  rejection is swallowed: whatever this does is best effort. */
+	onForeground?: () => void | Promise<void>;
 }
+
+/** The shortest gap between two onForeground calls. Returning to a tab raises
+ *  `visibilitychange`, and on a desktop usually `focus` as well, within
+ *  milliseconds of each other; this folds the pair into one. Short on purpose:
+ *  a longer window would hide a real second return (read Laws on the laptop,
+ *  pick up the phone, put it down and pick it up again), and the call it guards
+ *  is one small request. */
+export const FOREGROUND_MIN_GAP_MS = 2_000;
 
 /** How long the table may go without a live connection before it says so.
  *
@@ -379,8 +397,42 @@ export function createConnection(
 			retryTimer = null;
 			connect();
 		}
+		// After a reconnect above this is a no-op: the connection is not live
+		// until the new socket's resync lands, and that resync re-reads everything,
+		// the per-player markers included. (A pending retry always means "not
+		// live": the retry is only ever scheduled from `close`.)
+		notifyForeground();
 	}
 	document.addEventListener('visibilitychange', onVisibility);
+
+	// A window that was already visible and gains focus (two windows side by
+	// side, a second monitor) raises `focus` and not `visibilitychange`, and is
+	// just as much "the player came back". It only asks for the foreground call:
+	// reconnecting stays tied to the page becoming visible, as before.
+	function onFocus() {
+		if (stopped) return;
+		notifyForeground();
+	}
+	window.addEventListener('focus', onFocus);
+
+	// What the page wants done when the player returns. Only on a live
+	// connection: a socket that is down, still connecting or mid-resync is about
+	// to run (or is running) a resync that reads everything, so a second read
+	// would only race it. Folded to one call per FOREGROUND_MIN_GAP_MS.
+	let lastForegroundAt = -Infinity;
+	function notifyForeground() {
+		if (!options.onForeground || !live) return;
+		const now = Date.now();
+		if (now - lastForegroundAt < FOREGROUND_MIN_GAP_MS) return;
+		lastForegroundAt = now;
+		try {
+			// Best effort by contract: neither a throw nor a rejection may reach
+			// the event dispatch that called us.
+			void Promise.resolve(options.onForeground()).catch(() => {});
+		} catch {
+			/* see above */
+		}
+	}
 
 	// The "Try now" button's action: a human asking for the retry that
 	// onVisibility gives a returning one. It makes the same two moves (reset
@@ -548,6 +600,7 @@ export function createConnection(
 			window.removeEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
 			window.removeEventListener('uneasy:prepare_plan_draft', onPreparePlanDraft);
 			document.removeEventListener('visibilitychange', onVisibility);
+			window.removeEventListener('focus', onFocus);
 			ws?.close();
 		},
 		ready,

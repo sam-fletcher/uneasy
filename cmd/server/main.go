@@ -445,6 +445,7 @@ func setupRouter(
 			r.Get("/tables/{id}/laws", handler.ListLaws(store))
 			r.Patch("/laws/{lawId}", handler.UpdateLaw(store, manager))
 			r.Get("/tables/{id}/rumors", handler.ListRumors(store))
+			r.Get("/tables/{id}/seen", handler.GetSeenMarkers(store))
 			r.Put("/tables/{id}/seen/laws", handler.MarkLawsSeen(store))
 			r.Put("/tables/{id}/seen/rumors", handler.MarkRumorsSeen(store))
 			r.Patch("/rumors/{rumorId}", handler.UpdateRumor(store, manager))

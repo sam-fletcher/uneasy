@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { Law, Rumor } from './types';
+import type { Law, LawsRumorsSeen, Rumor } from './types';
 
 export function listLaws(gameID: number): Promise<{ laws: Law[]; seen_rev: number }> {
 	return apiFetch(`/tables/${gameID}/laws`);
@@ -44,4 +44,18 @@ export function markRumorsSeen(gameID: string | number, seenRev: number): Promis
 		method: 'PUT',
 		body: JSON.stringify({ seen_rev: seenRev }),
 	});
+}
+
+/** The reply of getSeenMarkers: the Laws and Rumors markers as `GET /state`
+ *  carries them, and chat's as `GET /posts` does. */
+export type SeenMarkersReply = LawsRumorsSeen & { last_read_post_id: number };
+
+/** The viewer's three "new to me" markers in one small read: the highest law rev
+ *  and rumor rev they have seen, and the newest chat post they have read. This is
+ *  what a tab asks when the player comes back to it, to learn what they read on
+ *  another device (see $lib/seenMarkers). It is the same data `GET /state` and
+ *  `GET /posts` carry, without the board or the feed around it. Always the
+ *  caller's own markers; nothing here names another player. */
+export function getSeenMarkers(gameID: string | number): Promise<SeenMarkersReply> {
+	return apiFetch(`/tables/${gameID}/seen`);
 }

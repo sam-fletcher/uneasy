@@ -63,6 +63,7 @@ func newLawsRumorsHarness(t *testing.T) *lawsRumorsHarness {
 	r.Get("/api/tables/{id}/rumors", ListRumors(store))
 	r.Put("/api/tables/{id}/seen/laws", MarkLawsSeen(store))
 	r.Put("/api/tables/{id}/seen/rumors", MarkRumorsSeen(store))
+	r.Get("/api/tables/{id}/seen", GetSeenMarkers(store))
 	r.Patch("/api/laws/{lawId}", UpdateLaw(store, manager))
 	r.Patch("/api/rumors/{rumorId}", UpdateRumor(store, manager))
 	return &lawsRumorsHarness{t: t, pool: pool, q: q, manager: manager, tg: tg, router: r, tokens: tokens}

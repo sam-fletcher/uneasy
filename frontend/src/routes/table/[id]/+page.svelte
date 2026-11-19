@@ -20,7 +20,7 @@
 		getActiveRollForGame, listBankedDice,
 		listPlans, listPlanTokens,
 		getVisibleSecrets,
-		markLawsSeen, markRumorsSeen, listLaws, listRumors,
+		markLawsSeen, markRumorsSeen, listLaws, listRumors, getSeenMarkers,
 		getActiveScene,
 		type Scene,
 		type ScenePeerView,
@@ -78,6 +78,7 @@
 	import { tableLayout, watchTableLayout } from '$lib/tableLayout.svelte';
 	import { provideSheetHost } from '$lib/sheetHost';
 	import { hasNewEntries, seenThrough } from '$lib/lawsRumorsSeen';
+	import { mergeSeenMarkers, rereadCouldClearADot, dividerMarkerAfterReread } from '$lib/seenMarkers';
 	import { provideSecretCounts } from '$lib/secretCountsContext';
 	import { provideSuccession } from '$lib/successionContext';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
@@ -399,6 +400,42 @@
 			}, 500);
 		}
 	});
+
+	// Your other devices: reading Laws, Rumors or chat there moves the markers on
+	// the server, and that is private to you, so nothing is pushed here. A tab
+	// that stays open would keep its dot until it reloaded. So when you come
+	// back to this tab (createConnection's onForeground, below) it asks the
+	// server for the three markers and folds them in. Only forwards, so a reply
+	// that was in flight while you read something here, or arrives after a later
+	// one, can't bring a dot back. Best effort: a miss leaves a dot for the next
+	// return.
+	//
+	// A read can only clear dots, so with none lit it is skipped: most returns
+	// to a phone cost nothing. (A marker not loaded yet counts as worth asking.)
+	async function rereadSeenMarkers() {
+		if (!rereadCouldClearADot({
+			lawsNew, rumorsNew, unreadChat: hasUnreadChat, laws: lawsSeenRev, rumors: rumorsSeenRev,
+		})) return;
+		try {
+			const fresh = await getSeenMarkers(gameID);
+			const current = { laws: lawsSeenRev, rumors: rumorsSeenRev, chat: chatLastReadPostID };
+			const next = mergeSeenMarkers(current, fresh);
+			// Chat's "4 new" divider has its own rule (dividerMarkerAfterReread):
+			// it follows the dot only when chat was read on another device and Chat
+			// is off screen, so a divider this device's own reading left behind
+			// survives a return that only moved Laws or Rumors.
+			chatInitialReadMarker = dividerMarkerAfterReread(
+				{ divider: chatInitialReadMarker, chat: chatLastReadPostID, chatOnScreen: paneShown.chat },
+				fresh,
+			);
+			if (next === current) return;
+			lawsSeenRev = next.laws;
+			rumorsSeenRev = next.rumors;
+			chatLastReadPostID = next.chat;
+		} catch {
+			/* best effort */
+		}
+	}
 
 	// The table's one title ("Row 6 · Seek Answers"). The plan comes from the
 	// row state, which the server decides once, so this and the profile page's
@@ -835,6 +872,7 @@
 			mePromise = getMe();
 			const conn = createConnection(gameID, handleWSMessage, loadGameState, {
 				onStatus: (status) => (connectionDown = status === 'down'),
+				onForeground: rereadSeenMarkers,
 			});
 			disconnect = conn.disconnect;
 			retryConnectionNow = conn.retryNow;
