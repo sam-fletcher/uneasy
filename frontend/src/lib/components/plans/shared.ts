@@ -120,13 +120,13 @@ export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	// delayed / broken_journey) and rendered directly in MakeIntroductionsPanel,
 	// not via the flat MakeMarPicker — so it has no entry here.
 	spread_propaganda: [
-		{ key: 'give_peer',    label: "(a) A peer leaves your retinue (give to another player)",
-		  summary: "(a) A peer leaves the preparer's retinue (given to another player)" },
-		{ key: 'lay_low',      label: '(b) Keep your head down — next plan cannot involve esteem',
-		  summary: "(b) The preparer keeps their head down — their next plan cannot involve esteem" },
-		{ key: 'break_self',   label: '(c) Word of your laughable ideas gets around — break yourself',
-		  summary: "(c) Word of the preparer's laughable ideas gets around — they break one of their own assets" },
-		{ key: 'counter_prop', label: "(d) Top interferer may spread their own propaganda now, or decline" },
+		{ key: 'give_peer',    label: "A peer leaves your retinue (give to another player)",
+		  summary: "A peer leaves the preparer's retinue (given to another player)" },
+		{ key: 'lay_low',      label: 'Keep your head down — next plan cannot involve esteem',
+		  summary: "The preparer keeps their head down — their next plan cannot involve esteem" },
+		{ key: 'break_self',   label: 'Word of your laughable ideas gets around — break yourself',
+		  summary: "Word of the preparer's laughable ideas gets around — they break one of their own assets" },
+		{ key: 'counter_prop', label: "The top interferer may spread their own propaganda now, or decline" },
 	],
 };
 

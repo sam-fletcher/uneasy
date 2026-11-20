@@ -38,3 +38,19 @@ describe('Spread Propaganda mar after a zero-pick commit', () => {
 		expect(body).toContain('Complete plan');
 	});
 });
+
+// The options carried the book's (a)-(d) lettering, which meant something on the
+// printed page and nothing on screen: nothing here refers to a letter, so it was a
+// stray prefix on every line of the picker and the summary.
+describe('Spread Propaganda mar option labels', () => {
+	const strip = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+
+	it('are written in words, without the letters', () => {
+		const t = strip(renderMar({ spread_propaganda: { pre_roll_done: true } }));
+		expect(t).toContain('A peer leaves your retinue');
+		expect(t).toContain('Keep your head down');
+		expect(t).toContain('Word of your laughable ideas gets around');
+		expect(t).toContain('The top interferer may spread their own propaganda now, or decline');
+		expect(t).not.toMatch(/\([a-d]\) /);
+	});
+});

@@ -24,6 +24,7 @@
 	} from './shared';
 	import { spGivePeer, spBreakSelf, createArtifact, forfeitSpreadPropagandaStep } from '$lib/api';
 	import { destructionWarning } from '$lib/assetRisk';
+	import { counterPropLine } from '$lib/plans/interference';
 
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -57,6 +58,7 @@
 	const gameID = $derived(ctx.gameID);
 	const assets = $derived(ctx.assets);
 	const players = $derived(ctx.players);
+	const rankings = $derived(ctx.rankings);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
 	const rollOutcome = $derived(ctx.rollOutcome);
@@ -216,6 +218,18 @@
 		if (rollDice.dice == null) return null;
 		return rollDice.dice.some(d => d.is_interference) ? null : 'nobody interfered with this roll';
 	});
+
+	// Who the counter-propaganda option would go to, for the line under it. Empty
+	// until the dice have loaded, when nobody interfered (the option is then greyed
+	// with that reason), and on a counter-propaganda plan, where the option is shut.
+	const topInterfererLine = $derived(
+		counterPropLine({
+			isCounter: spData.original_plan_id != null,
+			dice: rollDice != null && rollDice.rollID === activeRoll?.id ? rollDice.dice : null,
+			rankings,
+			nameOf: id => playerName(players, id),
+		}),
+	);
 
 	const marCap = $derived<Record<string, number>>({
 		lay_low: 1,
@@ -484,6 +498,9 @@
 						incDisabled={(marCounts[opt.key] ?? 0) >= (marCap[opt.key] ?? 0) || (marPicksNeeded != null && marTotalPicked >= marPicksNeeded)}>
 						{opt.label}{#if note}<span class="choices-note muted"> — {note}</span>{/if}
 					</Stepper>
+					{#if opt.key === 'counter_prop' && topInterfererLine}
+						<p class="choices-note muted">{topInterfererLine}</p>
+					{/if}
 				{/each}
 				<p class="choices-note">
 					Total picks: <strong>{marTotalPicked}</strong>{#if marPicksNeeded != null}{' '}/ {marPicksNeeded}{/if}

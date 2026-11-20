@@ -38,6 +38,8 @@ describe('ChoicesApplied', () => {
 		});
 		expect(body).not.toMatch(/\byour\b|\byourself\b/i);
 		expect(body).toContain("preparer's retinue");
+		// And without the book's lettering, which names nothing on screen.
+		expect(body).not.toMatch(/\([a-d]\) /);
 	});
 });
 
