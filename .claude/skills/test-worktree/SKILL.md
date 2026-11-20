@@ -67,7 +67,9 @@ Every spec, helper and the Playwright config take their base URL from
 `E2E_BASE_URL` (via `frontend/tests/e2e/baseUrl.ts`), defaulting to `:8090`. A new
 spec must import `E2E` from there rather than writing a URL, or it will quietly
 test `main` against a private server (`grep -rn 8090 frontend/tests` should
-find only `baseUrl.ts`). `shot.mjs` also honours `E2E_BASE_URL`, but its
+find only `baseUrl.ts`). It must import `test` from `./fixtures` too, not from
+`@playwright/test`, or the table's error-boundary fallback won't fail it (a
+unit test enforces this). `shot.mjs` also honours `E2E_BASE_URL`, but its
 fallback stays the dev server `:8080`; `--base` overrides both.
 
 Stop the server and drop the database when you finish. Never leave a server
