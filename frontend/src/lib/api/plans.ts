@@ -672,11 +672,16 @@ export function advanceLiaise(planID: number): Promise<{ plan_id: number; phase:
 	return apiFetch(`/plans/${planID}/advance-liaise`, { method: 'POST' });
 }
 
-/** Clandestinely Liaise (phase 2) — commit a secret-bearing asset. */
-export function keepSecret(planID: number, assetID: number): Promise<PlanEcho> {
+/**
+ * Clandestinely Liaise (phase 2) — commit a secret-bearing asset and write the
+ * meeting on its underside. `text` is the secret itself: it goes to the server in
+ * this request and nowhere else, never into a live draft, because a draft is
+ * relayed to every player as it is typed.
+ */
+export function keepSecret(planID: number, assetID: number, text: string): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/keep-secret`, {
 		method: 'POST',
-		body: JSON.stringify({ asset_id: assetID }),
+		body: JSON.stringify({ asset_id: assetID, text }),
 	});
 }
 
