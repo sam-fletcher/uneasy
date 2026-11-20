@@ -245,7 +245,7 @@
 			{/if}
 
 			{#if isResolving && amStepActor && hostMakesLeft > 0 && !fest.pendingChallenge}
-				<HostChoosing {plan} {fest} {players} {assets} {onPlansChanged} />
+				<HostChoosing {plan} {fest} {players} {assets} {blockedByOtherRoll} {activeRollerID} {onPlansChanged} />
 			{/if}
 
 			{#if isResolving && amStepActor && !fest.pendingChallenge

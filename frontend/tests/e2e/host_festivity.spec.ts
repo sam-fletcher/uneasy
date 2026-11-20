@@ -212,6 +212,12 @@ test('one roll at a time: while a roll-and-choice is open, nobody else may act �
 	await expect(carol.getByRole('button', { name: 'Roll · difficulty 2' })).toBeDisabled();
 	await expect(carol.getByRole('button', { name: 'Opt out' })).toBeDisabled();
 
+	// The host has her hosting make but the server would refuse it now, so she is
+	// told to wait rather than handed a picker that can only fail.
+	await expect(alice.getByText('Waiting for bob to finish their roll…')).toBeVisible();
+	await expect(alice.getByText('Take a Make — pick one')).toHaveCount(0);
+	await expect(alice.getByRole('button', { name: /Take this Make/ })).toHaveCount(0);
+
 	// The server refuses every other festivity action with the lock's own 409 —
 	// including the host's.
 	await expectLocked(await act(g, 'carol', planID, 'guest-roll', { action: 'roll' }));
@@ -225,9 +231,11 @@ test('one roll at a time: while a roll-and-choice is open, nobody else may act �
 	await expect(carol.getByText('Waiting for bob to finish their roll…')).toBeVisible();
 	await expect(alice.getByRole('button', { name: 'End the event' })).toBeDisabled();
 
-	// Bob concludes; the table is free again.
+	// Bob concludes; the table is free again, and the host's picker is back.
 	await choose(g, 'bob', planID, { choice: 'spread_rumor', rumor_text: RUMOR });
 	await expect(carol.getByText('Waiting for bob to finish their roll…')).toHaveCount(0);
+	await expect(alice.getByText('Waiting for bob to finish their roll…')).toHaveCount(0);
+	await expect(alice.getByText('Take a Make — pick one')).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Roll · difficulty 2' })).toBeEnabled();
 	await optOut(g, 'carol', planID);
 	const res = await act(g, 'alice', planID, 'host-choice', { choice: 'spread_rumor', rumor_text: RUMOR });
@@ -350,6 +358,7 @@ test('the host spends an earned make on a duel; a guest bound by accept_duels ca
 	// Only the target is asked; everyone else sees the table paused.
 	await expect(dave.getByRole('button', { name: 'Accept challenge' })).toBeEnabled();
 	await expect(dave.getByRole('button', { name: 'Decline' })).toBeEnabled();
+	await expect(dave.getByText("you can't decline")).toHaveCount(0);
 	await expect(carol.getByText('Awaiting the target')).toBeVisible();
 	await expect(alice.getByText('Awaiting the target')).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Accept challenge' })).toHaveCount(0);
@@ -368,6 +377,9 @@ test('the host spends an earned make on a duel; a guest bound by accept_duels ca
 	await expect.poll(async () => (await festivity(g, planID)).host_makes_taken).toEqual(['challenge_duel', 'challenge_duel']);
 	await expect(carol.getByRole('button', { name: 'Accept challenge' })).toBeEnabled();
 	await expect(carol.getByRole('button', { name: 'Decline' })).toBeDisabled();
+	// And she is told why on the page, where a touch screen can read it.
+	await expect(carol.getByText("You must accept any duel challenge during this event, so you can't decline.")).toBeVisible();
+	await expect(alice.getByText("you can't decline")).toHaveCount(0);
 	await expectStatus(await act(g, 'carol', planID, 'respond-challenge', { accept: false }), 409);
 	await expectStatus(await act(g, 'alice', planID, 'host-choice', { choice: 'spread_rumor', rumor_text: RUMOR }), 409);
 });
