@@ -32,6 +32,7 @@
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import OptionCard from '$lib/components/shared/OptionCard.svelte';
+	import FormField from './FormField.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import FinishedStep from './shared/FinishedStep.svelte';
 
@@ -301,19 +302,22 @@
 					right now (own plans, other demands, Make War, resolving/resolved,
 					and already-demanded plans are excluded).</p>
 			{:else}
-				<label class="form-label">
-					Target plan:
-					<select bind:value={targetPlanID} class="form-select target-select">
-						<option value={null}>— pick a plan to demand against —</option>
-						{#each targetablePlans as p}
-							<option value={p.id}>
-								{PLAN_SHORT[p.plan_type] ?? p.plan_type}
-								by {playerName(players, p.preparer_id)}
-								(row {p.row_number})
-							</option>
+				<!-- A plan to aim at is an option card (the house piece, as the counter-demand
+				     picker below), not a native select: the browser draws its own list, in
+				     its own colours, and a phone opens it as a system sheet. -->
+				<FormField label="Target plan">
+					<div class="option-list">
+						{#each targetablePlans as p (p.id)}
+							{@const picked = targetPlanID === p.id}
+							<OptionCard
+								title="{PLAN_SHORT[p.plan_type] ?? p.plan_type} by {playerName(players, p.preparer_id)}"
+								description="Row {p.row_number}"
+								selected={picked}
+								onclick={() => (targetPlanID = picked ? null : p.id)}
+							/>
 						{/each}
-					</select>
-				</label>
+					</div>
+				</FormField>
 
 				<label class="form-label">
 					Motivation:
@@ -450,12 +454,3 @@
 		{/if}
 	</ResolvingCard>
 {/if}
-
-<style>
-	/* The plan list can be long ("Chronicle Histories by otto (row 11)"), so the
-	   select takes the width of the column rather than its longest option. */
-	.target-select {
-		width: 100%;
-		box-sizing: border-box;
-	}
-</style>
