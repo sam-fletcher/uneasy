@@ -29,7 +29,10 @@
 	import CardPicker from './CardPicker.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
-	import { choicesCommitted, parseResolutionData, playerName, breakableAssets, resolutionActorID } from './shared';
+	import {
+		choicesCommitted, parseResolutionData, playerName, breakableAssets, resolutionActorID,
+		seekAnswersMarPenalty,
+	} from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import { hiddenCount } from '$lib/secretCounts';
 	import { useSecretCounts } from '$lib/secretCountsContext';
@@ -274,6 +277,17 @@
 		resourcesWithMarginalia
 			.filter(a => a.owner_id === preparerID && !flawedIDs.has(a.id)),
 	);
+	// What a mar will cost the preparer, known as soon as the dice land: the
+	// shortfall, capped at the resources they can still flaw (the server fixes the
+	// same number when the choices are applied). Null on a make, or before the dice.
+	const marPenalty = $derived.by(() => {
+		if (rollOutcome !== 'mar' || activeRoll == null || activeRoll.result == null) return null;
+		const difficulty = activeRoll.adjusted_difficulty ?? activeRoll.difficulty;
+		return {
+			shortfall: Math.max(difficulty - activeRoll.result, 0),
+			owed: seekAnswersMarPenalty(difficulty, activeRoll.result, penaltyResources.length),
+		};
+	});
 	// Reveal-secret targets another player's asset ("ask a player to show you the
 	// underside of a specific one of their assets") — never the preparer's own.
 	// The preparer (the only player who ever picks reveal targets) sees assets
@@ -538,7 +552,14 @@
 					</p>
 					<p class="choices-note">
 						Pick options equal to {canPick ? 'your' : 'the'} dice result (repeatable){#if requiredPicks != null}: choose exactly {requiredPicks}{/if}.
-						On a mar {canPick && isPreparer ? 'you' : playerName(players, plan.preparer_id)} must also describe a flaw in (break) {canPick && isPreparer ? 'your' : 'their'} own resource assets, after this step.
+						{#if marPenalty && marPenalty.owed > 0}
+							{canPick && isPreparer ? 'You' : playerName(players, plan.preparer_id)} must also describe a flaw in (break) {marPenalty.owed} of {canPick && isPreparer ? 'your' : 'their'} own resource assets, after this step.
+							{#if marPenalty.owed < marPenalty.shortfall}
+								{' '}The plan marred by {marPenalty.shortfall}, but only {marPenalty.owed} of {canPick && isPreparer ? 'your' : 'their'} resources can still be flawed.
+							{/if}
+						{:else if marPenalty && marPenalty.shortfall > 0}
+							The plan marred by {marPenalty.shortfall}, but {canPick && isPreparer ? 'you have' : `${playerName(players, plan.preparer_id)} has`} no resource left to flaw, so {canPick && isPreparer ? 'you owe' : 'owes'} none.
+						{/if}
 					</p>
 					{#each OPTIONS as opt}
 						{@const available = optionAvailable[opt.key]}
@@ -660,7 +681,8 @@
 							{#if brWarn}<Notice>{brWarn}</Notice>{/if}
 							{#if canSubflow}
 								{#if brResourcesWithMarginalia.length === 0}
-									<p class="choices-note muted">No resource can be broken — this pick has no valid target.</p>
+									<!-- The empty picker above already says nothing can be broken. -->
+									<p class="choices-note muted">This pick has no valid target.</p>
 									<button class="action-btn primary"
 										onclick={() => forfeitStep(plan, 'break_resource')} disabled={forfeitBusy}>
 										{forfeitBusy ? '…' : 'Skip — no valid targets'}

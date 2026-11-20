@@ -426,6 +426,17 @@ export function breaksAvailable(asset: Asset): number {
 }
 
 /**
+ * How many of their own resources a Seek Answers preparer must flaw on a mar: the
+ * shortfall (difficulty minus result, never negative), capped by how many of their
+ * resources can still be flawed.
+ *
+ * Backend mirror: game.SeekAnswersMarPenalty.
+ */
+export function seekAnswersMarPenalty(difficulty: number, result: number, eligible: number): number {
+	return Math.min(Math.max(difficulty - result, 0), eligible);
+}
+
+/**
  * Whether an asset still stands after one marginalia is torn: it needs a second
  * intact one. A riposte's break must leave the requested peer standing so it can
  * be surrendered, so the server refuses its last intact marginalia (and a blank
