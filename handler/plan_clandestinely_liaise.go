@@ -14,8 +14,10 @@ package handler
 // Resolution phases (tracked in ResData.LiaisePhase):
 //   "together_at_last"    — scene-setting posts; focus player advances when ready.
 //   "secrets_we_keep"     — each player picks one of their own assets to hold
-//                           the meeting's secret. Submitted simultaneously via
-//                           keep-secret; each pick is public as it lands.
+//                           the meeting's secret and writes the meeting on its
+//                           underside. Submitted simultaneously via keep-secret;
+//                           each pick (the asset) is public as it lands, the
+//                           text is not.
 //   "things_we_share"     — both players simultaneously choose one option each
 //                           (look_at_secret, update_peer, break_peer, take_gift,
 //                           leverage_partner). Submitted via share-choice.
@@ -28,7 +30,8 @@ package handler
 //
 // Extra routes:
 //   POST /api/plans/:planId/advance-liaise   Focus player advances to next phase.
-//   POST /api/plans/:planId/keep-secret      Player commits their secret-bearing asset.
+//   POST /api/plans/:planId/keep-secret      Player commits their secret-bearing asset
+//                                            and the meeting's text ({asset_id, text}).
 //   POST /api/plans/:planId/share-choice     Player submits Things We Share choice.
 //   POST /api/plans/:planId/redelay-reveal   Player submits re-delay face (0 = cancel).
 
