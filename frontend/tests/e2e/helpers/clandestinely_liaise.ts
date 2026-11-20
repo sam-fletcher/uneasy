@@ -20,8 +20,21 @@ const NAMES: Who[] = ['alice', 'bob', 'carol'];
 export type Drive = 'none' | 'prepared' | 'together' | 'keep' | 'share' | 'redelay';
 
 export const NOTES = 'A quiet word in the orangery.';
-/** Every secret this plan writes starts with this; it must never reach a bystander. */
-export const SECRET_PREFIX = 'Clandestine meeting with';
+/**
+ * The meetings the two players write on the underside of their assets. Both carry
+ * SECRET_MARKER, so one string stands for "a liaison secret's text" in every leak
+ * check: none of it may ever reach a bystander, nor reach anyone before it is
+ * submitted.
+ */
+export const SECRET_MARKER = 'moth-eaten ledger';
+export const ALICE_SECRET = `The ${SECRET_MARKER} changed hands under the orangery lamps.`;
+export const BOB_SECRET = `I let her keep the ${SECRET_MARKER} and told her nothing.`;
+/**
+ * What each secret reads as stored: the line naming the other player and the peer they
+ * brought (the two Confidants seedLiaise makes), then the words.
+ */
+export const ALICE_UNDERSIDE = `Met bob's Bob Confidant — ${ALICE_SECRET}`;
+export const BOB_UNDERSIDE = `Met alice's Alice Confidant — ${BOB_SECRET}`;
 
 export interface AssetRow {
 	id: number;
@@ -114,8 +127,8 @@ export async function seedLiaise(
 	await post(g, 'alice', `/api/plans/${g.planID}/advance-liaise`, {}, 200);
 	if (drive === 'keep') return g;
 
-	await post(g, 'alice', `/api/plans/${g.planID}/keep-secret`, { asset_id: g.peers.alice }, 200);
-	await post(g, 'bob', `/api/plans/${g.planID}/keep-secret`, { asset_id: g.peers.bob }, 200);
+	await post(g, 'alice', `/api/plans/${g.planID}/keep-secret`, { asset_id: g.peers.alice, text: ALICE_SECRET }, 200);
+	await post(g, 'bob', `/api/plans/${g.planID}/keep-secret`, { asset_id: g.peers.bob, text: BOB_SECRET }, 200);
 	if (drive === 'share') return g;
 
 	await post(g, 'alice', `/api/plans/${g.planID}/share-choice`, {
@@ -235,7 +248,7 @@ export async function openAll(
  */
 const PHASE_SENTENCE: Record<string, string> = {
 	'together at last': 'set the scene of your',
-	'secrets we keep': 'nominates one of your own assets to hold the secret',
+	'secrets we keep': 'picks one of your own assets to hold the secret',
 	'things we share': 'Picks are revealed once both players have submitted',
 	'when will i see you again?': 'Reveal a die face (1–6) to choose how many rows',
 };
@@ -243,6 +256,20 @@ export function section(page: Page, header: string) {
 	const sentence = PHASE_SENTENCE[header.toLowerCase()];
 	if (!sentence) throw new Error(`no liaison phase is called "${header}"`);
 	return page.locator('.choices-section', { hasText: sentence });
+}
+
+/** The box a player writes the meeting in, in Secrets We Keep. */
+export const meetingBox = (sec: ReturnType<typeof section>) => sec.getByRole('textbox', { name: 'The meeting:' });
+
+/**
+ * A player's whole Secrets We Keep turn in the panel: tick the asset, write the
+ * meeting over whatever the box started with, and keep the secret.
+ */
+export async function keepSecretInPanel(page: Page, assetName: string, text: string) {
+	const sec = section(page, 'Secrets we keep');
+	await pickCard(sec, assetName);
+	await meetingBox(sec).fill(text);
+	await sec.getByRole('button', { name: 'Keep this secret' }).click();
 }
 
 /** Alice or bob's liaison panel: pick a card by asset name and tick it. */

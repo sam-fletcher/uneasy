@@ -113,6 +113,62 @@ func clAdvanceLiaiseHandler(deps *PlanDeps) http.HandlerFunc {
 	}
 }
 
+// clSecretHeader leads every stored Secrets We Keep secret: who the holder met,
+// as "Met bob's Ser Ott", the OTHER seat's player and the peer they brought to the
+// meeting. A secret outlives the meeting: whoever later looks under, takes or breaks
+// the asset reads it, and without the name a player's "she asked about the ledger" can
+// mean nothing. Who met whom is public from the preparation, so the header reveals
+// nothing new, and the player is told it is added so they don't type it twice.
+//
+// The peer is named as it is now, at the time of writing. If the seat's meeting peer
+// can't be found (never recorded, or gone from the game) it falls back to the other
+// player alone, "Met bob", rather than leaving the secret unattributed. A destroyed
+// peer is still found: its name is still what the meeting was with.
+//
+// The name is the OTHER player's, never the holder's: an earlier version named the
+// holder, which made every secret say the holder met themself. Plain, not marked up:
+// secret text is read on the asset's underside, not in the chat log, so it must not
+// carry log markup. The panel previews this same line (liaiseSecretHeader in
+// lib/plans/liaiseSecret.ts); keep the two in step.
+func clSecretHeader(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	ld *LiaiseResolutionData,
+	seat int64,
+) string {
+	name := playerPlainName(ctx, q, clOtherParticipantID(plan, seat, *ld))
+	if peerID := clPartnerMeetingPeerID(plan, seat, *ld); peerID != nil {
+		if peer, err := q.GetAssetByID(ctx, *peerID); err == nil && peer.GameID == plan.GameID {
+			return fmt.Sprintf("Met %s's %s", name, peer.Name)
+		}
+	}
+	return "Met " + name
+}
+
+// clSecretText is what is stored: the header, then the words. A seat whose
+// keep-secret arrived with no text (a tab that predates the text box) gets the
+// prep note in the words' place, so both paths read alike. The note is public, so
+// that line holds nothing the table doesn't know; it exists only so a liaison
+// already in Secrets We Keep when the text box deployed can finish.
+func clSecretText(
+	ctx context.Context,
+	q *dbgen.Queries,
+	plan *dbgen.Plan,
+	ld *LiaiseResolutionData,
+	seat int64,
+	written *string,
+) string {
+	words := ""
+	switch {
+	case written != nil:
+		words = *written
+	case plan.PreparationNotes != nil:
+		words = *plan.PreparationNotes
+	}
+	return clSecretHeader(ctx, q, plan, ld, seat) + " — " + words
+}
+
 // clBothKeepSecretsSubmitted checks whether both participants have submitted
 // their keep-secret choice.
 func clBothKeepSecretsSubmitted(ld LiaiseResolutionData, preparerID int64) bool {
@@ -133,9 +189,11 @@ func clBothKeepSecretsSubmitted(ld LiaiseResolutionData, preparerID int64) bool 
 // clKeepSecretHandler handles POST /api/plans/:planId/keep-secret.
 //
 // Phase 2 — Secrets We Keep: each seat (the preparer's and the partner's)
-// nominates one of its own assets to hold the secret of this meeting. The server
-// writes a new secret on the asset's underside. Which asset holds it is public
-// the moment it is picked (only the secret's text is gated).
+// nominates one of its own assets to hold the secret of this meeting and writes
+// the meeting on its underside (the book's "write the meeting on the underside of
+// that asset"). Which asset holds it is public the moment it is picked; only the
+// secret's text is gated, and the text reaches nobody but its author: it is stored
+// in a Secret and appears in no broadcast, no log line and no plan payload.
 //
 // Which seat a submission fills is read off the asset: the seat is its owner. That
 // is what lets a perform_steps winner stand in for the preparer (they nominate
@@ -143,7 +201,14 @@ func clBothKeepSecretsSubmitted(ld LiaiseResolutionData, preparerID int64) bool 
 // a winner who is also the partner fill both seats, one asset each. See clSeatsFor.
 // TODO: Should this reject destroyed assets? The UI is hiding them but what's the right call here?
 //
-// Request body: {"asset_id": N}
+// Request body: {"asset_id": N, "text": "the meeting, as the player wrote it"}
+//
+// text is required and must not be blank, but it is read as a pointer so that a tab
+// that predates the text box (loaded before a deploy and still mid-liaison) can
+// still submit: with no "text" key at all the server writes the prep note in its
+// place (see clSecretText) instead of refusing a player who was never shown a box.
+// A key that is present and blank is refused. Whatever is written, the stored secret
+// starts with a header naming who the holder met (see clSecretHeader).
 func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plan, player, ok := requirePlanAccess(w, r, deps.Q)
@@ -177,11 +242,26 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		var body struct {
-			AssetID int64 `json:"asset_id"`
+			AssetID int64   `json:"asset_id"`
+			Text    *string `json:"text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AssetID == 0 {
 			respondErr(w, http.StatusBadRequest, "asset_id is required")
 			return
+		}
+		// Checked before anything is stored, so a refused box leaves the seat open
+		// for the player to write again.
+		var written string
+		if body.Text != nil {
+			text, ok := textField(w, "text", *body.Text, maxNarrativeLen)
+			if !ok {
+				return
+			}
+			if text == "" {
+				respondErr(w, http.StatusBadRequest, "write the meeting you are keeping secret")
+				return
+			}
+			written = text
 		}
 
 		asset, err := deps.Q.GetAssetByID(ctx, body.AssetID)
@@ -212,15 +292,13 @@ func clKeepSecretHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Write a secret on the asset's underside.
-		var preparationNotes string
-		if plan.PreparationNotes != nil {
-			preparationNotes = *plan.PreparationNotes
+		// The secret is what the player wrote, verbatim, under a header naming who
+		// they met. Only a tab that sent no text gets the prep note in its place.
+		var sent *string
+		if body.Text != nil {
+			sent = &written
 		}
-		// Plain: secret text is read on the asset's underside, not in the chat
-		// log, so it must not carry log markup.
-		secretText := fmt.Sprintf("Clandestine meeting with %s — %s",
-			playerPlainName(ctx, deps.Q, seat), preparationNotes)
+		secretText := clSecretText(ctx, deps.Q, plan, ld, seat, sent)
 		// Record keep-secret choice.
 		ld.KeptSecrets = append(ld.KeptSecrets, KeptSecret{
 			PlayerID: seat,

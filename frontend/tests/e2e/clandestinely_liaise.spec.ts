@@ -3,7 +3,7 @@ import { cleanupGameAfterEach, expectWaitingOn, stepHeading } from './helpers';
 import { E2E } from './baseUrl';
 import * as H from './helpers/make_demands';
 import {
-	NOTES, SECRET_PREFIX, closeContextsAfterEach, seedLiaise, prepareLiaison, fetchPlan, fetchPlans, liaiseData,
+	NOTES, SECRET_MARKER, ALICE_SECRET, BOB_SECRET, ALICE_UNDERSIDE, BOB_UNDERSIDE, keepSecretInPanel, closeContextsAfterEach, seedLiaise, prepareLiaison, fetchPlan, fetchPlans, liaiseData,
 	fetchAssets, asset, settleDelay, readableSecrets, openAll, pickCard, section, post, expectLogged, logBodies, currentRow, cap,
 	type LGame, type Who,
 } from './helpers/clandestinely_liaise';
@@ -48,13 +48,6 @@ async function advanceToRow(gameID: number, targetRow: number, ctx: BrowserConte
 	expect(res.ok(), `advance-row failed: ${await res.text()}`).toBeTruthy();
 }
 
-async function keepSecret(page: Page, assetName: string) {
-	const sec = section(page, 'Secrets we keep');
-	const card = sec.locator('.card', { hasText: assetName });
-	await expect(card).toBeVisible();
-	await card.getByRole('checkbox').click();
-	await sec.getByRole('button', { name: 'Keep this secret' }).click();
-}
 
 const track = cleanupGameAfterEach();
 
@@ -141,7 +134,7 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 
 	// Preparer (alice) submits FIRST — this is the soft-lock ordering. Her own
 	// refetch leaves her at 1/2 submitted, waiting on bob.
-	await keepSecret(alice, 'Alice Confidant');
+	await keepSecretInPanel(alice, 'Alice Confidant', ALICE_SECRET);
 	await expect(section(alice, 'Secrets we keep').getByText(/Waiting for/)).toBeVisible();
 
 	// Partner (bob) submits SECOND. With both secrets in, the server auto-advances
@@ -149,7 +142,7 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 	// The phase-change broadcast must drive alice's panel refetch so her panel
 	// moves to the next phase live, with no manual reload (the soft-lock this spec
 	// guards). Both players land in Things We Share.
-	await keepSecret(bob, 'Bob Confidant');
+	await keepSecretInPanel(bob, 'Bob Confidant', BOB_SECRET);
 	await expect(section(alice, 'Things we share')).toBeVisible({ timeout: 10_000 });
 	await expect(section(bob, 'Things we share')).toBeVisible({ timeout: 10_000 });
 
@@ -215,12 +208,6 @@ test('prep: bad meeting peers are refused, then the delay reveal is shared with 
 	expect((await fetchPlan(g)).row_number, 'delay ceil((2 + 5) / 2) = 4 rows past the start row').toBe(startRow + 4);
 });
 
-async function keepSecretInPanel(page: Page, assetName: string) {
-	const sec = section(page, 'Secrets we keep');
-	await pickCard(sec, assetName);
-	await sec.getByRole('button', { name: 'Keep this secret' }).click();
-}
-
 async function chooseShare(page: Page, option: string) {
 	const sec = section(page, 'Things we share');
 	await sec.getByRole('button', { name: option, exact: true }).click();
@@ -255,14 +242,14 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	const framesBefore = carolFrames.length;
 
 	// Alice nominates her Confidant (written while carol's page is open).
-	await keepSecretInPanel(alice, 'Alice Confidant');
+	await keepSecretInPanel(alice, 'Alice Confidant', ALICE_SECRET);
 	await expect(alice.getByText("You've committed your secret. Waiting for bob")).toBeVisible();
 
 	// What is public: that she wrote a secret, on which asset, and that the asset now bears one.
 	await expectLogged(g, 'wrote a secret on', 'carol');
 	const logged = await logText(g, 'carol');
 	expect(logged, 'the log names the holder').toContain('Alice Confidant');
-	expect(logged, 'the log never carries the text').not.toContain(SECRET_PREFIX);
+	expect(logged, 'the log never carries the text').not.toContain(SECRET_MARKER);
 	await expect
 		.poll(async () => (await asset(g, aliceConfidant, 'carol')).secret_count, { message: 'secret existence is public' })
 		.toBe(1);
@@ -278,7 +265,7 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	// What is not: the text. Only its author can read it; neither the partner nor the bystander can.
 	const aliceReads = await readableSecrets(g, 'alice', aliceConfidant);
 	expect(aliceReads).toHaveLength(1);
-	expect(aliceReads[0]).toContain(SECRET_PREFIX);
+	expect(aliceReads[0], 'what alice wrote, behind the line naming who she met').toBe(ALICE_UNDERSIDE);
 	expect(await readableSecrets(g, 'bob', aliceConfidant), 'the partner cannot read it yet').toEqual([]);
 	expect(await readableSecrets(g, 'carol', aliceConfidant), 'the bystander cannot read it').toEqual([]);
 
@@ -317,7 +304,7 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	}
 
 	// Bob's pick completes the phase; both picks become public like the rest of the plan.
-	await keepSecretInPanel(bob, 'Bob Confidant');
+	await keepSecretInPanel(bob, 'Bob Confidant', BOB_SECRET);
 	await expect(section(alice, 'Things we share')).toBeVisible({ timeout: 10_000 });
 	await expect(section(bob, 'Things we share')).toBeVisible();
 	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — things we share$/);
@@ -336,19 +323,19 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 
 	// Alice may now read bob's secret; bob still cannot read hers, and carol reads nothing.
 	await expect.poll(async () => (await readableSecrets(g, 'alice', bobConfidant)).length).toBe(1);
-	expect((await readableSecrets(g, 'alice', bobConfidant))[0]).toContain(SECRET_PREFIX);
+	expect((await readableSecrets(g, 'alice', bobConfidant))[0], 'what bob wrote, behind the line naming who he met').toBe(BOB_UNDERSIDE);
 	expect(await readableSecrets(g, 'bob', aliceConfidant), 'bob did not choose to look').toEqual([]);
 	expect(await readableSecrets(g, 'carol', aliceConfidant)).toEqual([]);
 	expect(await readableSecrets(g, 'carol', bobConfidant)).toEqual([]);
 	const visible = await g.ctx.carol.request.get(`/api/tables/${g.gameID}/secrets/visible`);
 	expect(visible.status()).toBe(200);
-	expect(await visible.text(), 'the bystander has no visible secrets').not.toContain(SECRET_PREFIX);
+	expect(await visible.text(), 'the bystander has no visible secrets').not.toContain(SECRET_MARKER);
 
 	// Nothing the bystander can read anywhere carries the secret's text.
-	expect(await logText(g, 'carol'), 'action log').not.toContain(SECRET_PREFIX);
-	expect(JSON.stringify(await fetchPlans(g, 'carol')), 'plans').not.toContain(SECRET_PREFIX);
-	expect(carolFrames.join('\n'), 'WebSocket frames').not.toContain(SECRET_PREFIX);
-	await expect(carol.locator('body')).not.toContainText(SECRET_PREFIX);
+	expect(await logText(g, 'carol'), 'action log').not.toContain(SECRET_MARKER);
+	expect(JSON.stringify(await fetchPlans(g, 'carol')), 'plans').not.toContain(SECRET_MARKER);
+	expect(carolFrames.join('\n'), 'WebSocket frames').not.toContain(SECRET_MARKER);
+	await expect(carol.locator('body')).not.toContainText(SECRET_MARKER);
 });
 
 test('outcomes: break and gift land, both parting 0 resolves a make, and the bystander only watches', async ({ browser }) => {
@@ -610,7 +597,7 @@ test('perform_steps: the demand winner acts for the preparer, who is locked out 
 	await expectWaitingOn(carol, ['bob'], 'carol');
 
 	// Bob nominates one of alice's assets, recorded under alice's seat.
-	await keepSecretInPanel(bob, 'Alice Confidant');
+	await keepSecretInPanel(bob, 'Alice Confidant', ALICE_SECRET);
 	await expect(section(alice, 'Things we share')).toBeVisible({ timeout: 10_000 });
 	expect((await liaiseData(g, 'alice')).kept_secrets.map((k: { player_id: number }) => k.player_id).sort())
 		.toEqual([g.ids.alice, g.ids.carol].sort());
