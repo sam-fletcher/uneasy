@@ -1,4 +1,4 @@
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, type BrowserContext, type Page } from './fixtures';
 import { createServer } from 'node:net';
 import { cleanupGameAfterEach, tableTitle } from './helpers';
 import { E2E } from './baseUrl';

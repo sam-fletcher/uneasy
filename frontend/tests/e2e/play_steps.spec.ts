@@ -1,4 +1,4 @@
-import { test, expect, type BrowserContext, type Locator } from '@playwright/test';
+import { test, expect, type BrowserContext, type Locator } from './fixtures';
 import { cleanupGameAfterEach, stepHeading, expectWaitingOn } from './helpers';
 import * as sa from './helpers/seek_answers';
 

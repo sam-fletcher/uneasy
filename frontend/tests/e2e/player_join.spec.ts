@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { cleanupGameAfterEach } from './helpers';
 import { E2E } from './baseUrl';
 

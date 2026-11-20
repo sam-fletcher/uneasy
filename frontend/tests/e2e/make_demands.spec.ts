@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { expectHeading, expectWaitingOn, stepHeading, waitingOnNames } from './helpers';
 import * as H from './helpers/make_demands';
 

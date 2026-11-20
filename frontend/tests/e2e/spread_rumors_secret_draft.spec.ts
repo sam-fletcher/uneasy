@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { cleanupGameAfterEach } from './helpers';
 import { seedWarGame, runScene, closeContextsAfterEach } from './helpers/make_war';
 

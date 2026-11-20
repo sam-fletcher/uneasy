@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from './fixtures';
 import { THREE_COLUMN_PX, TWO_COLUMN_PX } from '../../src/lib/breakpoints';
 
 /** Hard-deletes a game via the dev-only endpoint (handler/dev.go: DevDeleteGame). */

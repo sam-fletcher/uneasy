@@ -1,4 +1,4 @@
-import { test, expect, request as pwRequest, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { test, expect, request as pwRequest, type BrowserContext, type Locator, type Page } from './fixtures';
 import { cleanupGameAfterEach, expectHeading } from './helpers';
 import { E2E } from './baseUrl';
 import {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test('dev-login + profile renders username', async ({ page, request }) => {
   const login = await request.post('/api/dev/login?username=alice');

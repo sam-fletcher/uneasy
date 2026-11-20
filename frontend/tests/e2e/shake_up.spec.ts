@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { cleanupGameAfterEach, tableTitle } from './helpers';
 import { paint, playShakeUpToEnd, playerContext, resolveToken, seedGame } from './helpers/endgame';
 

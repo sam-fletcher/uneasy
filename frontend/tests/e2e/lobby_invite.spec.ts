@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { cleanupGameAfterEach, tableTitle } from './helpers';
 import { paint, playerContext } from './helpers/endgame';
 

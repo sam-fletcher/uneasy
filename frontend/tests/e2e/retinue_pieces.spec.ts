@@ -1,4 +1,4 @@
-import { test, expect, request as pwRequest, type Page, type Locator } from '@playwright/test';
+import { test, expect, request as pwRequest, type Page, type Locator } from './fixtures';
 import { cleanupGameAfterEach } from './helpers';
 import { E2E } from './baseUrl';
 
