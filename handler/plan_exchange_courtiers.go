@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -401,8 +402,11 @@ func applyExchangeCourtiersMar(
 			}
 		case "riposte":
 			// The preparer gets first crack at the requested peer before it
-			// passes to the target — deferred to the riposte-break route.
+			// passes to the target — deferred to the riposte-break route. Nothing
+			// moves yet, so without a line of its own the table would see nothing
+			// until the preparer acts (forfeit and fair trade log their transfers).
 			ec.RiposteAllowed = true
+			ecLog(ctx, deps, plan, model.SeverityDefault, ecRiposteChoiceLine(ctx, deps, plan, ec))
 		}
 	}
 	// Advance the cursor: a riposte still owes the preparer's break/surrender
@@ -415,6 +419,44 @@ func applyExchangeCourtiersMar(
 		ec.Phase = gamepkg.ECPhaseDone
 	}
 	return nil
+}
+
+// ecRiposteChoiceLine announces the target's riposte: who chose it, which peer
+// they have asked for, and who may break it first. Wording follows the line that
+// announces a messy make ("It got messy — X may break one of Y's assets.").
+//
+// It says who may break the peer only when a break is possible. The riposte-break
+// route refuses to tear a peer's last intact marginalia (the peer has to survive
+// to be surrendered), so with one note or none the line says it can only be
+// surrendered, rather than offering what the server will refuse. And a Make
+// Demands perform-steps winner decides in the preparer's place, so the line names
+// them, in the form the break and surrender lines already use.
+func ecRiposteChoiceLine(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, ec *gamepkg.ExchangeCourtiersResolutionData,
+) string {
+	target := "the target"
+	if plan.TargetPlayerID != nil {
+		target = playerDisplayName(ctx, deps.Q, *plan.TargetPlayerID)
+	}
+	peer := "the requested peer"
+	canBreak := false
+	if ec.FairTradeAssetID != nil {
+		peer += " " + assetDisplayName(ctx, deps.Q, *ec.FairTradeAssetID)
+		if intact, err := deps.Q.CountIntactMarginalia(ctx, *ec.FairTradeAssetID); err == nil {
+			canBreak = intact >= 2
+		}
+	}
+	if !canBreak {
+		return fmt.Sprintf("%s chose a riposte — %s can't be broken first, so it can only be surrendered intact.",
+			target, peer)
+	}
+	if winner := performStepsWinner(ctx, deps.Q, plan); winner != 0 && winner != plan.PreparerID {
+		return fmt.Sprintf("%s chose a riposte — %s, the Make Demands winner, may break %s's %s before %s takes it.",
+			target, playerDisplayName(ctx, deps.Q, winner), playerDisplayName(ctx, deps.Q, plan.PreparerID),
+			strings.TrimPrefix(peer, "the "), target)
+	}
+	return fmt.Sprintf("%s chose a riposte — %s may break %s before %s takes it.",
+		target, playerDisplayName(ctx, deps.Q, plan.PreparerID), peer, target)
 }
 
 // ecGivePeerToTarget transfers a peer from the preparer to the target player,
@@ -605,8 +647,11 @@ func acceptFairTrade(
 
 	// Asset transfers (and their secret-visibility grants) already broadcast
 	// above via takeAssetEffect; only the plan-resolved fan-out remains.
-	// Log both legs of the fair-trade swap first; the resolution line only
+	// Log the decision, then both legs of the swap; the resolution line only
 	// records the outcome, not which peers changed hands.
+	ecLogQ(ctx, q, manager, plan, model.SeverityDefault, fmt.Sprintf(
+		"%s accepted the fair trade — the exchange goes ahead without a roll.",
+		playerDisplayName(ctx, q, player.ID)))
 	EmitAssetTaken(ctx, q, manager, game.ID, ta, *plan.TargetPlayerID, recipient, taWasMain, logRow(game))
 	EmitAssetTaken(ctx, q, manager, game.ID, oa, plan.PreparerID, *plan.TargetPlayerID, oaWasMain, logRow(game))
 	announcePlanResolved(ctx, q, manager, *plan, makeOutcome)

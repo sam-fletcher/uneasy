@@ -426,6 +426,18 @@ export function breaksAvailable(asset: Asset): number {
 }
 
 /**
+ * Whether an asset still stands after one marginalia is torn: it needs a second
+ * intact one. A riposte's break must leave the requested peer standing so it can
+ * be surrendered, so the server refuses its last intact marginalia (and a blank
+ * peer has none to name).
+ *
+ * Backend mirror: ecRiposteBreakHandler's CountIntactMarginalia check.
+ */
+export function survivesABreak(asset: Asset | null | undefined): boolean {
+	return (asset?.marginalia ?? []).filter(m => !m.is_torn).length >= 2;
+}
+
+/**
  * Players other than the given one. Standard prep-target list shape;
  * returns the full list if `exclude` is null (e.g. spectator view).
  */
