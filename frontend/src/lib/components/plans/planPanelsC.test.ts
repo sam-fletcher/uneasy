@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { render } from 'svelte/server';
 import BoutsPhase from './duel/BoutsPhase.svelte';
+import SetupPhase from './duel/SetupPhase.svelte';
 import GuestList from './festivity/GuestList.svelte';
 import SocializingTurn from './festivity/SocializingTurn.svelte';
 import ChallengeBanner from './festivity/ChallengeBanner.svelte';
@@ -258,6 +259,61 @@ describe('the duel tracker', () => {
 		expect(tray.map((d) => d.prop)).not.toContain('background');
 		// A stake is told apart by its name, never by a coloured edge on the side.
 		expect(styleOf(read('duel/BoutsPhase.svelte'))).not.toContain('--color-accent');
+	});
+});
+
+describe('the duel\'s setup: who duels', () => {
+	const peer = (id: number, name: string, owner: number, main = false) =>
+		({ id, name, owner_id: owner, asset_type: 'peer', is_main_character: main, is_destroyed: false, marginalia: [] });
+	const merrow = peer(11, 'Lady Merrow', ALICE, true);
+	const vell = peer(12, 'Captain Vell', BOB, true);
+	const spare = peer(15, 'Sir Aldous', ALICE);
+	const duelRes = {
+		duelType: 'arms', phase: 'setup', initiativeID: null, prepChampID: null, targChampID: null,
+		prepChampDeclared: false, targChampDeclared: false, currentBout: 0,
+	};
+	const setup = (viewer: number, assetList: unknown[]) => strip(render(SetupPhase, {
+		props: {
+			plan: duelPlan, duelRes, players, assets: assetList as never, currentPlayerID: viewer,
+			amParticipant: viewer !== CAROL, amPreparer: viewer === ALICE, amTarget: viewer === BOB,
+			myMaxStakes: 2, myStakes: [], onPlansChanged: () => {}, onRefresh: () => {},
+		},
+	}).body);
+
+	it('marks the duellists\' names as assets, as every other line that names one does', () => {
+		const body = setup(ALICE, [merrow, vell, spare]);
+		expect(body).toContain('<em>Lady Merrow</em> fights for themselves');
+		expect(body).toContain('Facing <em>Captain Vell</em>');
+		// The bystander's matchup line names both.
+		expect(setup(CAROL, [merrow, vell])).toContain('<em>Lady Merrow</em> vs <em>Captain Vell</em>');
+	});
+
+	it('offers "Send someone else" when there is someone else to send', () => {
+		const body = setup(ALICE, [merrow, vell, spare]);
+		expect(body).toContain('Send someone else');
+		expect(body).not.toContain('no other peer');
+	});
+
+	it('says why there is no choice, rather than dropping it: a main character with no other peer', () => {
+		const body = setup(ALICE, [merrow, vell]);
+		expect(body).not.toContain('Send someone else');
+		expect(body).toContain('You have no other peer to send in your stead.');
+		// The main character is still shown as duelling for them.
+		expect(body).toContain('<em>Lady Merrow</em> fights for themselves');
+	});
+
+	it('never says a player fights in person: the duellist is always a peer', () => {
+		// A player with no peer at all (a main character lost mid-resolution) is told so
+		// plainly: not that they fight themselves, not handed an empty picker, and not
+		// told twice.
+		const body = setup(ALICE, [vell]);
+		expect(body).toContain('You have no peer to put forward in this duel.');
+		expect(body).not.toContain('fights for themselves');
+		expect(body).not.toContain('alice fights');
+		expect(body).not.toContain('you fight in person');
+		expect(body).not.toContain('Send someone else');
+		expect(body).not.toContain('No eligible assets');
+		expect(body).not.toContain('no other peer');
 	});
 });
 
