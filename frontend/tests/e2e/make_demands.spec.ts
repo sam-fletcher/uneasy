@@ -47,10 +47,16 @@ test('attaching: bob picks alices pending plan, gives a motivation, and the dema
 	await expect(prepare).toBeDisabled();
 
 	// Only plans that could be demanded against are offered: alice's, not bob's own.
-	const select = bob.locator('select');
-	const optionTexts = (await select.locator('option').allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim());
-	expect(optionTexts).toEqual(['— pick a plan to demand against —', 'Seek Answers by alice (row 5)']);
-	await select.selectOption({ label: 'Seek Answers by alice (row 5)' });
+	// Each is an option card, not a native select, so a phone gets the app's own list.
+	await expect(bob.locator('select')).toHaveCount(0);
+	const cards = bob.locator('.option-card');
+	await expect(cards).toHaveCount(1);
+	await expect(cards.first()).toContainText('Seek Answers by alice');
+	await expect(cards.first()).toContainText('Row 5');
+	expect((await cards.first().boundingBox())!.height).toBeGreaterThanOrEqual(44);
+	await expect(cards.first()).toHaveAttribute('aria-pressed', 'false');
+	await cards.first().click();
+	await expect(cards.first()).toHaveAttribute('aria-pressed', 'true');
 	await expect(prepare).toBeDisabled(); // a motivation is required too
 	await bob.getByPlaceholder('Why are you getting involved?').fill('The ledgers are mine.');
 	await expect(prepare).toBeEnabled();

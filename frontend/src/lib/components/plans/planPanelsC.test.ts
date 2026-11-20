@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { render } from 'svelte/server';
 import BoutsPhase from './duel/BoutsPhase.svelte';
+import SetupPhase from './duel/SetupPhase.svelte';
 import GuestList from './festivity/GuestList.svelte';
 import SocializingTurn from './festivity/SocializingTurn.svelte';
+import ChallengeBanner from './festivity/ChallengeBanner.svelte';
+import HostFestivityPanel from './HostFestivityPanel.svelte';
 import MakeDemandsPanel from './MakeDemandsPanel.svelte';
 import { declarations, styleOf } from '$lib/components/shared/cssTestKit';
 import type { PlanContext } from './types';
@@ -259,6 +262,61 @@ describe('the duel tracker', () => {
 	});
 });
 
+describe('the duel\'s setup: who duels', () => {
+	const peer = (id: number, name: string, owner: number, main = false) =>
+		({ id, name, owner_id: owner, asset_type: 'peer', is_main_character: main, is_destroyed: false, marginalia: [] });
+	const merrow = peer(11, 'Lady Merrow', ALICE, true);
+	const vell = peer(12, 'Captain Vell', BOB, true);
+	const spare = peer(15, 'Sir Aldous', ALICE);
+	const duelRes = {
+		duelType: 'arms', phase: 'setup', initiativeID: null, prepChampID: null, targChampID: null,
+		prepChampDeclared: false, targChampDeclared: false, currentBout: 0,
+	};
+	const setup = (viewer: number, assetList: unknown[]) => strip(render(SetupPhase, {
+		props: {
+			plan: duelPlan, duelRes, players, assets: assetList as never, currentPlayerID: viewer,
+			amParticipant: viewer !== CAROL, amPreparer: viewer === ALICE, amTarget: viewer === BOB,
+			myMaxStakes: 2, myStakes: [], onPlansChanged: () => {}, onRefresh: () => {},
+		},
+	}).body);
+
+	it('marks the duellists\' names as assets, as every other line that names one does', () => {
+		const body = setup(ALICE, [merrow, vell, spare]);
+		expect(body).toContain('<em>Lady Merrow</em> fights for themselves');
+		expect(body).toContain('Facing <em>Captain Vell</em>');
+		// The bystander's matchup line names both.
+		expect(setup(CAROL, [merrow, vell])).toContain('<em>Lady Merrow</em> vs <em>Captain Vell</em>');
+	});
+
+	it('offers "Send someone else" when there is someone else to send', () => {
+		const body = setup(ALICE, [merrow, vell, spare]);
+		expect(body).toContain('Send someone else');
+		expect(body).not.toContain('no other peer');
+	});
+
+	it('says why there is no choice, rather than dropping it: a main character with no other peer', () => {
+		const body = setup(ALICE, [merrow, vell]);
+		expect(body).not.toContain('Send someone else');
+		expect(body).toContain('You have no other peer to send in your stead.');
+		// The main character is still shown as duelling for them.
+		expect(body).toContain('<em>Lady Merrow</em> fights for themselves');
+	});
+
+	it('never says a player fights in person: the duellist is always a peer', () => {
+		// A player with no peer at all (a main character lost mid-resolution) is told so
+		// plainly: not that they fight themselves, not handed an empty picker, and not
+		// told twice.
+		const body = setup(ALICE, [vell]);
+		expect(body).toContain('You have no peer to put forward in this duel.');
+		expect(body).not.toContain('fights for themselves');
+		expect(body).not.toContain('alice fights');
+		expect(body).not.toContain('you fight in person');
+		expect(body).not.toContain('Send someone else');
+		expect(body).not.toContain('No eligible assets');
+		expect(body).not.toContain('no other peer');
+	});
+});
+
 // ── Host Festivity ───────────────────────────────────────────────────────────
 
 const fest = (o: Record<string, unknown> = {}) => ({
@@ -330,6 +388,99 @@ describe('a guest\'s turn at the festivity', () => {
 
 	it('gives a mar its own word', () => {
 		expect(turn({ myRollID: 3, outcome: 'mar' })).toMatch(/outcome-mar[^>]*>Mar</);
+	});
+});
+
+describe('the host\'s extra Makes', () => {
+	// The panel subscribes to the table's live events, which touches `window` as it
+	// is torn down; a render on the server has none, so give it an inert one.
+	beforeAll(() => vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} }));
+	afterAll(() => vi.unstubAllGlobals());
+
+	// alice hosts; bob opted out, so she has earned two Makes (one for hosting, one
+	// for bob), and carol has rolled but not yet chosen.
+	function host(o: { challenge?: boolean; viewer?: number } = {}): string {
+		const plan = {
+			id: 5, game_id: 1, plan_type: 'host_festivity', status: 'resolving', preparer_id: ALICE,
+			resolution_data: JSON.stringify({
+				festivity: {
+					outcomes: { [ALICE]: 'host', [BOB]: 'opt_out' },
+					guest_roll_ids: { [CAROL]: 31 },
+					pending_challenge: o.challenge ? { challenger_id: CAROL, target_id: BOB } : null,
+				},
+			}),
+		};
+		const ctx = {
+			gameID: 1, currentRow: 5, endingMode: null, plans: [plan] as never, assets: [], players,
+			rankings: [], currentPlayerID: o.viewer ?? ALICE, focusPlayerID: null, isFocusPlayer: false,
+			rollActive: false, rollOutcome: null, activeRoll: null,
+			onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
+			readOnly: false, prepDraft: null, emitPrepDraft: () => {},
+		} as unknown as PlanContext;
+		return strip(render(HostFestivityPanel, { props: { ctx, plan: plan as never, mode: 'resolve' } }).body);
+	}
+
+	it('offers the Make picker when nothing is in the way', () => {
+		const body = strip(render(HostFestivityPanel, {
+			props: {
+				ctx: {
+					gameID: 1, currentRow: 5, endingMode: null, assets: [], players, rankings: [],
+					plans: [], currentPlayerID: ALICE, focusPlayerID: null, isFocusPlayer: false,
+					rollActive: false, rollOutcome: null, activeRoll: null,
+					onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
+					readOnly: false, prepDraft: null, emitPrepDraft: () => {},
+				} as unknown as PlanContext,
+				plan: {
+					id: 5, game_id: 1, plan_type: 'host_festivity', status: 'resolving', preparer_id: ALICE,
+					resolution_data: JSON.stringify({ festivity: { outcomes: { [ALICE]: 'host', [BOB]: 'opt_out' } } }),
+				} as never,
+				mode: 'resolve',
+			},
+		}).body);
+		expect(body).toContain('Take a Make');
+		expect(body).toContain('Take this Make (2 left)');
+	});
+
+	it('holds the picker back while a guest is mid-roll: the server refuses it then', () => {
+		const body = host();
+		expect(body).not.toContain('Take a Make');
+		expect(body).not.toContain('Take this Make');
+		// The host still sees what they have earned, and why they must wait.
+		expect(body).toContain('Your extra Makes');
+		expect(body).toContain('Waiting for carol to finish their roll');
+	});
+
+	it('holds it back while a duel challenge waits for its target', () => {
+		const body = host({ challenge: true });
+		expect(body).not.toContain('Take a Make');
+		expect(body).not.toContain('Take this Make');
+	});
+});
+
+describe('a duel challenge that cannot be declined', () => {
+	const banner = (mustAccept: boolean, viewer = BOB) => strip(render(ChallengeBanner, {
+		props: {
+			planID: 5, challenge: { challenger_id: ALICE, target_id: BOB }, players,
+			currentPlayerID: viewer, mustAccept, onPlansChanged: () => {},
+		},
+	}).body);
+
+	it('says in the panel, not only in a tooltip, why Decline is greyed out', () => {
+		const body = banner(true);
+		expect(body).toContain('You must accept any duel challenge during this event');
+		// The explanation is on the page; a touch screen has no hover to show a title.
+		expect(body).not.toMatch(/title="/);
+		// And it is in words, not the stored key.
+		expect(body).not.toContain('accept_duels');
+	});
+
+	it('is silent when the target is free to decline', () => {
+		expect(banner(false)).not.toContain('You must accept');
+	});
+
+	it('is not said to the challenger or a bystander, who cannot decline anyway', () => {
+		expect(banner(true, ALICE)).not.toContain('You must accept');
+		expect(banner(true, CAROL)).not.toContain('You must accept');
 	});
 });
 

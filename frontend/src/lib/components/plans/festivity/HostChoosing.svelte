@@ -25,11 +25,16 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
-	let { plan, fest, players, assets, onPlansChanged }: {
+	let { plan, fest, players, assets, blockedByOtherRoll, activeRollerID, onPlansChanged }: {
 		plan: Plan;
 		fest: FestRes;
 		players: Player[];
 		assets: Asset[];
+		/** True while a guest's roll-and-choice is in progress: the server refuses a
+		 *  make until it concludes, so the picker waits too. */
+		blockedByOtherRoll: boolean;
+		/** The guest whose roll-and-choice is in progress, for the "waiting" note. */
+		activeRollerID: number | null;
 		onPlansChanged: () => void;
 	} = $props();
 
@@ -131,7 +136,11 @@
 	<p class="choices-header">
 		Your extra Makes <span class="taken-count">· {taken} of {earned} taken</span>
 	</p>
-	{#if remaining > 0}
+	{#if remaining > 0 && blockedByOtherRoll}
+		<p class="choices-note muted">
+			Waiting for {playerName(players, activeRollerID)} to finish their roll…
+		</p>
+	{:else if remaining > 0}
 		<FormField label="Take a Make — pick one">
 			<div class="chip-row">
 				{#each MAKE_OPTS as o}

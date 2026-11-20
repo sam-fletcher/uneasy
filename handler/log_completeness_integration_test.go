@@ -50,12 +50,12 @@ func allLogBodies(t *testing.T, h *planLifecycle) []string {
 	return out
 }
 
-// logWith returns the first log body containing every needle, failing the test
-// (with the whole log, for diagnosis) when none does.
-func logWith(t *testing.T, h *planLifecycle, needles ...string) string {
+// logIndex is the position of the first log body containing every needle,
+// failing the test (with the whole log) when none does.
+func logIndex(t *testing.T, h *planLifecycle, needles ...string) int {
 	t.Helper()
 	bodies := allLogBodies(t, h)
-	for _, b := range bodies {
+	for i, b := range bodies {
 		ok := true
 		for _, n := range needles {
 			if !strings.Contains(b, n) {
@@ -64,11 +64,18 @@ func logWith(t *testing.T, h *planLifecycle, needles ...string) string {
 			}
 		}
 		if ok {
-			return b
+			return i
 		}
 	}
 	t.Fatalf("no log post contains all of %q; log was:\n%s", needles, strings.Join(bodies, "\n---\n"))
-	return ""
+	return -1
+}
+
+// logWith returns the first log body containing every needle, failing the test
+// (with the whole log, for diagnosis) when none does.
+func logWith(t *testing.T, h *planLifecycle, needles ...string) string {
+	t.Helper()
+	return allLogBodies(t, h)[logIndex(t, h, needles...)]
 }
 
 // noLogWith fails when any log body contains the needle.
@@ -184,6 +191,114 @@ func TestLog_ExchangeCourtiers_RiposteBreakMarksThePreparer(t *testing.T) {
 
 	logWith(t, h, h.mark(preparerIdx), "damaged their own", "before surrendering it")
 	noLogWith(t, h, "The preparer damaged")
+}
+
+// The preparer's accept is a decision, so it is announced as the decline is
+// ("declined the fair trade"). The two transfer lines say what moved, not that
+// it was agreed, and the accept comes first: the swap is its consequence.
+func TestLog_ExchangeCourtiers_AcceptedFairTradeIsAnnounced(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	preparerIdx := h.focusPlayerIdx()
+	targetIdx := (preparerIdx + 1) % len(h.tg.Players)
+	targetPeer := h.seedPeer(targetIdx, "Coveted Courtier")
+	offered := h.seedPeer(preparerIdx, "Offered Courtier")
+	notes := "exchange"
+	plan := h.prepare(PreparePlanRequest{
+		PlanType:         model.PlanExchangeCourtiers,
+		TargetPlayerID:   &h.tg.Players[targetIdx].ID,
+		TargetAssetID:    &targetPeer,
+		PreparationNotes: &notes,
+	})
+	h.jumpToRow(*plan.RowNumber)
+	require.Nil(t, h.resolve(plan.ID))
+	code, body := ecOffer(t, h, targetIdx, plan.ID, offered)
+	require.Equalf(t, http.StatusOK, code, "offer: %v", body)
+
+	code, body = h.post(preparerIdx, planPath(plan.ID, "fair-trade"), map[string]any{"action": "accept"})
+	require.Equalf(t, http.StatusOK, code, "accept: %v", body)
+
+	accepted := logIndex(t, h, h.mark(preparerIdx), "accepted the fair trade")
+	took := logIndex(t, h, "took", "**Coveted Courtier**")
+	assert.Less(t, accepted, took, "the decision reads before the swap it licenses")
+}
+
+// A riposte is the target's choice and the preparer's step comes next; until
+// then the table saw nothing, while a forfeit and a fair trade log their transfers
+// at once. The line names who chose and whose peer, and says who may break it
+// first ONLY when a break is possible: the server refuses to tear a peer's last
+// intact marginalia (it must survive to be surrendered), and under a Make Demands
+// perform-steps win the stand-in, not the preparer, decides.
+func TestLog_ExchangeCourtiers_RiposteChoiceIsAnnounced(t *testing.T) {
+	notes := func(t *testing.T, h *planLifecycle, peer int64, n int) {
+		t.Helper()
+		for i := range n {
+			_, err := h.q.CreateMarginalia(context.Background(), dbgen.CreateMarginaliaParams{
+				AssetID: peer, Position: int16(i + 1), Text: "note " + strconv.Itoa(i+1),
+			})
+			require.NoError(t, err)
+		}
+	}
+
+	t.Run("two notes: the preparer may break it first", func(t *testing.T) {
+		h := newPlanLifecycle(t, 3)
+		plan, preparerIdx, targetIdx, _, requested := ecToMarWithRequest(t, h)
+		notes(t, h, requested, 2)
+		code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"riposte"})
+		require.Equalf(t, http.StatusOK, code, "riposte: %v", body)
+		logWith(t, h, h.mark(targetIdx), "chose a riposte", h.mark(preparerIdx),
+			"may break the requested peer", "**requested peer**", "before "+h.mark(targetIdx)+" takes it")
+	})
+
+	for _, n := range []int{0, 1} {
+		t.Run("a peer that can't survive a break is only surrendered ("+strconv.Itoa(n)+" notes)", func(t *testing.T) {
+			h := newPlanLifecycle(t, 3)
+			plan, preparerIdx, targetIdx, _, requested := ecToMarWithRequest(t, h)
+			notes(t, h, requested, n)
+			code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"riposte"})
+			require.Equalf(t, http.StatusOK, code, "riposte: %v", body)
+			line := logWith(t, h, h.mark(targetIdx), "chose a riposte", "**requested peer**",
+				"can't be broken first", "can only be surrendered intact")
+			assert.NotContains(t, line, "may break", "the server would refuse that break, so the line must not offer it")
+			// And the server does refuse it, which is what the line says.
+			if n == 1 {
+				var m dbgen.Marginalium
+				ms, err := h.q.ListIntactMarginalia(context.Background(), requested)
+				require.NoError(t, err)
+				m = ms[0]
+				code, _ = h.post(preparerIdx, planPath(plan.ID, "riposte-break"), map[string]any{"marginalia_id": m.ID})
+				assert.Equal(t, http.StatusConflict, code)
+			}
+		})
+	}
+
+	t.Run("under a perform-steps win the stand-in is the one who may break it", func(t *testing.T) {
+		h := newPlanLifecycle(t, 3)
+		plan, preparerIdx, targetIdx, _, requested := ecToMarWithRequest(t, h)
+		winnerIdx := 3 - preparerIdx - targetIdx
+		h.seedMadeDemand(winnerIdx, plan.ID, game.DemandOptionWinners{
+			game.DemandOptionPerformSteps: h.tg.Players[winnerIdx].ID,
+		})
+		notes(t, h, requested, 2)
+		code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"riposte"})
+		require.Equalf(t, http.StatusOK, code, "riposte: %v", body)
+		line := logWith(t, h, h.mark(targetIdx), "chose a riposte", h.mark(winnerIdx),
+			"the Make Demands winner, may break", h.mark(preparerIdx)+"'s requested peer")
+		assert.NotContains(t, line, h.mark(preparerIdx)+" may break", "the preparer is locked out of it")
+	})
+
+	t.Run("a stand-in is told nothing to break either, when the peer can't take it", func(t *testing.T) {
+		h := newPlanLifecycle(t, 3)
+		plan, preparerIdx, targetIdx, _, requested := ecToMarWithRequest(t, h)
+		winnerIdx := 3 - preparerIdx - targetIdx
+		h.seedMadeDemand(winnerIdx, plan.ID, game.DemandOptionWinners{
+			game.DemandOptionPerformSteps: h.tg.Players[winnerIdx].ID,
+		})
+		notes(t, h, requested, 1)
+		code, body := ecMakeChoice(t, h, targetIdx, plan.ID, []string{"riposte"})
+		require.Equalf(t, http.StatusOK, code, "riposte: %v", body)
+		logWith(t, h, "chose a riposte", "can only be surrendered intact")
+		noLogWith(t, h, "may break the requested peer")
+	})
 }
 
 // ── Seek Answers / Chronicle Histories ───────────────────────────────────────

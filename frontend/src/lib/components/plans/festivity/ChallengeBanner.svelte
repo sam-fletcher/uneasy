@@ -55,11 +55,17 @@
 			</button>
 			<button class="action-btn secondary"
 				onclick={() => onRespond(false)}
-				disabled={respondBusy || mustAccept}
-				title={mustAccept ? 'You took accept_duels and cannot decline' : ''}>
+				disabled={respondBusy || mustAccept}>
 				Decline
 			</button>
 		</div>
+		<!-- Said on the page: a greyed button explained only by a tooltip says
+		     nothing on a touch screen, which has no hover. -->
+		{#if mustAccept}
+			<p class="choices-note muted">
+				You must accept any duel challenge during this event, so you can't decline.
+			</p>
+		{/if}
 	{:else}
 		<p class="choices-note muted">
 			Awaiting the target's response. All festivity actions are paused.

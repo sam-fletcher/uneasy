@@ -368,13 +368,14 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 	await sa.forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: 2 });
 
 	await expect(alice.page.getByText('choose exactly 2')).toBeVisible({ timeout: 10_000 });
-	await expect(alice.page.getByText('must also describe a flaw in (break) your own resource assets')).toBeVisible();
+	// The line gives the number owed: the shortfall, capped by the resources she can still flaw.
+	await expect(alice.page.getByText(/You must also describe a flaw in \(break\) \d+ of your own resource assets/)).toBeVisible();
 	// Bystanders get the same options greyed out, a wait line, and nothing to press.
 	for (const p of [bob, carol]) {
 		await expect(stepHeading(p.page)).toHaveText('Waiting on alice — choose the options', { timeout: 10_000 });
 		await expect(p.page.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 		await expect(sa.more(p.page, sa.OPT.declareTruth)).toBeDisabled();
-		await expect(p.page.getByText('alice must also describe a flaw')).toBeVisible();
+		await expect(p.page.getByText(/alice must also describe a flaw in \(break\) \d+ of their own resource assets/)).toBeVisible();
 	}
 
 	// ── The shared Stepper: capped per option, exact total, 44px targets ──
@@ -605,6 +606,8 @@ test('seek answers make: a pick with no valid target is carried by the forfeit h
 	await expect(alice.page.getByText('choose exactly 2')).toBeVisible({ timeout: 10_000 });
 	await expect(sa.more(alice.page, sa.OPT.revealSecret)).toBeDisabled();
 	await expect(alice.page.getByText('no valid targets')).toBeVisible();
+	// A make owes no flaw, so the picks say nothing about one.
+	await expect(alice.page.getByText('must also describe a flaw')).toHaveCount(0);
 
 	const commit = await alice.ctx.request.post(`/api/plans/${t.planID}/make-choice`, {
 		data: { result: 'make', choices: ['reveal_secret', 'reveal_secret'] },

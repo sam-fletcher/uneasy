@@ -12,7 +12,7 @@
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import { electChampion, selectStakes, type Asset, type DuelStake, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
-	import { playerName, assetName } from '../shared';
+	import { playerName } from '../shared';
 	import type { DuelRes } from './shared';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
@@ -50,12 +50,22 @@
 	// The peer currently set to duel for me: an elected champion, else my MC.
 	const myDuelerID = $derived(myChampionID ?? myMC?.id ?? null);
 
-	// Display name of whoever duels for a side (champion, else their MC).
-	function duelerName(playerID: number | null, champID: number | null): string {
-		if (champID != null) return assetName(assets, champID);
-		const mc = mainCharacterOf(playerID);
-		return mc ? mc.name : playerName(players, playerID);
+	// Whoever duels for a side: the elected champion, else their main character. It
+	// is an asset, so its name is marked as one (the <em> every plan panel uses).
+	// Only a player with no peer at all falls back to their own name.
+	function dueler(playerID: number | null, champID: number | null): Asset | null {
+		return champID != null
+			? (assets.find(a => a.id === champID) ?? null)
+			: mainCharacterOf(playerID);
 	}
+
+	// Peers I could send in my stead: any but the one already duelling for me. With
+	// none the choice can't be made, and the panel says so instead of dropping the
+	// button: a player should learn what is possible, not wonder where it went.
+	const otherPeers = $derived(myPeers.filter(a => a.id !== myDuelerID));
+	// Nobody to duel for me at all: only a main character lost mid-resolution gets
+	// here. The duellist is always a peer, so this never reads as the player fighting.
+	const iHaveNoDueler = $derived(dueler(currentPlayerID, myChampionID) == null);
 
 	const opponentID = $derived(amPreparer ? plan.target_player_id : plan.preparer_id);
 	const opponentChampID = $derived(amPreparer ? duelRes.targChampID : duelRes.prepChampID);
@@ -142,14 +152,17 @@
 	}
 </script>
 
+{#snippet duelerName(playerID: number | null, champID: number | null)}
+	{@const who = dueler(playerID, champID)}
+	{#if who}<em>{who.name}</em>{:else}{playerName(players, playerID)}{/if}
+{/snippet}
+
 <div class="step-groups">
 	<!-- Who duels -->
 	<div class="choices-section">
 		<p class="choices-header">{heading}</p>
 		{#if amParticipant}
-			{#if myPeers.length === 0}
-				<p class="choices-note muted">You have no peer to send — you fight in person.</p>
-			{:else if changing}
+			{#if changing}
 				<CardPicker
 					label="Choose a peer to duel in your stead"
 					items={myPeers}
@@ -167,20 +180,28 @@
 					</button>
 				</div>
 			{:else}
-				<p class="choices-note">
-					{duelerName(currentPlayerID, myChampionID)} {verbPhrase}.
-				</p>
-				<button type="button" class="action-btn secondary" onclick={openPicker}>
-					Send someone else
-				</button>
+				{#if iHaveNoDueler}
+					<p class="choices-note">You have no peer to put forward in this duel.</p>
+				{:else}
+					<p class="choices-note">
+						{@render duelerName(currentPlayerID, myChampionID)} {verbPhrase}.
+					</p>
+					{#if otherPeers.length > 0}
+						<button type="button" class="action-btn secondary" onclick={openPicker}>
+							Send someone else
+						</button>
+					{:else}
+						<p class="choices-note muted">You have no other peer to send in your stead.</p>
+					{/if}
+				{/if}
 			{/if}
 			<p class="choices-note muted">
-				Facing {duelerName(opponentID, opponentChampID)}.
+				Facing {@render duelerName(opponentID, opponentChampID)}.
 			</p>
 		{:else}
 			<p class="choices-note muted">
-				{duelerName(plan.preparer_id, duelRes.prepChampID)}
-				vs {duelerName(plan.target_player_id, duelRes.targChampID)}.
+				{@render duelerName(plan.preparer_id, duelRes.prepChampID)}
+				vs {@render duelerName(plan.target_player_id, duelRes.targChampID)}.
 			</p>
 		{/if}
 	</div>

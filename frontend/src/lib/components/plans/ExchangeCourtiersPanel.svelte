@@ -18,9 +18,11 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
+	import BreakPicker from './BreakPicker.svelte';
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, choicesCommitted, parseResolutionData,
 		playerName, assetName, assetsWithIntactMarginalia, playersExcept, resolutionActorID,
+		survivesABreak,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -494,7 +496,13 @@
 			{@const riposteResolved = ec.riposte_break_resolved ?? false}
 			{@const ripostePending = riposteAllowed && !riposteResolved}
 			{@const requestedPeerName = assetName(assets, ftAssetID)}
+			{@const requestedPeer = assets.find(a => a.id === ftAssetID)}
+			<!-- The server refuses a break that would destroy the peer (it has to
+			     survive to be surrendered), so the picker is only offered while a
+			     second intact marginalia remains. -->
+			{@const canBreakFirst = survivesABreak(requestedPeer)}
 			{@const requestedPeerMarginalia = preparerMarginaliaAssets.filter(a => a.id === ftAssetID)}
+			{@const requestedPeerNotes = (requestedPeer?.marginalia ?? []).filter(m => !m.is_torn).length}
 
 			{#if messyRequired && !messyDone}
 				{#if isTarget}
@@ -505,14 +513,16 @@
 							before this plan completes.
 						</p>
 						{#if messyError}<ErrorText message={messyError} variant="panel" />{/if}
-						<CardPicker
+						<!-- Tearing a courtier's last marginalia destroys it, which the owner can
+						     avoid by adding another first: the picker gives the same heads-up
+						     every other break picker does. -->
+						<BreakPicker
 							label="Marginalium to break"
 							items={preparerMarginaliaAssets}
 							{players}
 							emptyMessage="The preparer has no marginalia to break."
-							marginaliaMode
 							selectedMarginaliaID={messyMarginaliaID}
-							onSelectMarginalia={(mID) => (messyMarginaliaID = mID)}
+							onSelect={(mID) => (messyMarginaliaID = mID)}
 						/>
 						<button class="action-btn primary" onclick={() => onMessyBreak(plan)}
 							disabled={!messyMarginaliaID || messyBusy}>
@@ -528,28 +538,42 @@
 						<p class="ft-prompt">
 							{#if isPreparer}
 								Riposte: {playerName(players, plan.target_player_id)} takes
-								your <em>{requestedPeerName}</em>. You may break it first, or surrender it intact.
+								your <em>{requestedPeerName}</em>.{#if canBreakFirst}{' '}You may break it first, or surrender it intact.{/if}
 							{:else}
 								Riposte: {playerName(players, plan.target_player_id)} takes
-								{playerName(players, plan.preparer_id)}'s <em>{requestedPeerName}</em>. As the
-								Make Demands winner you decide whether to break it first or surrender it intact.
+								{playerName(players, plan.preparer_id)}'s <em>{requestedPeerName}</em>.{#if canBreakFirst}{' '}As the
+								Make Demands winner you decide whether to break it first or surrender it intact.{:else}{' '}As the
+								Make Demands winner you surrender it.{/if}
 							{/if}
 						</p>
-						<CardPicker
-							label="Marginalium to break"
-							items={requestedPeerMarginalia}
-							{players}
-							emptyMessage="This peer has no marginalia to break."
-							marginaliaMode
-							selectedMarginaliaID={riposteMargID}
-							onSelectMarginalia={(mID) => (riposteMargID = mID)}
-						/>
+						{#if canBreakFirst}
+							<CardPicker
+								label="Marginalium to break"
+								items={requestedPeerMarginalia}
+								{players}
+								emptyMessage="This peer has no marginalia to break."
+								marginaliaMode
+								selectedMarginaliaID={riposteMargID}
+								onSelectMarginalia={(mID) => (riposteMargID = mID)}
+							/>
+						{:else}
+							<!-- Not a picker with nothing in it: tearing the last note would destroy
+							     the peer, and a destroyed peer can't be surrendered. -->
+							<p class="choices-note muted">
+								<em>{requestedPeerName}</em> {requestedPeerNotes === 0
+									? 'has no marginalia to tear'
+									: 'has one marginalia left, and tearing it would destroy the peer'},
+								so it can only be surrendered intact.
+							</p>
+						{/if}
 						<div class="ft-actions">
-							<button class="action-btn primary" onclick={() => submitRiposte(plan, riposteMargID)}
-								disabled={!riposteMargID || riposteBusy}>
-								{riposteBusy ? '…' : 'Break, then surrender'}
-							</button>
-							<button class="action-btn secondary" onclick={() => submitRiposte(plan, null)}
+							{#if canBreakFirst}
+								<button class="action-btn primary" onclick={() => submitRiposte(plan, riposteMargID)}
+									disabled={!riposteMargID || riposteBusy}>
+									{riposteBusy ? '…' : 'Break, then surrender'}
+								</button>
+							{/if}
+							<button class="action-btn {canBreakFirst ? 'secondary' : 'primary'}" onclick={() => submitRiposte(plan, null)}
 								disabled={riposteBusy}>
 								{riposteBusy ? '…' : 'Surrender intact'}
 							</button>

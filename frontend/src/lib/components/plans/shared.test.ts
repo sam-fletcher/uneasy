@@ -12,6 +12,7 @@ import {
 	assetsWithIntactMarginalia,
 	breakableAssets,
 	breaksAvailable,
+	survivesABreak,
 	playersExcept,
 	ownerUnleveragedAssets,
 	ownerIntactAssets,
@@ -342,6 +343,26 @@ describe('breaksAvailable', () => {
 
 	it('gives an all-torn asset none', () => {
 		expect(breaksAvailable(asset({ id: 1, marginalia: [marg({ id: 1, asset_id: 1, is_torn: true })] }))).toBe(0);
+	});
+});
+
+describe('survivesABreak', () => {
+	const notes = (...torn: boolean[]) =>
+		asset({ id: 1, marginalia: torn.map((is_torn, i) => marg({ id: i + 1, asset_id: 1, is_torn })) });
+
+	it('holds while a second intact marginalia remains', () => {
+		expect(survivesABreak(notes(false, false))).toBe(true);
+		expect(survivesABreak(notes(false, false, true))).toBe(true);
+	});
+
+	it('fails on the last intact marginalia, whatever has been torn before', () => {
+		expect(survivesABreak(notes(false))).toBe(false);
+		expect(survivesABreak(notes(false, true, true))).toBe(false);
+	});
+
+	it('fails for a blank asset and for no asset at all', () => {
+		expect(survivesABreak(notes())).toBe(false);
+		expect(survivesABreak(undefined)).toBe(false);
 	});
 });
 

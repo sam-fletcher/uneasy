@@ -154,6 +154,7 @@ test('fair trade accepted: both peers change hands, the log names both, then the
 	// The log: the offer, then BOTH transfers, then the resolution line.
 	await expectPlanLog(carol, planID, [
 		`bob proposed a fair trade: alice's ${PEER.alice} in exchange.`,
+		'alice accepted the fair trade',
 		`alice took ${PEER.bob} from bob`,
 		`bob took ${PEER.alice} from alice`,
 		'Exchange Courtiers succeeded.',
@@ -216,12 +217,58 @@ test('mar by 2: riposte lets the preparer break the requested peer before bob ta
 	// Still alice's until she decides.
 	expect(await ownerOf(g, g.peers.alice)).toBe(g.ids.alice);
 
+	// Her courtier has one marginalia, which the server won't let her tear (the
+	// peer must survive to be surrendered), so she isn't offered it.
+	await expect(alice.getByText(`${PEER.alice} has one marginalia left`)).toBeVisible();
+	await expect(alice.getByRole('button', { name: 'Break, then surrender' })).toHaveCount(0);
+	await expect(alice.getByText('Marginalium to break')).toHaveCount(0);
+
 	await alice.getByRole('button', { name: 'Surrender intact' }).click();
 
 	await expect.poll(() => planStatus(g, planID)).toBe('resolved');
 	expect(await ownerOf(g, g.peers.alice)).toBe(g.ids.bob);
 	// A mar by riposte leaves the targeted peer where it was.
 	expect(await ownerOf(g, g.peers.bob)).toBe(g.ids.bob);
+	// The riposte is announced when it is chosen, before the preparer acts.
+	await expectPlanLog(carol, planID, [
+		'alice declined the fair trade',
+		// One note, so no break is offered, and the line must not say there is one (the
+		// picker above says the same: it can only be surrendered).
+		`bob chose a riposte — the requested peer ${PEER.alice} can't be broken first, so it can only be surrendered intact.`,
+		`alice surrendered their ${PEER.alice} intact.`,
+	]);
+});
+
+test('mar by 2: with a second marginalia on it, alice can tear one before surrendering the peer', async ({ browser }) => {
+	const { g, planID } = await resolvingGame(browser, {
+		aliceMarginalia: ['quick with a knife', 'owes the steward money'],
+	});
+	const { alice, bob } = await openAll(g);
+	await offerTrade(g, planID);
+	await declineAndForce(g, planID, 1); // difficulty 3, result 1: a mar by 2
+	await bob.getByText('Riposte').click();
+	await bob.getByRole('button', { name: 'Apply choices' }).click();
+
+	await expect(alice.getByText('You may break it first, or surrender it intact.')).toBeVisible();
+	const breakFirst = alice.getByRole('button', { name: 'Break, then surrender' });
+	await expect(breakFirst).toBeDisabled();
+	await alice.locator('.card', { hasText: PEER.alice }).getByRole('checkbox').first().click();
+	await breakFirst.click();
+
+	await expect.poll(() => planStatus(g, planID)).toBe('resolved');
+	// The peer went over damaged, not destroyed.
+	expect(await ownerOf(g, g.peers.alice)).toBe(g.ids.bob);
+	const res = await g.ctx.alice.request.get(`/api/tables/${g.gameID}/assets`);
+	const { assets } = (await res.json()) as {
+		assets: { id: number; is_destroyed: boolean; marginalia: { is_torn: boolean }[] }[];
+	};
+	const courtier = assets.find(a => a.id === g.peers.alice)!;
+	expect(courtier.is_destroyed).toBe(false);
+	expect(courtier.marginalia.filter(m => m.is_torn)).toHaveLength(1);
+	// With a second note the break is on offer, and the choice's line says who may make it.
+	await expectPlanLog(bob, planID, [
+		`bob chose a riposte — alice may break the requested peer ${PEER.alice} before bob takes it.`,
+	]);
 });
 
 test('make: the targeted peer transfers, the target owes a messy break, then it closes itself', async ({ browser }) => {
@@ -247,9 +294,13 @@ test('make: the targeted peer transfers, the target owes a messy break, then it 
 	await expectHeading(carol, 'Waiting on bob — break a marginalia');
 	expect(await planStatus(g, planID)).toBe('resolving');
 
-	// bob breaks the sole marginalia on alice's courtier (destroying it).
+	// bob breaks the sole marginalia on alice's courtier (destroying it). It is her
+	// courtier's last note with empty slots left, so the picker warns first, as every
+	// other break picker does.
 	await expect(bob.getByRole('button', { name: 'Break marginalia' })).toBeDisabled();
+	await expect(bob.getByText('Heads up: this is the asset\'s last marginalia')).toHaveCount(0);
 	await bob.locator('.card', { hasText: PEER.alice }).getByRole('checkbox').click();
+	await expect(bob.getByText('Heads up: this is the asset\'s last marginalia')).toBeVisible();
 	await bob.getByRole('button', { name: 'Break marginalia' }).click();
 
 	// The break was the last step: the plan resolves with no Complete click.

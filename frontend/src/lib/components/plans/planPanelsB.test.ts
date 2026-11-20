@@ -297,16 +297,26 @@ describe('Exchange Courtiers buttons', () => {
 		}).body;
 	}
 
+	// A peer that can lose a note and still stand: the server refuses a break that
+	// would destroy it, so a second intact marginalia is what makes one on offer.
+	const notes = (n: number) => Array.from({ length: n }, (_, i) =>
+		({ id: i + 1, asset_id: 6, position: i + 1, text: `note ${i + 1}`, is_torn: false }));
+	const withNotes = (n: number) => PEER_ASSETS.map(a => (a.id === 6 ? { ...a, marginalia: notes(n) } : a));
+	const riposte = { fair_trade_asset_id: 6, fair_trade_accepted: false, riposte_allowed: true };
+
 	it('a riposte asks for a main "Break, then surrender", with "Surrender intact" beside it', () => {
-		const body = ec(
-			{ fair_trade_asset_id: 6, fair_trade_accepted: false, riposte_allowed: true },
-			PREPARER, { choice_submitted: true }, PEER_ASSETS, 'mar',
-		);
+		const body = ec(riposte, PREPARER, { choice_submitted: true }, withNotes(2), 'mar');
 		const brk = byLabel(body, 'Break, then surrender');
 		const intact = byLabel(body, 'Surrender intact');
 		expect(hasClass(brk, 'primary')).toBe(true);
 		expect(hasClass(intact, 'secondary')).toBe(true);
 		expect(hasClass(intact, 'primary')).toBe(false);
+	});
+
+	it('a riposte on a peer that cannot be broken has one way on, and it is the main button', () => {
+		const body = ec(riposte, PREPARER, { choice_submitted: true }, withNotes(1), 'mar');
+		expect(body).not.toContain('Break, then surrender');
+		expect(hasClass(byLabel(body, 'Surrender intact'), 'primary')).toBe(true);
 	});
 
 	it('a preparer with no peer to trade has one way on, and it is the main button', () => {

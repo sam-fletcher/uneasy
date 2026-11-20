@@ -74,11 +74,12 @@ const playerChips = (html: string) => {
 	return (row.match(/<button\b[\s\S]*?<\/button>/g) ?? []).map(text);
 };
 
-/** The target-plan options of a Make Demands prep form, without the placeholder. */
+/** The target plans of a Make Demands prep form: one option card each, as [title, row line]. */
 const targetOptions = (html: string) =>
-	(html.match(/<option\b[\s\S]*?<\/option>/g) ?? [])
-		.map(text)
-		.filter(o => o !== '— pick a plan to demand against —');
+	(html.match(/<button\b[^>]*class="[^"]*\boption-card\b[\s\S]*?<\/button>/g) ?? []).map(card => [
+		text(card.match(/option-title[^>]*>([\s\S]*?)<\/span>/)?.[1] ?? ''),
+		text(card.match(/option-desc[^>]*>([\s\S]*?)<\/span>/)?.[1] ?? ''),
+	]);
 
 describe('Exchange Courtiers: the target chips', () => {
 	const DRAFT = { target_player_id: TARGET, target_asset_id: 11, notes: 'x' };
@@ -217,9 +218,17 @@ describe('Make Demands: the target plans', () => {
 
 	it("the preparer's own target list is everyone's plans but their own", () => {
 		expect(targetOptions(render_(PREPARER))).toEqual([
-			'Spread Propaganda by bob (row 5)',
-			'Chronicle Histories by carol (row 8)',
+			['Spread Propaganda by bob', 'Row 5'],
+			['Chronicle Histories by carol', 'Row 8'],
 		]);
+	});
+
+	it('is a list of option cards, the house piece for a plan to aim at, not a native <select>', () => {
+		const html = render_(PREPARER);
+		expect(html).not.toContain('<select');
+		expect(html).not.toContain('<option');
+		// Each card is a toggle, so the pick is read out as well as drawn.
+		expect(html.match(/option-card[^>]*aria-pressed="false"/g)).toHaveLength(2);
 	});
 
 	it.each([
@@ -228,9 +237,9 @@ describe('Make Demands: the target plans', () => {
 	])("a watcher, %s, is shown the preparer's list: everyone's plans but alice's", (_, seat) => {
 		const options = targetOptions(render_(seat));
 		expect(options).toEqual([
-			'Spread Propaganda by bob (row 5)',
-			'Chronicle Histories by carol (row 8)',
+			['Spread Propaganda by bob', 'Row 5'],
+			['Chronicle Histories by carol', 'Row 8'],
 		]);
-		expect(options.some(o => o.startsWith('Seek Answers'))).toBe(false);
+		expect(options.some(([title]) => title.startsWith('Seek Answers'))).toBe(false);
 	});
 });

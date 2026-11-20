@@ -120,13 +120,13 @@ export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	// delayed / broken_journey) and rendered directly in MakeIntroductionsPanel,
 	// not via the flat MakeMarPicker — so it has no entry here.
 	spread_propaganda: [
-		{ key: 'give_peer',    label: "(a) A peer leaves your retinue (give to another player)",
-		  summary: "(a) A peer leaves the preparer's retinue (given to another player)" },
-		{ key: 'lay_low',      label: '(b) Keep your head down — next plan cannot involve esteem',
-		  summary: "(b) The preparer keeps their head down — their next plan cannot involve esteem" },
-		{ key: 'break_self',   label: '(c) Word of your laughable ideas gets around — break yourself',
-		  summary: "(c) Word of the preparer's laughable ideas gets around — they break one of their own assets" },
-		{ key: 'counter_prop', label: "(d) Top interferer may spread their own propaganda now, or decline" },
+		{ key: 'give_peer',    label: "A peer leaves your retinue (give to another player)",
+		  summary: "A peer leaves the preparer's retinue (given to another player)" },
+		{ key: 'lay_low',      label: 'Keep your head down — next plan cannot involve esteem',
+		  summary: "The preparer keeps their head down — their next plan cannot involve esteem" },
+		{ key: 'break_self',   label: 'Word of your laughable ideas gets around — break yourself',
+		  summary: "Word of the preparer's laughable ideas gets around — they break one of their own assets" },
+		{ key: 'counter_prop', label: "The top interferer may spread their own propaganda now, or decline" },
 	],
 };
 
@@ -423,6 +423,29 @@ export function breakableAssets(assets: Asset[], ownerID?: number | null): Asset
 export function breaksAvailable(asset: Asset): number {
 	if (isBlankAsset(asset)) return 1;
 	return (asset.marginalia ?? []).filter(m => !m.is_torn).length;
+}
+
+/**
+ * How many of their own resources a Seek Answers preparer must flaw on a mar: the
+ * shortfall (difficulty minus result, never negative), capped by how many of their
+ * resources can still be flawed.
+ *
+ * Backend mirror: game.SeekAnswersMarPenalty.
+ */
+export function seekAnswersMarPenalty(difficulty: number, result: number, eligible: number): number {
+	return Math.min(Math.max(difficulty - result, 0), eligible);
+}
+
+/**
+ * Whether an asset still stands after one marginalia is torn: it needs a second
+ * intact one. A riposte's break must leave the requested peer standing so it can
+ * be surrendered, so the server refuses its last intact marginalia (and a blank
+ * peer has none to name).
+ *
+ * Backend mirror: ecRiposteBreakHandler's CountIntactMarginalia check.
+ */
+export function survivesABreak(asset: Asset | null | undefined): boolean {
+	return (asset?.marginalia ?? []).filter(m => !m.is_torn).length >= 2;
 }
 
 /**

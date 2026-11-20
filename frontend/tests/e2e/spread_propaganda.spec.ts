@@ -230,9 +230,9 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	// ── The shared Stepper: capped per option, exact total, 44px targets ──
 	const more = (name: string) => alice.page.getByRole('button', { name: `More ${name}` });
 	const fewer = (name: string) => alice.page.getByRole('button', { name: `Fewer ${name}` });
-	const LAY_LOW = '(b) Keep your head down';
-	const BREAK_SELF = '(c) Word of your laughable ideas';
-	const COUNTER = '(d) Top interferer';
+	const LAY_LOW = 'Keep your head down';
+	const BREAK_SELF = 'Word of your laughable ideas';
+	const COUNTER = 'The top interferer may spread';
 	const apply = alice.page.getByRole('button', { name: 'Apply choices' });
 	const total = alice.page.locator('.choices-note', { hasText: 'Total picks:' });
 
@@ -401,7 +401,7 @@ test('spread propaganda mar: "a peer leaves" cannot be picked past the peers the
 	await openTables(t);
 	await expect(alice.page.getByText('choose exactly 2')).toBeVisible({ timeout: 10_000 });
 
-	const GIVE_PEER = '(a) A peer leaves your retinue';
+	const GIVE_PEER = 'A peer leaves your retinue';
 	const more = alice.page.getByRole('button', { name: `More ${GIVE_PEER}` });
 	const total = alice.page.locator('.choices-note', { hasText: 'Total picks:' });
 	await more.click();
@@ -464,14 +464,14 @@ test('spread propaganda make: the artifact step appears live, with no reload', a
 
 // ── Counter-propaganda (mar option d): the interferer states a message or declines ──
 
-/** Drive a marred plan to alice's pick, with bob as the one interferer. Returns the
- *  counter-propaganda plan's id once alice's picks are committed. */
-async function marWithBobInterfering(t: Table, picks: string[]): Promise<number> {
+/** Cast alice's propaganda, have bob interfere with one leveraged asset, and force
+ *  the mar. Alice has not yet made her picks. */
+async function marredByBob(t: Table, minBudget: number) {
 	const { alice, bob } = t;
 	const roll = await castFromUI(t, 'Grain is hoarded while the markets starve.');
 	// The actor rolls two dice, so a result of 1 is always reachable and leaves the
 	// mar a budget of difficulty − 1 (a dummy can hold a rank, so don't hard-code it).
-	expect(roll.difficulty).toBeGreaterThanOrEqual(picks.length + 1);
+	expect(roll.difficulty).toBeGreaterThanOrEqual(minBudget + 1);
 
 	const post = async (who: { ctx: BrowserContext }, path: string, data?: object) => {
 		const res = await who.ctx.request.post(path, data ? { data } : undefined);
@@ -483,6 +483,14 @@ async function marWithBobInterfering(t: Table, picks: string[]): Promise<number>
 	const bobHolding = assets.find(a => a.asset_type === 'holding' && a.name.startsWith('bob'))!;
 	await post(bob, `/api/rolls/${roll.id}/leverage`, { asset_id: bobHolding.id });
 	await forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: 1 });
+	return { roll, post };
+}
+
+/** Drive a marred plan to alice's pick, with bob as the one interferer. Returns the
+ *  counter-propaganda plan's id once alice's picks are committed. */
+async function marWithBobInterfering(t: Table, picks: string[]): Promise<number> {
+	const { alice } = t;
+	const { post } = await marredByBob(t, picks.length);
 	if (picks.includes('give_peer')) {
 		await post(alice, `/api/tables/${t.gameID}/assets`, {
 			asset_type: 'peer', name: 'A peer to give', is_main_character: false, marginalia: ['loyal'],
@@ -492,6 +500,20 @@ async function marWithBobInterfering(t: Table, picks: string[]): Promise<number>
 	const { plans } = (await (await alice.ctx.request.get(`/api/tables/${t.gameID}/plans`)).json()) as { plans: PlanRow[] };
 	return plans.filter(p => p.plan_type === 'spread_propaganda').map(p => p.id).find(id => id !== t.planID)!;
 }
+
+test('counter-propaganda: the option names the top interferer and shows the tally', async ({ browser }) => {
+	const t = await setUp(browser);
+	await openTables(t);
+	// Bob is the one interferer, with one leveraged asset: one die.
+	await marredByBob(t, 1);
+	const { alice, bob } = t;
+
+	await expect(alice.page.getByText('Top interferer: bob, with 1 die.')).toBeVisible({ timeout: 10_000 });
+	// The option itself is open for the pick, and says so in words, without a letter.
+	await expect(alice.page.getByRole('button', { name: 'More The top interferer may spread' })).toBeEnabled();
+	// Only the preparer is choosing, so nobody else is shown the picker or its line.
+	await expect(bob.page.getByText('Top interferer: bob')).toHaveCount(0);
+});
 
 test('counter-propaganda: the interferer, with the parent still owing a step, can state a message the table reads first', async ({ browser }) => {
 	const t = await setUp(browser);
