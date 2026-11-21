@@ -207,3 +207,100 @@ describe('MakeIntroductionsPanel commit marker', () => {
 		expect(body).toContain('They arrive');
 	});
 });
+
+// ── The difficulty before the dice, and the watcher's view of the mar's fates ─────────
+//
+// The meter was already here; it is the shared one now (the same words), and what a
+// player who is not settling a newcomer saw of the mar's fates was nothing at all. They
+// now see the four fates, greyed out and inert, with the ones already handed out struck
+// through, as the actor does. (The naming, the arrivals and the marginalia are text the
+// player writes, not a pick: they are not mirrored, and nothing is streamed.)
+
+const textOf = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+const MIRROR = /<fieldset[^>]*class="[^"]*\bresolve-mirror\b[^"]*"[^>]*disabled/;
+
+describe('Make Introductions: the difficulty, from the shared meter', () => {
+	it('is 2 plus a peer each, for the preparer and for everyone else, before the dice', () => {
+		for (const seat of [PREPARER, WINNER]) {
+			const t = textOf(renderFor(seat, { rollOutcome: null, mi: { peer_count: 2 }, noWinner: true }));
+			expect(t).toContain('Difficulty 4');
+			expect(t).toContain('2, plus 1 for each of the 2 peers introduced.');
+			expect(t).toContain('1 easy');
+		}
+	});
+
+	it('is gone once the dice have landed', () => {
+		expect(textOf(renderFor(WINNER, MAR))).not.toContain('1 easy');
+		expect(textOf(renderFor(WINNER, MAKE))).not.toContain('1 easy');
+	});
+});
+
+describe('Make Introductions: what a watcher sees of the mar fates', () => {
+	const TWO: Branch = {
+		rollOutcome: 'mar',
+		mi: {
+			peer_count: 2, mar_pending: true,
+			drafts: [{ id: 'd1', name: 'Lady Vane' }, { id: 'd2', name: 'Ser Oak' }],
+			mar_outcomes: [{ draft_id: 'd1', outcome: 'delayed', done: true }],
+		},
+		marker: { choice_auto_applied: true },
+		noWinner: true,
+	};
+
+	it('is the four fates, greyed and inert, with the one already handed out struck through', () => {
+		const body = renderFor(WINNER, TWO);
+		expect(body).toMatch(MIRROR);
+		const t = textOf(body);
+		for (const w of ['Another retinue', 'Not who you thought', 'Delayed', 'Broken journey']) expect(t).toContain(w);
+		expect(t).toContain('Ser Oak');
+		expect(t).toContain('1 remaining');
+		// Delayed was Lady Vane's, so it reads as taken.
+		expect(body).toMatch(/<span class="[^"]*\bstruck\b[^"]*">Delayed/);
+		expect(body).not.toMatch(/<span class="[^"]*\bstruck\b[^"]*">Another retinue/);
+	});
+
+	it('shows none of the fates as picked: the actor\'s choice is not sent to anyone', () => {
+		const body = renderFor(WINNER, TWO);
+		const mirror = body.match(/<fieldset[^>]*resolve-mirror[^>]*disabled[\s\S]*?<\/fieldset>/)![0];
+		const chips = [...mirror.matchAll(/<button[^>]*class="chip[^"]*"[^>]*>/g)].map(m => m[0]);
+		expect(chips).toHaveLength(4);
+		for (const c of chips) expect(c).toContain('aria-pressed="false"');
+	});
+
+	it('has no button, no field and no sub-form: nothing to commit, nothing typed', () => {
+		const body = renderFor(WINNER, TWO);
+		const mirror = body.match(/<fieldset[^>]*resolve-mirror[^>]*disabled[\s\S]*?<\/fieldset>/)![0];
+		expect(mirror).not.toContain('Resolve peer');
+		expect(mirror).not.toContain('<textarea');
+		expect(mirror).not.toContain('Joins which retinue');
+		expect(body).not.toContain('Resolve peer');
+	});
+
+	it('speaks of no one in the second person, and is the same page for every watcher', () => {
+		const a = textOf(renderFor(WINNER, TWO));
+		// (The fate named "Not who you thought" is the book's own wording, and the name the
+		// Buffet and the recap already use, so it is the one "you" allowed.)
+		expect(a.replace('Not who you thought', '')).not.toMatch(/\byou(r)?\b/i);
+		// A second watcher: with a perform_steps winner, the preparer is a watcher too.
+		const b = textOf(renderFor(PREPARER, { ...TWO, noWinner: false }));
+		expect(b).toContain('Ser Oak');
+		expect(b).toMatch(/1 remaining/);
+	});
+
+	it('is still the live form, with its button, for the player settling the newcomers', () => {
+		const body = renderFor(PREPARER, TWO);
+		expect(body).not.toMatch(MIRROR);
+		expect(body).toContain('Resolve peer');
+	});
+
+	it('is gone once every newcomer has a fate', () => {
+		const done: Branch = {
+			...TWO,
+			mi: { ...TWO.mi, mar_outcomes: [
+				{ draft_id: 'd1', outcome: 'delayed', done: true },
+				{ draft_id: 'd2', outcome: 'broken_journey', done: true },
+			] },
+		};
+		expect(renderFor(WINNER, done)).not.toMatch(MIRROR);
+	});
+});
