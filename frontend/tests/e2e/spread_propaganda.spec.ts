@@ -222,10 +222,13 @@ test('spread propaganda mar: pre-roll, Buffet, capped stepper picks, break-yours
 	// ── The dice land as a mar owing difficulty − result = 2 picks ──
 	await forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: roll.difficulty - 2 });
 	await expect(alice.page.getByText('choose exactly 2')).toBeVisible({ timeout: 10_000 });
-	// The bystander is told what alice is on by the heading, and gets no picker.
+	// The bystander is told what alice is on by the heading, and sees her picker as a
+	// greyed, inert mirror: every option on offer, none of them operable, no button.
 	await expectHeading(bob.page, 'Waiting on alice — choose the mar options');
 	await expect(bob.page.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
-	await expect(bob.page.locator('.stepper-row')).toHaveCount(0);
+	await expect(bob.page.locator('.resolve-mirror .stepper-row')).toHaveCount(4);
+	await expect(bob.page.locator('.resolve-mirror .stepper-row button').first()).toBeDisabled();
+	await expect(bob.page.locator('.resolve-mirror .stepper-row button').last()).toBeDisabled();
 
 	// ── The shared Stepper: capped per option, exact total, 44px targets ──
 	const more = (name: string) => alice.page.getByRole('button', { name: `More ${name}` });
@@ -511,8 +514,10 @@ test('counter-propaganda: the option names the top interferer and shows the tall
 	await expect(alice.page.getByText('Top interferer: bob, with 1 die.')).toBeVisible({ timeout: 10_000 });
 	// The option itself is open for the pick, and says so in words, without a letter.
 	await expect(alice.page.getByRole('button', { name: 'More The top interferer may spread' })).toBeEnabled();
-	// Only the preparer is choosing, so nobody else is shown the picker or its line.
-	await expect(bob.page.getByText('Top interferer: bob')).toHaveCount(0);
+	// Only the preparer is choosing, so everyone else sees the same option and its line in a
+	// greyed mirror, which they cannot press.
+	await expect(bob.page.getByText('Top interferer: bob, with 1 die.')).toBeVisible({ timeout: 10_000 });
+	await expect(bob.page.getByRole('button', { name: 'More The top interferer may spread' })).toBeDisabled();
 });
 
 test('counter-propaganda: the interferer, with the parent still owing a step, can state a message the table reads first', async ({ browser }) => {
