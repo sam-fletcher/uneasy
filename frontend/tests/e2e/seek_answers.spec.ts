@@ -295,13 +295,18 @@ test('seek answers pre-roll: preparer narrates, others wait, the Buffet is previ
 	const { alice, bob, carol } = t;
 	await sa.openTables(t);
 
-	// ── Pre-roll: no dice yet. The preparer is asked; everyone else sees the same form greyed. ──
+	// ── Pre-roll: no dice yet. The preparer is asked, and the button says it opens the roll.
+	// Everyone else gets no form (the heading says whose move it is) but sees how hard the roll is. ──
 	await expect(alice.page.getByText('What have you learned?')).toBeVisible({ timeout: 10_000 });
-	await expect(alice.page.getByRole('button', { name: 'Submit', exact: true })).toBeDisabled();
+	await expect(alice.page.getByRole('button', { name: 'Post & open the roll', exact: true })).toBeDisabled();
+	await expect(alice.page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+	for (const p of [alice, bob, carol]) {
+		await expect(p.page.getByText(/rank on the knowledge track/)).toBeVisible();
+	}
 	for (const p of [bob, carol]) {
 		await expect(stepHeading(p.page)).toHaveText('Waiting on alice — describe what was learned', { timeout: 10_000 });
-		await expect(p.page.getByPlaceholder('Restate your research methods')).toBeDisabled();
-		await expect(p.page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+		await expect(p.page.getByPlaceholder('Where you have been looking')).toHaveCount(0);
+		await expect(p.page.getByRole('button', { name: 'Post & open the roll', exact: true })).toHaveCount(0);
 	}
 
 	// Only the preparer may cast the dice.
