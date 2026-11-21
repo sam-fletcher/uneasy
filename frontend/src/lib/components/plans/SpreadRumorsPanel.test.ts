@@ -85,3 +85,69 @@ describe('SpreadRumorsPanel mar after a zero-pick commit', () => {
 		expect(renderZeroPick(true)).not.toContain('Apply choices');
 	});
 });
+
+// The difficulty used to show only in the dice panel's line. It is the meter now, for
+// everyone, until the dice land, and it says which of the plan's two readings it is:
+// a rumor about a main character is as hard as its owner's esteem STATUS (6 minus rank),
+// any other asset as hard as the preparer's own esteem RANK. The two run opposite ways,
+// which is what the number alone could not tell a player.
+describe('SpreadRumorsPanel difficulty, before the dice', () => {
+	const textOf = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+	function renderPreRoll(opts: {
+		seat: number; targetIsMainCharacter: boolean; outcome?: 'make' | 'mar' | null;
+		/** This plan's choices are committed and another plan's roll is the one open on the table. */
+		committedWithOtherRoll?: boolean;
+	}): string {
+		const plan = {
+			id: 9, plan_type: 'spread_rumors', status: 'resolving', preparer_id: 1,
+			target_asset_id: 20, preparation_notes: 'a rumor',
+			resolution_data: JSON.stringify({
+				spread_rumors: { pre_roll_done: false },
+				...(opts.committedWithOtherRoll ? { choice_submitted: true } : {}),
+			}),
+		} as never;
+		const ctx = {
+			gameID: 1, currentRow: 5, endingMode: null, plans: [plan],
+			assets: [asset(1, 1, 'Preparer Main', true), asset(20, 2, 'Target', opts.targetIsMainCharacter)],
+			players: [{ id: 1, display_name: 'ravi' }, { id: 2, display_name: 'sol' }, { id: 3, display_name: 'mei' }] as never,
+			rankings: [
+				{ id: 1, game_id: 1, category: 'esteem', player_id: 1, rank: 3 },
+				{ id: 2, game_id: 1, category: 'esteem', player_id: 2, rank: 2 },
+			] as never,
+			currentPlayerID: opts.seat, focusPlayerID: null, isFocusPlayer: false,
+			rollActive: false, rollOutcome: opts.outcome ?? null,
+			activeRoll: (opts.committedWithOtherRoll ? { id: 8, plan_id: 77, outcome: null, difficulty: 2 } : null) as never,
+			onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
+			readOnly: false, prepDraft: null, emitPrepDraft: () => {},
+		} as PlanContext;
+		return render(SpreadRumorsPanel, { props: { ctx, plan, mode: 'resolve' } }).body;
+	}
+
+	it('does not come back when another plan\'s roll opens after this plan\'s dice have landed', () => {
+		const t = textOf(renderPreRoll({ seat: 3, targetIsMainCharacter: true, committedWithOtherRoll: true }));
+		expect(t).not.toContain('1 easy');
+	});
+
+	it('about a main character: the owner\'s esteem status, for the preparer and for everyone else', () => {
+		for (const seat of [1, 2, 3]) {
+			const t = textOf(renderPreRoll({ seat, targetIsMainCharacter: true }));
+			expect(t).toContain('Difficulty 4');
+			expect(t).toContain('main character');
+			expect(t).toContain('sol’s status on the esteem track: 6 minus rank 2 is 4');
+		}
+	});
+
+	it('about any other asset: the preparer\'s own esteem rank', () => {
+		for (const seat of [1, 3]) {
+			const t = textOf(renderPreRoll({ seat, targetIsMainCharacter: false }));
+			expect(t).toContain('Difficulty 3');
+			expect(t).toContain('not a main character');
+			expect(t).toContain('ravi, 3');
+		}
+	});
+
+	it('is gone once the dice have landed', () => {
+		expect(textOf(renderPreRoll({ seat: 3, targetIsMainCharacter: true, outcome: 'make' }))).not.toContain('1 easy');
+	});
+});
