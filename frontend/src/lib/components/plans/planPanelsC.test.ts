@@ -487,8 +487,8 @@ describe('a duel challenge that cannot be declined', () => {
 // ── Make Demands ─────────────────────────────────────────────────────────────
 
 describe('the Make Demands draft', () => {
-	function draft(viewer: number): string {
-		const target = { id: 9, plan_type: 'seek_answers', status: 'pending', preparer_id: ALICE, row_number: 5 };
+	function draft(viewer: number, targetType = 'seek_answers'): string {
+		const target = { id: 9, plan_type: targetType, status: 'pending', preparer_id: ALICE, row_number: 5 };
 		const demand = {
 			id: 12, plan_type: 'make_demands', status: 'resolving', preparer_id: BOB, targeted_plan_id: 9,
 			preparation_notes: 'Hand it over.',
@@ -518,19 +518,37 @@ describe('the Make Demands draft', () => {
 		expect(body).not.toContain('picked Control leverage —');
 	});
 
-	it('gives an option card a title and its effect on separate lines', () => {
+	const card = (body: string, title: string) =>
+		body.match(new RegExp(`<button[^>]*option-card[^>]*>(?:(?!<\\/button>).)*${title}(?:(?!<\\/button>).)*<\\/button>`))?.[0] ?? '';
+
+	it('gives an option card a title and what it does against THIS target on separate lines', () => {
 		const body = draft(BOB);
 		expect(body).toMatch(/option-title[^>]*>Perform steps<\/span>/);
-		expect(body).toMatch(/option-desc[^>]*>Submit the target plan’s make\/mar choice in their place</);
+		// Said for this plan and its preparer, as the "What can happen?" before the dice says it.
+		expect(body).toMatch(/option-desc[^>]*>Pick the make or mar options for alice once they have rolled\.</);
+		expect(body).not.toContain('Submit the target plan');
 		// Control leverage is already taken, so it is not offered again.
 		expect(body).not.toMatch(/option-title[^>]*>Control leverage</);
 	});
 
-	it('shows a card that would do nothing as locked, with the reason in words', () => {
+	it('says what each live card does for the plan the demand is aimed at, whichever it is', () => {
+		const duel = draft(BOB, 'propose_duel');
+		expect(card(duel, 'Keep or change target')).toContain('Keep or change who is challenged.');
+		expect(card(duel, 'Keep assets')).toContain('Take the staked assets the preparer takes, in place of alice.');
+		expect(card(duel, 'Perform steps')).toContain('side of the bouts');
+		expect(card(duel, 'Perform steps')).not.toContain('Pick the make or mar options');
+		const rumors = draft(BOB, 'spread_rumors');
+		expect(card(rumors, 'Keep or change target')).toContain('Keep or change which asset the rumor is about.');
+		expect(card(rumors, 'Keep assets')).toContain('Take any asset the rumor takes, in place of alice.');
+	});
+
+	it('shows a card that would do nothing as locked, saying so in the same words as the "What can happen?"', () => {
 		const body = draft(BOB);
-		const keepAssets = body.match(/<button[^>]*option-card[^>]*>(?:(?!<\/button>).)*Keep assets(?:(?!<\/button>).)*<\/button>/)?.[0] ?? '';
+		const keepAssets = card(body, 'Keep assets');
 		expect(keepAssets).toContain('aria-disabled="true"');
-		expect(keepAssets).toContain('gives its preparer no assets to keep');
+		expect(keepAssets).toContain('No effect here: Seek Answers gives its preparer no assets to keep.');
+		// Once, not twice: the reason is the card's description, not a second line under it.
+		expect(keepAssets.match(/gives its preparer no assets to keep/g)).toHaveLength(1);
 		// A live card is not locked.
 		const perform = body.match(/<button[^>]*option-card[^>]*>(?:(?!<\/button>).)*Perform steps(?:(?!<\/button>).)*<\/button>/)?.[0] ?? '';
 		expect(perform).toContain('aria-disabled="false"');

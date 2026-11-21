@@ -103,7 +103,7 @@ test('pre-roll: everyone sees the live meter, only the preparer picks, one submi
 
 	// Everyone sees the same starting difficulty, floored by alice's knowledge rank.
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('knowledge rank 2 (a lower rank is better) · 0 artifacts invoked → max = 2')).toBeVisible();
+		await expect(p.getByText('knowledge rank (2; a lower rank is better) and the number of artifacts invoked (0)')).toBeVisible();
 	}
 	// The others wait (the heading says on whom and for what); they get neither the
 	// submit button nor an enabled scene field.
@@ -115,10 +115,10 @@ test('pre-roll: everyone sees the live meter, only the preparer picks, one submi
 	await pickArtifact(alice, "alice's artifact");
 	await pickArtifact(alice, "bob's artifact");
 	await pickArtifact(alice, "carol's artifact");
-	await expect(alice.getByText('knowledge rank 2 (a lower rank is better) · 3 artifacts invoked → max = 3')).toBeVisible();
+	await expect(alice.getByText('knowledge rank (2; a lower rank is better) and the number of artifacts invoked (3)')).toBeVisible();
 	// Two invocations sit under the floor: the difficulty stays at the rank.
 	await pickArtifact(alice, "carol's artifact");
-	await expect(alice.getByText('knowledge rank 2 (a lower rank is better) · 2 artifacts invoked → max = 2')).toBeVisible();
+	await expect(alice.getByText('knowledge rank (2; a lower rank is better) and the number of artifacts invoked (2)')).toBeVisible();
 
 	// The submit needs a scene.
 	const cast = alice.getByRole('button', { name: 'Set the scene & gather your dice' });
@@ -134,10 +134,17 @@ test('pre-roll: everyone sees the live meter, only the preparer picks, one submi
 	const active = await (await g.ctx.alice.request.get(`/api/tables/${g.gameID}/rolls/active`)).json();
 	expect(active.roll.difficulty).toBe(2);
 
-	// The invoke phase is closed for good: the meter and picker are gone for all,
-	// and the invoked list is shown instead.
+	// The invoke phase is closed for good: the picker is gone for all and the invoked
+	// list is shown instead. The meter stays (it is the table's cue to help or
+	// interfere), no longer a "starting" one, at the roll's difficulty.
 	await expect(bob.getByText('Invoked artifacts (2)')).toBeVisible();
+	await expect(bob.getByText('Invoke artifacts to shed light on')).toHaveCount(0);
 	await expect(bob.getByText('Starting difficulty')).toHaveCount(0);
+	for (const p of [alice, bob, carol]) {
+		await expect(p.locator('.meter-label', { hasText: /^Difficulty$/ })).toBeVisible();
+		await expect(p.locator('.meter-value')).toHaveText('2');
+		await expect(p.getByText('and the number of artifacts invoked (2)')).toBeVisible();
+	}
 	await expectNoHorizontalScroll(bob);
 });
 

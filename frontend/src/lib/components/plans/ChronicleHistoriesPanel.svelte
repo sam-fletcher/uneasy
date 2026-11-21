@@ -5,7 +5,8 @@
 
   Resolve:
     - Pre-roll: every player sees a live difficulty meter
-      (max(knowledge rank, #invoked)) and the shared Buffet reference. The
+      (max(knowledge rank, #invoked)), which stays through the cast and the roll
+      and goes when the dice land, and the shared Buffet reference. The
       preparer checkboxes the artifacts to invoke (the meter updates live from
       the selection), writes the scene, and submits once: castChronicleRoll
       records the invocations, posts the scene as the preparer's narration, and
@@ -35,7 +36,8 @@
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import ChoicesApplied from './ChoicesApplied.svelte';
-	import DifficultyMeter from './shared/DifficultyMeter.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
 	import { parseResolutionData, playerName, assetsWithIntactMarginalia, resolutionActorID } from './shared';
 	import { destructionWarning } from '$lib/assetRisk';
@@ -51,7 +53,6 @@
 	const gameID = $derived(ctx.gameID);
 	const assets = $derived(ctx.assets);
 	const players = $derived(ctx.players);
-	const rankings = $derived(ctx.rankings);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
 	const rollOutcome = $derived(ctx.rollOutcome);
@@ -161,19 +162,11 @@
 	let preRollBusy = $state(false);
 
 	// ── Live difficulty (read-only to everyone) ──────────────────────────────
-	// Mirrors the server's ChronicleHistoriesDifficulty: max(rank, #invoked),
-	// clamped to the book's 1–6 band.
-	const knowledgeRank = $derived(
-		plan == null ? 0
-			: (rankings.find(r => r.category === 'knowledge' && r.player_id === plan.preparer_id)?.rank ?? 0)
-	);
-	// Pre-roll difficulty tracks the preparer's live (uncommitted) checkbox
-	// selection; for everyone else it reflects what's been committed so far.
-	const meterCount = $derived(isPreparer ? selectedInvokeIDs.length : invokedIDs.length);
-	const difficulty = $derived(Math.min(6, Math.max(1, knowledgeRank, meterCount)));
-	const meterReason = $derived(
-		`knowledge rank ${knowledgeRank} (a lower rank is better) · ${meterCount} artifact${meterCount === 1 ? '' : 's'} invoked → max = ${difficulty}`
-	);
+	// The meter (shared/PlanDifficulty) works out max(knowledge rank, #invoked), clamped
+	// to the book's 1–6 band, from the table's rankings. Before the cast the preparer's
+	// number is their live, uncommitted tick count; for everyone else, and for the
+	// preparer once the artifacts are cast, it is what the plan has recorded.
+	const liveInvokedCount = $derived(!invokePhaseClosed && isPreparer ? selectedInvokeIDs.length : undefined);
 	async function submitPreRoll(p: Plan) {
 		if (preRollBusy) return;
 		preRollBusy = true; resError = '';
@@ -372,16 +365,13 @@
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
 
-		<!-- Pre-roll: live difficulty meter (read-only to all) ─────────────── -->
-		{#if !invokePhaseClosed}
-			<div class="choices-section">
-				<DifficultyMeter
-					headline="Starting difficulty"
-					value={difficulty}
-					floor={knowledgeRank}
-					reason={meterReason}
-				/>
-			</div>
+		<!-- The difficulty meter, read-only to all. It is the table's cue to help or
+		     interfere, so it stays through the cast and the roll, and goes when the dice
+		     land. Before the cast it is a start (the preparer can still raise it); after,
+		     the artifacts are final. -->
+		{#if diceNotYetLanded(plan, ctx)}
+			<PlanDifficulty {plan} {ctx} invokedCount={liveInvokedCount}
+				headline={invokePhaseClosed ? 'Difficulty' : 'Starting difficulty'} />
 		{/if}
 
 		<!-- "What can happen?" reference (shared) ──────────────────────────── -->
@@ -404,7 +394,7 @@
 		{#if !invokePhaseClosed}
 			<div class="choices-section plan-form">
 				<CardPicker
-					label="Invoke artifacts to shed light on (each raises the difficulty)"
+					label="Invoke artifacts to shed light on (more than the knowledge rank raises the difficulty)"
 					items={allArtifacts}
 					{players}
 					emptyMessage="No artifacts available to invoke."

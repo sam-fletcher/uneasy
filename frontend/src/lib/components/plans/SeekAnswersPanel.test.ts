@@ -133,3 +133,83 @@ describe('a break-a-resource pick with nothing to break', () => {
 		expect(count(t)).toBe(1);
 	});
 });
+
+// The pre-roll was its own greyed-out fieldset with a bare "Submit" that also cast the
+// dice, and no word of how hard the roll would be. It is the shared pre-roll step now:
+// the preparer's form says what pressing the button does, and everyone sees the
+// difficulty before deciding whether to help or interfere.
+describe('the pre-roll, before the dice', () => {
+	const rankings = [{ id: 1, game_id: 1, category: 'knowledge', player_id: PREPARER, rank: 2 }];
+
+	function renderPreRoll(opts: {
+		seat: number; outcome?: 'make' | 'mar' | null; preRollDone?: boolean;
+		/** The choices are committed, and another plan's roll is the one open on the table. */
+		committedWithOtherRoll?: boolean;
+	}): string {
+		const plan = {
+			id: 9, plan_type: 'seek_answers', status: 'resolving', preparer_id: PREPARER, preparation_notes: 'old ledgers',
+			resolution_data: JSON.stringify({
+				seek_answers: { pre_roll_done: opts.preRollDone ?? false },
+				...(opts.committedWithOtherRoll ? { choice_submitted: true } : {}),
+			}),
+		};
+		const ctx = {
+			gameID: 1, currentRow: 5, endingMode: null, plans: [plan] as never,
+			assets: [] as never, players: PLAYERS as never, rankings: rankings as never,
+			currentPlayerID: opts.seat, focusPlayerID: null, isFocusPlayer: false,
+			rollActive: false, rollOutcome: opts.outcome ?? null,
+			activeRoll: (opts.committedWithOtherRoll ? { id: 8, plan_id: 77, outcome: null, difficulty: 2 } : null) as never,
+			onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
+			readOnly: false, prepDraft: null, emitPrepDraft: () => {},
+		} as PlanContext;
+		return render(SeekAnswersPanel, { props: { ctx, plan: plan as never, mode: 'resolve' } }).body;
+	}
+
+	it('gives the preparer the shared step: the prompt, a field, and a button that says it opens the roll', () => {
+		const body = renderPreRoll({ seat: PREPARER });
+		const t = text(body);
+		expect(t).toContain('Restate your methods of research');
+		expect(body.match(/<textarea/g)).toHaveLength(1);
+		expect(body).toMatch(/<button[^>]*>\s*Post &amp; open the roll/);
+		// The button no longer says only "Submit" while it also casts the dice.
+		expect(body).not.toMatch(/<button[^>]*>\s*Submit\s*<\/button>/);
+		expect(t).toContain('The table reads this before anyone decides');
+	});
+
+	// Whether a pre-roll offers the preparation note back is still open for the plans
+	// that restate a draft; Seek Answers has always been written from scratch, and
+	// moving to the shared step must not change that. (The card above still quotes the
+	// note as a finished line; what is checked is that the step doesn't offer it back.)
+	it('starts the field blank: the step does not offer the preparation note back', () => {
+		const body = renderPreRoll({ seat: PREPARER });
+		expect(text(body)).not.toContain('Starts from your preparation note');
+	});
+
+	it('shows everyone the difficulty, and where it comes from, before the dice', () => {
+		for (const seat of [PREPARER, OTHER]) {
+			const t = text(renderPreRoll({ seat }));
+			expect(t).toContain('Difficulty 2');
+			expect(t).toContain('ravi’s rank on the knowledge track: 2');
+		}
+	});
+
+	it('gives a watcher no form and no button: the heading says whose move it is', () => {
+		const body = renderPreRoll({ seat: OTHER });
+		expect(body).not.toContain('<textarea');
+		expect(body).not.toMatch(/<button[^>]*>\s*Post &amp; open the roll/);
+		expect(body).not.toMatch(/<button[^>]*>\s*Submit/);
+	});
+
+	it('does not bring the meter back when another plan\'s roll opens after this plan\'s dice have landed', () => {
+		// `rollOutcome` follows whichever roll is on the table: it is null again for the newly opened one.
+		const t = text(renderPreRoll({ seat: OTHER, preRollDone: true, committedWithOtherRoll: true }));
+		expect(t).not.toContain('1 easy');
+		expect(t).not.toContain('What can happen?');
+	});
+
+	it('draws the meter only until the dice land', () => {
+		expect(text(renderPreRoll({ seat: PREPARER, preRollDone: true, outcome: null }))).toContain('Difficulty 2');
+		expect(text(renderPreRoll({ seat: PREPARER, preRollDone: true, outcome: 'make' }))).not.toContain('1 easy');
+		expect(text(renderPreRoll({ seat: OTHER, preRollDone: true, outcome: 'mar' }))).not.toContain('1 easy');
+	});
+});

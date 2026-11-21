@@ -37,6 +37,10 @@
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
+	import Buffet from './shared/Buffet.svelte';
+	import { DECREE_BUFFET } from '$lib/plans/buffets';
 	import { playerName, parseResolutionData, ownerUnleveragedAssets, resolutionActorID } from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -414,6 +418,14 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+
+		<!-- Before the dice land (the council meeting, and the roll itself): how hard the
+		     roll is, and what a make or a mar of the law does. After, the law-writing
+		     steps say what is happening. -->
+		{#if diceNotYetLanded(plan, ctx) && !outcomeApplied}
+			<PlanDifficulty {plan} {ctx} />
+			<Buffet tabs={DECREE_BUFFET} />
+		{/if}
 
 		<!-- Council roster (visible to all) ────────────────────────────── -->
 		<div class="titled">

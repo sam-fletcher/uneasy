@@ -1,7 +1,7 @@
 <!-- plans/shared/PreRollStep.svelte
-  The pre-roll narration step Spread Propaganda and Spread Rumors share: the
-  preparer says what they are about to do (the rulebook's pre-roll), the server
-  posts it for the table, and only then is the roll opened.
+  The pre-roll narration step Seek Answers, Spread Propaganda and Spread Rumors
+  share: the preparer says what they are about to do (the rulebook's pre-roll), the
+  server posts it for the table, and only then is the roll opened.
 
   Why it is a step at all (DESIGN_PRINCIPLES.md 1–2): the other players read this
   to decide whether to help or interfere, so it must be on the record first; and

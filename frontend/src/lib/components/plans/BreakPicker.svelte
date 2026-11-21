@@ -13,7 +13,7 @@
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import CardPicker from './CardPicker.svelte';
 
-	let { label, items, players, emptyMessage, selectedMarginaliaID, onSelect }: {
+	let { label, items, players, emptyMessage, selectedMarginaliaID, onSelect, readOnly = false }: {
 		label: string;
 		/** Assets with an intact marginalia to tear (shared.ts:assetsWithIntactMarginalia). */
 		items: Asset[];
@@ -21,6 +21,8 @@
 		emptyMessage: string;
 		selectedMarginaliaID: number | null;
 		onSelect: (marginaliaID: number | null) => void;
+		/** A watcher's greyed mirror of the picker: the rows can't be operated. */
+		readOnly?: boolean;
 	} = $props();
 
 	const picked = $derived(
@@ -39,5 +41,6 @@
 	marginaliaMode
 	{selectedMarginaliaID}
 	onSelectMarginalia={(mID) => onSelect(mID)}
+	{readOnly}
 />
 {#if warning}<Notice>{warning}</Notice>{/if}

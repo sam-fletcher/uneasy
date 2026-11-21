@@ -26,7 +26,8 @@
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
-	import DifficultyMeter from './shared/DifficultyMeter.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import {
 		choicesCommitted, parseResolutionData, playerName, playersExcept, resolutionActorID,
@@ -448,16 +449,10 @@
 
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID} />
-		{#if !isDelayedArrival && rollOutcome == null && !choicesDone}
+		{#if !isDelayedArrival && diceNotYetLanded(plan, ctx) && !choicesDone}
 			<!-- Before the dice land: how hard the roll is, and what it can bring. -->
 			{#if miPeerCountTarget > 0}
-				<div class="choices-section">
-					<DifficultyMeter
-						value={2 + miPeerCountTarget}
-						floor={2}
-						reason={`2, plus 1 for each of the ${miPeerCountTarget} ${miPeerCountTarget === 1 ? 'peer' : 'peers'} introduced.`}
-					/>
-				</div>
+				<PlanDifficulty {plan} {ctx} />
 			{/if}
 			<Buffet tabs={MI_BUFFET_TABS} />
 		{/if}
@@ -648,6 +643,29 @@
 							<EndsNote show={resolveEndsPlan}
 								text="This is the last newcomer: Make Introductions resolves when you submit." />
 						</div>
+					{/if}
+
+					<!-- Everyone not settling the newcomers sees the four fates, greyed out and inert,
+					     with the ones already handed out struck through. Nothing is shown picked:
+					     the actor's choice is local until it is submitted, and what they would then
+					     write (who joins, who describes, the journey) is text, not a pick. -->
+					{#if !isActor && unresolvedDrafts.length > 0}
+						{@const d = unresolvedDrafts[0]}
+						<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
+							<div class="plan-form">
+								<p class="ft-prompt">
+									Resolving <em>{d.name}</em>
+									({unresolvedDrafts.length} remaining):
+								</p>
+								<div class="chip-row">
+									{#each MI_MAR_OPTIONS as opt (opt.key)}
+										{@const used = usedOutcomes.has(opt.key)}
+										<Chip aria-disabled={used ? true : undefined}
+										><span class:struck={used}>{opt.label}</span></Chip>
+									{/each}
+								</div>
+							</div>
+						</fieldset>
 					{/if}
 
 					{#if isActor && unresolvedDrafts.length === 0 && !allPeersDone}

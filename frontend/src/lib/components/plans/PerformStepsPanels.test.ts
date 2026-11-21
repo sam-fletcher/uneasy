@@ -151,8 +151,9 @@ describe('pre-roll steps stay with the preparer under perform_steps', () => {
 	it('shows the preparer the narration form and the winner none', () => {
 		const prep = renderFor(SEEK_PRE_ROLL, PREPARER);
 		const winner = renderFor(SEEK_PRE_ROLL, WINNER);
-		expect(prep).toContain('Submit');
-		expect(winner).not.toContain('Submit');
+		// The pre-roll is the shared step: its button says it opens the roll.
+		expect(prep).toContain('Post &amp; open the roll');
+		expect(winner).not.toContain('Post &amp; open the roll');
 		expect(winner).not.toContain(SEEK_PRE_ROLL.wait);
 	});
 });
