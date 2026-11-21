@@ -18,10 +18,13 @@ const PLAYERS = [
 	{ id: TARGET, display_name: 'sol' },
 	{ id: BYSTANDER, display_name: 'mel' },
 ];
-const ASSETS = [
-	{ id: 5, name: 'Lord Vane', owner_id: TARGET, asset_type: 'peer', is_destroyed: false },
-	{ id: 6, name: 'Dame Orr', owner_id: PREPARER, asset_type: 'peer', is_destroyed: false },
-];
+// Whole assets, as the table has them: a picker draws a card for each, and a card needs
+// its marginalia and counts. A bare { id, name, owner } was enough until a test rendered one.
+const peerAsset = (id: number, name: string, owner_id: number) => ({
+	id, name, owner_id, asset_type: 'peer', is_destroyed: false, is_main_character: false,
+	is_leveraged: false, secret_count: 0, marginalia: [] as unknown[],
+});
+const ASSETS = [peerAsset(5, 'Lord Vane', TARGET), peerAsset(6, 'Dame Orr', PREPARER)];
 
 function renderFor(
 	seat: number,
@@ -29,7 +32,7 @@ function renderFor(
 	rollOutcome: 'make' | 'mar' | null = null,
 	assets = ASSETS,
 	/** Top-level resolution_data (make_mar_choices, choice_submitted, …) and the live-roll flag. */
-	extra: { top?: Record<string, unknown>; rollActive?: boolean; plans?: unknown[] } = {},
+	extra: { top?: Record<string, unknown>; rollActive?: boolean; plans?: unknown[]; rankings?: unknown[]; activeRoll?: unknown } = {},
 ): string {
 	const plan = {
 		id: 9, plan_type: 'exchange_courtiers', status: 'resolving', preparer_id: PREPARER,
@@ -38,9 +41,9 @@ function renderFor(
 	};
 	const ctx = {
 		gameID: 1, currentRow: 5, endingMode: null, plans: [plan, ...(extra.plans ?? [])] as never,
-		assets: assets as never, players: PLAYERS as never, rankings: [], currentPlayerID: seat,
+		assets: assets as never, players: PLAYERS as never, rankings: (extra.rankings ?? []) as never, currentPlayerID: seat,
 		focusPlayerID: null, isFocusPlayer: false, rollActive: extra.rollActive ?? false, rollOutcome,
-		activeRoll: rollOutcome ? ({ id: 4, plan_id: 9, status: 'resolved', result: 1, difficulty: 2 } as never) : null,
+		activeRoll: ('activeRoll' in extra ? extra.activeRoll : rollOutcome ? { id: 4, plan_id: 9, status: 'resolved', result: 1, difficulty: 2 } : null) as never,
 		onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
 		readOnly: false, prepDraft: null, emitPrepDraft: () => {},
 	} as PlanContext;
@@ -76,9 +79,10 @@ describe('after the offer', () => {
 
 describe('after the roll', () => {
 	const declined = { fair_trade_asset_id: 6, fair_trade_accepted: false };
-	// The seats that do not choose get no picker, and no line about who does: the
-	// heading says it. (The old lines were "Waiting for ravi to say how the trade went"
-	// and "Waiting for sol to choose how to respond".)
+	// The seats that do not choose get no line about who does: the heading says it. (The
+	// old lines were "Waiting for ravi to say how the trade went" and "Waiting for sol to
+	// choose how to respond".) They do see the picker, greyed out, in the third person:
+	// see "what a watcher sees of the picks" below.
 	it.each([
 		['the target on a make', TARGET, 'make'],
 		['the preparer on a mar', PREPARER, 'mar'],
@@ -208,7 +212,7 @@ describe('riposte: breaking the requested peer first', () => {
 		expect(t).toContain('Dame Orr has no marginalia to tear');
 	});
 
-	it('shows a seat that is not deciding neither the picker nor the buttons', () => {
+	it('shows a seat that is not deciding neither of the buttons', () => {
 		const t = text(renderFor(BYSTANDER, riposte, 'mar', orrWith([note(1)]), MARKED));
 		expect(t).not.toContain('Break, then surrender');
 		expect(t).not.toContain('Surrender intact');
@@ -245,6 +249,248 @@ describe('riposte: breaking the requested peer first', () => {
 		it('is not handed to the preparer, who is locked out', () => {
 			const t = text(renderFor(PREPARER, riposte, 'mar', orrWith([note(1), note(2)]), { ...MARKED, plans: winnerPlans }));
 			expect(t).not.toContain('Surrender intact');
+		});
+	});
+});
+
+// ── The difficulty before the dice, and the watcher's view of the picks ───────────────
+//
+// A seat that was not choosing used to get a line ("Waiting for sol to propose a fair
+// trade") or, once the dice landed, nothing at all; and nobody saw how hard the roll
+// was before the dice panel. The difficulty is the shared meter for everyone until the
+// dice land, and each pick is shown to everyone else as the same picker, greyed out and
+// inert, worded in the third person.
+
+const MIRROR = /<fieldset[^>]*class="[^"]*\bresolve-mirror\b[^"]*"[^>]*disabled/;
+const LIVE = /<fieldset[^>]*class="[^"]*\bresolve-mirror-wrap\b(?![^"]*\bresolve-mirror\b)[^"]*"/;
+const rowsOf = (html: string) => [...html.matchAll(/<[^>]*role="checkbox"[^>]*>/g)].map(m => m[0]);
+
+describe('the difficulty, before the dice', () => {
+	const rankings = [{ id: 1, game_id: 1, category: 'power', player_id: TARGET, rank: 2 }];
+
+	it('is the target\'s power status, for every seat, before the offer and while the roll is out', () => {
+		for (const seat of [PREPARER, TARGET, BYSTANDER]) {
+			const before = text(renderFor(seat, {}, null, ASSETS, { rankings }));
+			expect(before).toContain('Difficulty 4');
+			expect(before).toContain('sol’s status on the power track: 6 minus rank 2 is 4');
+			const rolling = text(renderFor(seat, { fair_trade_asset_id: 6, fair_trade_accepted: false }, null, ASSETS, { rankings, rollActive: true }));
+			expect(rolling).toContain('Difficulty 4');
+		}
+	});
+
+	it('is gone once the dice have landed', () => {
+		for (const o of ['make', 'mar'] as const) {
+			expect(text(renderFor(BYSTANDER, { fair_trade_asset_id: 6, fair_trade_accepted: false }, o, ASSETS, { rankings }))).not.toContain('1 easy');
+		}
+	});
+
+	it('does not come back when another plan\'s roll opens after this plan\'s choice is committed', () => {
+		// `rollOutcome` follows whichever roll is on the table, so it is null again for the new one.
+		const other = { id: 8, plan_id: 77, outcome: null, difficulty: 2, adjusted_difficulty: null };
+		const t = text(renderFor(BYSTANDER, { fair_trade_asset_id: 6, fair_trade_accepted: false }, null, ASSETS, {
+			rankings, top: { choice_submitted: true }, activeRoll: other,
+		}));
+		expect(t).not.toContain('1 easy');
+		expect(t).not.toContain('What can happen?');
+	});
+});
+
+describe('what a watcher sees of the picks', () => {
+	const declined = { fair_trade_asset_id: 6, fair_trade_accepted: false };
+	const note = (id: number, assetID: number, torn = false) => ({ id, asset_id: assetID, position: id, text: `note ${id}`, is_torn: torn });
+	const withNotes = (assetID: number, notes: ReturnType<typeof note>[]) =>
+		ASSETS.map(a => (a.id === assetID ? { ...a, marginalia: notes } : a));
+
+	describe('the trade the target may name', () => {
+		it.each([['the preparer', PREPARER], ['a bystander', BYSTANDER]] as const)('shows %s the preparer\'s peers, greyed, under the line', (_, seat) => {
+			const body = renderFor(seat, {});
+			expect(body).toMatch(MIRROR);
+			const t = text(body);
+			expect(t).toContain('Waiting for sol to propose a fair trade');
+			expect(t).toContain('Peer to receive in trade');
+			expect(t).toContain('Dame Orr');
+			// Only the preparer's peers can be named: the target's own is the one being asked for.
+			expect(body.match(/<div class="card /g)).toHaveLength(1);
+			// Inert to the keyboard as well as to a tap: the cards say they are disabled.
+			const rows = rowsOf(body);
+			expect(rows.length).toBeGreaterThan(0);
+			for (const r of rows) expect(r).toContain('aria-disabled="true"');
+		});
+
+		it('leaves the target the live picker, with its button', () => {
+			const body = renderFor(TARGET, {});
+			expect(body).not.toMatch(MIRROR);
+			expect(text(body)).toContain('Propose trade');
+		});
+
+		it.each([['the preparer', PREPARER], ['a bystander', BYSTANDER]] as const)('addresses %s as no one: the line and the picker are in the third person', (_, seat) => {
+			expect(text(renderFor(seat, {}))).not.toMatch(/\byou(r)?\b/i);
+		});
+
+		it('draws no picker when the preparer has no peer to name', () => {
+			const t = renderFor(BYSTANDER, {}, null, ASSETS.filter(a => a.owner_id !== PREPARER));
+			expect(t).not.toMatch(MIRROR);
+		});
+	});
+
+	describe('the make: how the trade went', () => {
+		it.each([['the target', TARGET], ['a bystander', BYSTANDER]] as const)('shows %s the three options, greyed, with no button', (_, seat) => {
+			const body = renderFor(seat, declined, 'make');
+			expect(body).toMatch(MIRROR);
+			const t = text(body);
+			for (const w of ['Messy', 'Legal', 'Conspiracy']) expect(t).toContain(w);
+			expect(body).not.toContain('Apply choices');
+		});
+
+		it('speaks of the preparer, not "you", to anyone who is not choosing', () => {
+			const t = text(renderFor(BYSTANDER, declined, 'make'));
+			expect(t).toContain('ravi beat the difficulty');
+			expect(t).toContain('transferred to ravi');
+			expect(t).toContain('The target will break one of the preparer\'s assets');
+			expect(t).not.toMatch(/\byou(r)?\b/i);
+		});
+
+		it('is still the live picker for the player who chooses', () => {
+			const body = renderFor(PREPARER, declined, 'make');
+			expect(body).not.toMatch(MIRROR);
+			expect(body).toContain('Apply choices');
+			expect(text(body)).toContain('The target will break one of your assets');
+		});
+	});
+
+	describe('who the targeted peer goes to', () => {
+		// Make Demands' keep-assets winner takes the incoming side of an exchange instead of the preparer.
+		const keeper = (winner: number) => [{
+			id: 12, plan_type: 'make_demands', status: 'resolved', result: 'make', preparer_id: BYSTANDER, targeted_plan_id: 9,
+			resolution_data: JSON.stringify({ make_demands: { draft_choices: [{ option: 'keep_assets', player_id: winner }] } }),
+		}];
+
+		it('is the preparer when nobody holds keep-assets', () => {
+			expect(text(renderFor(BYSTANDER, declined, 'make'))).toContain('transferred to ravi');
+			expect(text(renderFor(PREPARER, declined, 'make'))).toContain('transferred to you');
+		});
+
+		it('is the keep-assets winner, in the actor\'s line and in a watcher\'s', () => {
+			const demand = { plans: keeper(BYSTANDER) };
+			const watcher = text(renderFor(TARGET, declined, 'make', ASSETS, demand));
+			expect(watcher).toContain('transferred to mel');
+			expect(watcher).not.toContain('transferred to ravi');
+			const actor = text(renderFor(PREPARER, declined, 'make', ASSETS, demand));
+			expect(actor).toContain('transferred to mel');
+			expect(actor).not.toContain('transferred to you');
+		});
+
+		it('reads "you" for the winner themself, when they are the one looking', () => {
+			const demand = { plans: keeper(BYSTANDER) };
+			expect(text(renderFor(BYSTANDER, declined, 'make', ASSETS, demand))).toContain('transferred to you');
+		});
+	});
+
+	describe('the mar: how to respond', () => {
+		it.each([['the preparer', PREPARER], ['a bystander', BYSTANDER]] as const)('shows %s the three options, greyed, with the tiers the margin puts out of reach', (_, seat) => {
+			const body = renderFor(seat, declined, 'mar');
+			expect(body).toMatch(MIRROR);
+			const t = text(body);
+			for (const w of ['A Fair Trade', 'Riposte', 'Forfeit']) expect(t).toContain(w);
+			// result 1 against difficulty 2: a margin of 1, so tiers 2 and 3 are out of reach.
+			expect(t).toContain('needs −2');
+			expect(t).toContain('needs −3');
+			expect(body).not.toContain('Apply choices');
+		});
+
+		it('speaks of the target and the preparer, not "you"', () => {
+			const t = text(renderFor(BYSTANDER, declined, 'mar'));
+			// How far it marred, and no line about who responds: the open step's heading says.
+			expect(t).toContain('ravi\'s plan was marred by 1.');
+			expect(t).not.toContain('chooses how to respond');
+			expect(t).toContain('The target takes the requested peer');
+			expect(t).toContain('The preparer may break the requested peer first');
+			expect(t).not.toMatch(/\byou(r)?\b/i);
+		});
+
+		it('is still the live picker for the target, who is the one choosing', () => {
+			const body = renderFor(TARGET, declined, 'mar');
+			expect(body).not.toMatch(MIRROR);
+			expect(body).toContain('Apply choices');
+			// The space before the dash is kept (a block body's leading space is trimmed).
+			expect(text(body)).toContain('marred by 1 — choose how you respond.');
+		});
+	});
+
+	describe('the messy break', () => {
+		const messy = { ...declined, messy_break_required: true, messy_break_done: false };
+		const MARKED = { top: { choice_submitted: true } };
+		const assets = withNotes(6, [note(1, 6), note(2, 6)]);
+
+		it.each([['the preparer', PREPARER], ['a bystander', BYSTANDER]] as const)('shows %s the preparer\'s marginalia, greyed, and no button', (_, seat) => {
+			const body = renderFor(seat, messy, 'make', assets, MARKED);
+			expect(body).toMatch(MIRROR);
+			const t = text(body);
+			// No line of its own: the open step's heading says who is breaking what.
+			expect(t).toContain('Marginalium to break');
+			expect(t).not.toContain('break one of');
+			expect(body).not.toContain('Break marginalia');
+			const rows = rowsOf(body);
+			expect(rows.length).toBeGreaterThan(0);
+			for (const r of rows) expect(r).toContain('aria-disabled="true"');
+			expect(t).not.toMatch(/\byou(r)?\b/i);
+		});
+
+		it('leaves the target the live picker', () => {
+			const body = renderFor(TARGET, messy, 'make', assets, MARKED);
+			expect(body).not.toMatch(MIRROR);
+			expect(body).toContain('Break marginalia');
+		});
+	});
+
+	describe('the riposte', () => {
+		const riposte = { ...declined, riposte_allowed: true };
+		const MARKED = { top: { choice_submitted: true } };
+		const assets = withNotes(6, [note(1, 6), note(2, 6)]);
+
+		it.each([['the target', TARGET], ['a bystander', BYSTANDER]] as const)('shows %s the notes that could be torn, greyed, and no button', (_, seat) => {
+			const body = renderFor(seat, riposte, 'mar', assets, MARKED);
+			expect(body).toMatch(MIRROR);
+			expect(text(body)).toContain('Marginalium to break');
+			expect(body).not.toContain('Break, then surrender');
+			expect(body).not.toContain('Surrender intact');
+			for (const r of rowsOf(body)) expect(r).toContain('aria-disabled="true"');
+			expect(text(body)).not.toMatch(/\byou(r)?\b/i);
+		});
+
+		it('draws no picker when the peer has no second note to tear', () => {
+			const body = renderFor(BYSTANDER, riposte, 'mar', withNotes(6, [note(1, 6)]), MARKED);
+			expect(body).not.toMatch(MIRROR);
+		});
+
+		it('leaves the preparer the live picker and buttons', () => {
+			const body = renderFor(PREPARER, riposte, 'mar', assets, MARKED);
+			expect(body).not.toMatch(MIRROR);
+			expect(body).toContain('Break, then surrender');
+		});
+	});
+
+	describe('nothing hidden, nothing operable', () => {
+		it('every watcher of a pick reads the same page: nothing in it depends on who is looking', () => {
+			const asMake = (seat: number) => text(renderFor(seat, declined, 'make'));
+			expect(asMake(TARGET)).toBe(asMake(BYSTANDER));
+			const asMar = (seat: number) => text(renderFor(seat, declined, 'mar'));
+			expect(asMar(PREPARER)).toBe(asMar(BYSTANDER));
+		});
+
+		it('no mirror holds a text field or a submit button', () => {
+			const cases = [
+				renderFor(BYSTANDER, {}),
+				renderFor(BYSTANDER, declined, 'make'),
+				renderFor(BYSTANDER, declined, 'mar'),
+				renderFor(BYSTANDER, { ...declined, messy_break_required: true }, 'make', withNotes(6, [note(1, 6), note(2, 6)]), { top: { choice_submitted: true } }),
+			];
+			for (const body of cases) {
+				const m = body.match(/<fieldset[^>]*resolve-mirror[^>]*disabled[\s\S]*?<\/fieldset>/);
+				expect(m, 'expected a mirror').not.toBeNull();
+				expect(m![0]).not.toContain('<textarea');
+				expect(m![0]).not.toMatch(/<button[^>]*class="[^"]*primary/);
+			}
 		});
 	});
 });

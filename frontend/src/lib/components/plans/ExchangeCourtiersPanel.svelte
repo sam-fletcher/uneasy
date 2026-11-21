@@ -15,6 +15,8 @@
 	import MakeMarPicker from './MakeMarPicker.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
@@ -22,7 +24,7 @@
 	import {
 		MAKE_OPTIONS, MAR_OPTIONS, choicesCommitted, parseResolutionData,
 		playerName, assetName, assetsWithIntactMarginalia, playersExcept, resolutionActorID,
-		survivesABreak,
+		survivesABreak, activeDemandAgainst, demandWinnersFromPlan,
 	} from './shared';
 
 	import type { PlanPanelProps } from './types';
@@ -354,6 +356,26 @@
 	{@const choiceActor = rollOutcome === 'mar' ? isTarget : amChoiceActor}
 	{@const preparerIntactPeers = assets.filter(a => a.owner_id === plan.preparer_id && a.asset_type === 'peer' && !a.is_destroyed)}
 	{@const preparerMarginaliaAssets = assetsWithIntactMarginalia(assets, plan.preparer_id)}
+	<!-- Who the targeted peer goes to on a make: the preparer, unless a Make Demands winner holds
+	     keep-assets (the exchange's incoming side redirects to them). -->
+	{@const demandAgainst = activeDemandAgainst(plan, plans)}
+	{@const peerGoesTo = (demandAgainst ? demandWinnersFromPlan(demandAgainst).keep_assets : undefined) ?? plan.preparer_id}
+
+	<!-- What the target is choosing among, shown to the players waiting on them: the
+	     preparer's peers, greyed out and inert. Built from the public retinue; the
+	     target's own pick is local state nobody else is sent. -->
+	{#snippet tradeMirror()}
+		<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
+			<CardPicker
+				label="Peer to receive in trade"
+				items={preparerIntactPeers}
+				{players}
+				emptyMessage="The preparer has no peers to trade."
+				selected={null}
+				readOnly
+			/>
+		</fieldset>
+	{/snippet}
 
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
@@ -361,7 +383,9 @@
 		<!-- Reference the full make/mar options only up to the roll. Once an
 		     outcome is in, the picker carries those descriptions, so showing the
 		     Buffet too would state them twice. -->
-		{#if rollOutcome == null}
+		{#if diceNotYetLanded(plan, ctx)}
+			<!-- How hard the roll is, for everyone, until this plan's dice land. -->
+			<PlanDifficulty {plan} {ctx} />
 			<Buffet tabs={EC_BUFFET_TABS} />
 		{/if}
 		{#if ftAccepted == null && !rollActive}
@@ -403,6 +427,7 @@
 							Waiting for {playerName(players, plan.target_player_id)} to propose a fair trade for their peer,
 							<em>{assetName(assets, plan.target_asset_id)}</em>.
 						</p>
+						{@render tradeMirror()}
 					{/if}
 				{:else}
 					<p class="ft-prompt muted">
@@ -414,6 +439,7 @@
 							<em>{assetName(assets, plan.target_asset_id)}</em>.
 						{/if}
 					</p>
+					{#if preparerIntactPeers.length > 0}{@render tradeMirror()}{/if}
 				{/if}
 			{:else}
 				<!-- Offer has been made. Preparer decides. -->
@@ -459,8 +485,12 @@
 				{/if}
 			</ul>
 
-		{:else if rollOutcome != null && !choicesDone && choiceActor}
+		{:else if rollOutcome != null && !choicesDone}
+			<!-- The choice actor picks (the preparer on a make, the target on a mar, or the Make
+			     Demands winner standing in); everyone else sees the same picker greyed out and
+			     inert, in the third person. -->
 			<MakeMarPicker
+				readOnly={!choiceActor}
 				outcome={rollOutcome}
 				options={(rollOutcome === 'make' ? MAKE_OPTIONS.exchange_courtiers : MAR_OPTIONS.exchange_courtiers) ?? []}
 				selected={selectedChoices}
@@ -477,13 +507,12 @@
 				{#snippet header()}
 					{#if rollOutcome === 'make'}
 						<p class="choices-note">
-							You beat the difficulty{#if choiceMargin != null}{' '}by {choiceMargin}{/if} — the targeted peer
-							({assetName(assets, plan.target_asset_id)}) will be transferred to you.
+							{#if choiceActor}You{:else}{playerName(players, plan.preparer_id)}{/if} beat the difficulty{#if choiceMargin != null}{' '}by {choiceMargin}{/if} — the targeted peer
+							({assetName(assets, plan.target_asset_id)}) will be transferred to {#if peerGoesTo === currentPlayerID}you{:else}{playerName(players, peerGoesTo)}{/if}.
 						</p>
 					{:else}
 						<p class="choices-note">
-							{playerName(players, plan.preparer_id)}'s plan was marred {#if choiceMargin != null} by {choiceMargin}{/if} —
-							choose how you respond.
+							{playerName(players, plan.preparer_id)}'s plan was marred{#if choiceMargin != null}{' '}by {choiceMargin}{/if}{#if choiceActor}{' '}— choose how you respond.{:else}.{/if}
 						</p>
 					{/if}
 				{/snippet}
@@ -529,6 +558,23 @@
 							{messyBusy ? '…' : 'Break marginalia'}
 						</button>
 						<EndsNote text="This is the last step: Exchange Courtiers resolves when you submit." />
+					</div>
+				{:else}
+					<!-- Everyone else sees the notes the target is choosing among, greyed out and
+					     inert. No line of its own: the open step's heading says who is breaking
+					     what. -->
+					<div class="messy-break-section">
+						<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
+							<BreakPicker
+								label="Marginalium to break"
+								items={preparerMarginaliaAssets}
+								{players}
+								emptyMessage="The preparer has no marginalia to break."
+								selectedMarginaliaID={null}
+								onSelect={() => {}}
+								readOnly
+							/>
+						</fieldset>
 					</div>
 				{/if}
 
@@ -585,6 +631,21 @@
 						Riposte — waiting for {playerName(players, resolutionActorID(plan, plans))} to break or
 						surrender <em>{requestedPeerName}</em>…
 					</p>
+					<!-- The notes they could tear first, greyed out and inert. Nothing to mirror
+					     when the peer could not survive a break: the line is all there is. -->
+					{#if canBreakFirst}
+						<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
+							<CardPicker
+								label="Marginalium to break"
+								items={requestedPeerMarginalia}
+								{players}
+								emptyMessage="This peer has no marginalia to break."
+								marginaliaMode
+								selectedMarginaliaID={null}
+								readOnly
+							/>
+						</fieldset>
+					{/if}
 				{/if}
 
 			{:else}
