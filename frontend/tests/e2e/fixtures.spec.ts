@@ -1,10 +1,12 @@
 import type { Page } from '@playwright/test';
 import { BOUNDARY_ERROR_PREFIX } from '../../src/lib/boundaryError';
-import { test, expect } from './fixtures';
+import { test, expect, tableDeleted } from './fixtures';
 
 // Canaries for fixtures.ts: each way a spec can get a page must be one the
-// guard hears. They need no game and no server (about:blank logs to the console
-// like any page), so they cost milliseconds.
+// guard hears, and each thing it fails on (the boundary line, an uncaught
+// exception, a console.error that is not on the allow-list) must fail. They need
+// no game and no server (about:blank logs to the console like any page), so
+// they cost milliseconds.
 //
 // `test.fail()` flips the verdict: the test passes only if it failed. If the
 // guard goes blind (a Playwright upgrade changes how contexts are made, a
@@ -22,6 +24,19 @@ async function logBoundary(page: Page) {
 	await page.evaluate(
 		prefix => console.error(`${prefix} table phase view (canary)`, new Error('canary')),
 		BOUNDARY_ERROR_PREFIX,
+	);
+}
+
+/** Throws from a timer, so that nothing catches it: Chrome reports it as an uncaught exception. */
+async function throwUncaught(page: Page) {
+	await page.evaluate(
+		() =>
+			new Promise<void>(resolve => {
+				setTimeout(() => {
+					throw new Error('canary: uncaught exception');
+				}, 0);
+				setTimeout(resolve, 50);
+			}),
 	);
 }
 
@@ -79,10 +94,79 @@ test('a page closed before the test ends still fails it (a DOM scan at the end w
 	});
 });
 
-test('a console error that is not the boundary line does not fail the test', async ({ browser }) => {
+test('an uncaught exception in a page from the `page` fixture fails the test', async ({ page }) => {
+	test.fail();
+	await unlessGuarded(async () => {
+		await throwUncaught(page);
+	});
+});
+
+test('an uncaught exception in a page from browser.newContext() fails the test', async ({ browser }) => {
+	test.fail();
+	await unlessGuarded(async () => {
+		const ctx = await browser.newContext();
+		const page = await ctx.newPage();
+		await throwUncaught(page);
+		await ctx.close();
+	});
+});
+
+test('a promise rejection nobody handles fails the test', async ({ page }) => {
+	test.fail();
+	await unlessGuarded(async () => {
+		await page.evaluate(
+			() =>
+				new Promise<void>(resolve => {
+					Promise.reject(new Error('canary: unhandled rejection'));
+					setTimeout(resolve, 50);
+				}),
+		);
+	});
+});
+
+test('a console.error that is not on the allow-list fails the test', async ({ page }) => {
+	test.fail();
+	await unlessGuarded(async () => {
+		await page.evaluate(() => console.error('canary: nothing allows this line', new Error('x')));
+	});
+});
+
+test('a console.error from a page opened with browser.newContext() fails the test too', async ({ browser }) => {
+	test.fail();
+	await unlessGuarded(async () => {
+		const ctx = await browser.newContext();
+		const page = await ctx.newPage();
+		await page.evaluate(() => console.error('canary: nothing allows this line either'));
+		await ctx.close();
+	});
+});
+
+test('a console.error the allow-list names, for this spec, does not fail the test', async ({ browser }) => {
 	const ctx = await browser.newContext();
 	const page = await ctx.newPage();
-	await page.evaluate(() => console.error('some other error, nothing to do with the boundary', new Error('x')));
+	await page.evaluate(() => console.error('canary: an allow-listed console.error is let through'));
 	expect(await page.evaluate(() => 1 + 1)).toBe(2);
 	await ctx.close();
+});
+
+test('once the test has deleted its game, console errors stop counting (the pages are talking to nothing)', async ({ page }) => {
+	tableDeleted();
+	await page.evaluate(() => console.error('canary: a 403 from a table that is gone'));
+	expect(await page.evaluate(() => 1 + 1)).toBe(2);
+});
+
+test('...but a boundary line still fails the test after the game is deleted', async ({ page }) => {
+	test.fail();
+	await unlessGuarded(async () => {
+		tableDeleted();
+		await logBoundary(page);
+	});
+});
+
+test('...and so does an uncaught exception', async ({ page }) => {
+	test.fail();
+	await unlessGuarded(async () => {
+		tableDeleted();
+		await throwUncaught(page);
+	});
 });
