@@ -121,12 +121,18 @@ test('fair trade accepted: both peers change hands, the log names both, then the
 	const pages = await openAll(g);
 	const { alice, bob, carol } = pages;
 
-	// Pre-roll, before any offer: the target is asked, the preparer waits, a
-	// bystander sees only who is resolving (and never an action).
+	// Pre-roll, before any offer: the target is asked, the preparer waits, and a
+	// bystander sees the same peers greyed out (never an action).
 	await expect(bob.getByText('You may name one of their peers to receive in exchange')).toBeVisible();
 	await expect(bob.getByRole('button', { name: 'Propose trade' })).toBeDisabled();
 	await expect(alice.getByText(`Waiting for bob to propose a fair trade for their peer, ${PEER.bob}`)).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Propose trade' })).toHaveCount(0);
+	for (const watcher of [alice, carol]) {
+		await expect(watcher.getByText('Peer to receive in trade')).toBeVisible();
+		await expect(watcher.locator('.resolve-mirror .select-tap').first()).toHaveAttribute('aria-disabled', 'true');
+	}
+	// The difficulty, before the dice, for everyone: bob's power status.
+	for (const p of [alice, bob, carol]) await expect(p.getByText(/status on the power track/)).toBeVisible();
 
 	// The preparation line names the exact peer being angled for.
 	await expect(carol.getByRole('complementary', { name: 'Chat' }).locator('.feed')).toContainText(
@@ -177,9 +183,12 @@ test('mar: the target chooses; capped by the margin; "A Fair Trade" still swaps 
 	await expect(bob.getByRole('button', { name: 'A Fair Trade' })).toBeVisible();
 	await expect(bob.getByText('needs −2')).toBeVisible(); // Riposte is out of reach
 	await expect(bob.getByText('needs −3')).toBeVisible(); // so is Forfeit
-	await expect(alice.getByText('marred by 1')).toHaveCount(0);
-	await expect(alice.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
-	await expect(carol.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
+	// Everyone else sees the same options greyed out, in the third person, with no button.
+	for (const watcher of [alice, carol]) {
+		await expect(watcher.getByText("alice's plan was marred by 1.")).toBeVisible();
+		await expect(watcher.getByRole('button', { name: 'A Fair Trade' })).toBeDisabled();
+		await expect(watcher.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
+	}
 	// (No assertion on carol's wait line here: when the roll is created and forced
 	// within milliseconds her page can keep "Dice roll in progress…" until reload —
 	// see the note.)
@@ -281,8 +290,11 @@ test('make: the targeted peer transfers, the target owes a messy break, then it 
 	await expect(alice.getByText('You beat the difficulty by 0')).toBeVisible();
 	await expect(alice.getByText('needs +1')).toBeVisible();
 	await expect(alice.getByText('needs +2')).toBeVisible();
-	await expect(bob.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
-	await expect(carol.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
+	// The target and a bystander see the same three options greyed out, and no button.
+	for (const watcher of [bob, carol]) {
+		await expect(watcher.getByRole('button', { name: /Messy/ })).toBeDisabled();
+		await expect(watcher.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
+	}
 
 	await alice.getByText('Messy').click();
 	await alice.getByRole('button', { name: 'Apply choices' }).click();

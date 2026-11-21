@@ -35,6 +35,10 @@
 	import FormField from './FormField.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import FinishedStep from './shared/FinishedStep.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
+	import Buffet from './shared/Buffet.svelte';
+	import { demandBuffet, demandOptionLine } from '$lib/plans/buffets';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -344,6 +348,19 @@
 			: 'unknown target'}
 		<p class="choices-note">Targeting: {targetSummary}</p>
 
+		<!-- Before the dice land: how hard the roll is (the target plan's difficulty plus the
+		     power gap), and what each of the four options does against THIS target. After,
+		     the draft's cards carry the same descriptions. -->
+		{#if diceNotYetLanded(plan, ctx)}
+			<PlanDifficulty {plan} {ctx} />
+			{#if targetPlan}
+				<Buffet tabs={demandBuffet(targetPlan.plan_type, {
+					demander: playerName(players, plan.preparer_id),
+					target: playerName(players, targetPlan.preparer_id),
+				})} />
+			{/if}
+		{/if}
+
 		<!-- While the dice are out the roll is the open step and carries its own heading,
 		     so there is nothing to say until it lands. -->
 		{#if rollOutcome === 'make'}
@@ -378,10 +395,15 @@
 							{#each optionViews as v (v.option)}
 								{@const opt = v.option}
 								{@const parts = optionParts(opt)}
+								<!-- What this option does against THIS target, or that it does nothing and why:
+								     the same line as the "What can happen?" before the dice. The generic effect is
+								     only the fallback for a target plan that is not on this client. -->
+								{@const effect = targetPlan
+									? demandOptionLine(opt, targetPlan.plan_type, playerName(players, targetPlan.preparer_id))
+									: parts.effect}
 								<OptionCard
 									title={parts.title}
-									description={parts.effect}
-									reason={v.reason ?? undefined}
+									description={effect}
 									selected={pickedOption === opt}
 									aria-disabled={v.disabled}
 									onclick={() => { pickedOption = pickAfterTap(pickedOption, v); }}

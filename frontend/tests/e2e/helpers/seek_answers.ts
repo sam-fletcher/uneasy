@@ -138,8 +138,8 @@ export async function actingIDs(api: APIRequestContext, gameID: number): Promise
 export async function castFromUI(t: Table, narration: string): Promise<RollRow> {
 	const { page } = t.alice;
 	await expect(page.getByText('What have you learned?')).toBeVisible({ timeout: 10_000 });
-	await page.getByPlaceholder('Restate your research methods').fill(narration);
-	await page.getByRole('button', { name: 'Submit', exact: true }).click();
+	await page.getByPlaceholder('Where you have been looking').fill(narration);
+	await page.getByRole('button', { name: 'Post & open the roll', exact: true }).click();
 	await expect(page.getByText('What have you learned?')).toHaveCount(0);
 	// Every table must have the roll before the caller settles it (see expectRollOpen).
 	await expectRollOpen(t.alice.page, t.bob.page, t.carol.page);

@@ -26,6 +26,8 @@
 	import PlayerChips from './PlayerChips.svelte';
 	import CardPicker from './CardPicker.svelte';
 	import DelayThresholdNote from './shared/DelayThresholdNote.svelte';
+	import Buffet from './shared/Buffet.svelte';
+	import { LIAISE_BUFFET } from '$lib/plans/buffets';
 	import {
 		playerName,
 		playersExcept, ownerIntactAssets, finaleSlotSpent, pendingAimSettler,
@@ -617,6 +619,10 @@
 					</p>
 				{/if}
 			</div>
+			<!-- What the two choices to come can bring. A liaison rolls nothing, so there is no
+			     make or mar to preview. Only the two players: a bystander is given nothing to
+			     read here, and once the options themselves are on screen this would repeat them. -->
+			<Buffet tabs={LIAISE_BUFFET} />
 
 		<!-- Phase 2: Secrets We Keep ──────────────────────────────── -->
 		{:else if clState.phase === 'secrets_we_keep'}
@@ -701,6 +707,7 @@
 					{/if}
 				{/if}
 			</div>
+			<Buffet tabs={LIAISE_BUFFET} />
 
 		<!-- Phase 3: Things We Share ──────────────────────────────── -->
 		{:else if clState.phase === 'things_we_share'}

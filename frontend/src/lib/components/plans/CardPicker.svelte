@@ -181,6 +181,7 @@
 						marginaliaSelectable
 						selectedMarginaliaID={selectedMarginaliaID ?? null}
 						selectedAssetID={selectedAssetID ?? null}
+						disabled={readOnly}
 						onMarginaliaToggle={handleMarginaliaToggle}
 					/>
 				{:else}

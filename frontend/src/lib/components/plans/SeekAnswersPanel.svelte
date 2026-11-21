@@ -44,6 +44,9 @@
 	import Stepper from './shared/Stepper.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
+	import PreRollStep from './shared/PreRollStep.svelte';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -130,16 +133,16 @@
 
 	// ── Pre-roll: restate methods + one thing learned, then cast ─────────────
 	// OnResolve opens the plan with no roll; the preparer writes their pre-roll
-	// narration and casts via cast-roll, which posts it and creates the dice.
-	let preRollText = $state('');
+	// narration and casts via cast-roll, which posts it and creates the dice. The
+	// step is the shared PreRollStep, so its button says it opens the roll.
 	let preRollBusy = $state(false);
-	async function submitPreRoll(p: Plan) {
-		if (preRollBusy || !preRollText.trim()) return;
+	async function submitPreRoll(p: Plan, values: Record<string, string>) {
+		const narration = (values.narration ?? '').trim();
+		if (preRollBusy || !narration) return;
 		preRollBusy = true; resError = '';
 		try {
-			const res = await castSeekAnswersRoll(p.id, preRollText.trim());
+			const res = await castSeekAnswersRoll(p.id, narration);
 			if (res.roll) onRollCreated(res.roll);
-			preRollText = '';
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not cast your dice.';
@@ -512,29 +515,31 @@
 	<ResolvingCard {plan} {players} error={resError}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		<!-- How hard the roll is, for everyone, until the dice land. -->
+		{#if diceNotYetLanded(plan, ctx)}
+			<PlanDifficulty {plan} {ctx} />
+		{/if}
 		{#if !choicesDone}
 			<Buffet tabs={BUFFET_TABS} />
 		{/if}
 		{#if !preRollDone}
-			<!-- Pre-roll: restate methods + describe one thing learned, then cast.
-			     The narration is the preparer's own; only they can write it.
-			     Everyone else sees the same area as a greyed-out, read-only mirror. -->
-			{@const canNarrate = isPreparer}
-			<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!canNarrate} disabled={!canNarrate}>
-				<p class="choices-header">What have you learned?</p>
-				<label class="form-label">
-					<textarea rows={4} bind:value={preRollText} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
-						placeholder="Restate your research methods, and describe one thing you've learned while researching."
-					></textarea>
-				</label>
-				{#if canNarrate}
-					<button class="action-btn primary"
-						onclick={() => submitPreRoll(plan)}
-						disabled={preRollBusy || !preRollText.trim()}>
-						{preRollBusy ? '…' : 'Submit'}
-					</button>
-				{/if}
-			</fieldset>
+			<!-- Pre-roll: restate methods + describe one thing learned, then cast. The
+			     narration is the preparer's own; only they get the form, and everyone else
+			     reads the open step's heading for whose move it is. -->
+			<PreRollStep
+				title="What have you learned?"
+				prompt="Restate your methods of research, then describe one thing that you've learned while researching."
+				fields={[{
+					key: 'narration',
+					label: 'Your methods, and one thing you have learned',
+					placeholder: 'Where you have been looking, and what turned up.',
+					rows: 4,
+					max: TEXT_LIMITS.LONG_TEXT,
+				}]}
+				canAct={isPreparer}
+				busy={preRollBusy}
+				onSubmit={(v) => submitPreRoll(plan, v)}
+			/>
 
 		<!-- While the dice are out the roll is the open step and carries its own
 		     heading, so there is nothing to say until it lands. -->

@@ -85,6 +85,10 @@ export interface PlanChoiceOption {
 	label: string;
 	/** One-line consequence, rendered under the title in card mode. */
 	desc?: string;
+	/** `desc` worded for someone who is not choosing, for a watcher's greyed copy of
+	 * the picker: `desc` may speak to the player choosing ("one of your assets"). Falls
+	 * back to `desc`. */
+	neutralDesc?: string;
 	/** Viewer-neutral wording for read-only summaries of a pick (the label may
 	 * address the picker as "you"). Falls back to `label`. */
 	summary?: string;
@@ -98,7 +102,8 @@ export interface PlanChoiceOption {
 
 export const MAKE_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	exchange_courtiers: [
-		{ key: 'messy',      level: 0, label: 'Messy',      desc: 'The target may break one of your assets.' },
+		{ key: 'messy',      level: 0, label: 'Messy',      desc: 'The target will break one of your assets.',
+		  neutralDesc: 'The target will break one of the preparer\'s assets.' },
 		{ key: 'legal',      level: 1, label: 'Legal',      desc: 'Everything went according to plan.' },
 		{ key: 'conspiracy', level: 2, label: 'Conspiracy', desc: 'The peer was in on it from the start.' },
 	],
@@ -113,8 +118,10 @@ export const MAKE_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 export const MAR_OPTIONS: Partial<Record<PlanType, PlanChoiceOption[]>> = {
 	exchange_courtiers: [
 		{ key: 'fair_trade', level: 1, label: 'A Fair Trade', desc: 'The offered trade goes through anyway.' },
-		{ key: 'riposte',    level: 2, label: 'Riposte',      desc: 'They may break the requested peer first, then you take it.' },
-		{ key: 'forfeit',    level: 3, label: 'Forfeit',      desc: 'You take the requested peer.' },
+		{ key: 'riposte',    level: 2, label: 'Riposte',      desc: 'They may break the requested peer first, then you take it.',
+		  neutralDesc: 'The preparer may break the requested peer first, then the target takes it.' },
+		{ key: 'forfeit',    level: 3, label: 'Forfeit',      desc: 'You take the requested peer.',
+		  neutralDesc: 'The target takes the requested peer.' },
 	],
 	// Make Introductions mar is per-peer (other_retinue / broken_arrival /
 	// delayed / broken_journey) and rendered directly in MakeIntroductionsPanel,

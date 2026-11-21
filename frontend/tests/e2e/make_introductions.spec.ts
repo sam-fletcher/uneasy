@@ -268,6 +268,12 @@ test('mar: each peer gets a different fate, and the people who owe marginalia ar
 	await expect(alice.getByText('(2 remaining):')).toBeVisible({ timeout: 10_000 });
 	for (const p of [bob, carol]) {
 		await expectHeading(p, 'Waiting on alice — settle each newcomer');
+		// ...and sees the four fates greyed out and inert, nothing picked, no button.
+		await expect(p.getByText('(2 remaining):')).toBeVisible();
+		const fate = p.locator('.resolve-mirror').getByRole('button', { name: 'Another retinue', exact: true });
+		await expect(fate).toBeDisabled();
+		await expect(fate).toHaveAttribute('aria-pressed', 'false');
+		await expect(p.getByRole('button', { name: 'Resolve peer' })).toHaveCount(0);
 	}
 	// The mar commits with no picks, so the panel knows it is committed from the
 	// auto-apply marker alone — and nobody is left looking at the dice wait or

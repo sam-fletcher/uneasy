@@ -46,6 +46,8 @@
 	import Stepper from './shared/Stepper.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
 
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
@@ -690,6 +692,11 @@
 	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		<!-- How hard the roll is, for everyone, until the dice land: a rumor about a main
+		     character reads the owner's esteem status, any other the preparer's own rank. -->
+		{#if diceNotYetLanded(plan, ctx)}
+			<PlanDifficulty {plan} {ctx} />
+		{/if}
 		{#if !choicesDone}
 			<Buffet tabs={BUFFET_TABS} />
 		{/if}

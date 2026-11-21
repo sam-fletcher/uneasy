@@ -20,6 +20,8 @@
 	import '$lib/components/shared/actionButton.css';
 	import { joinWar, type Plan, type Player, type WarStateResponse } from '$lib/api';
 	import Chip from '$lib/components/shared/Chip.svelte';
+	import Buffet from '../shared/Buffet.svelte';
+	import { WAR_BUFFET } from '$lib/plans/buffets';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import { playerColor } from '$lib/playerColor';
 	import { playerName } from '../shared';
@@ -145,6 +147,12 @@
 				<button type="button" class="action-btn primary join-main" disabled>Choose an option</button>
 			{/if}
 		</div>
+	{/if}
+
+	<!-- A war rolls nothing, so there is no make or mar to preview: what it can bring is
+	     the cost of battle each row, surrender and peace. Only while it is still being fought. -->
+	{#if war.status === 'active'}
+		<Buffet tabs={WAR_BUFFET} />
 	{/if}
 
 	{#if war.status === 'ended'}

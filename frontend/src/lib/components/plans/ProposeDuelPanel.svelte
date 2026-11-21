@@ -25,6 +25,10 @@
 	} from '$lib/api';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
+	import Buffet from './shared/Buffet.svelte';
+	import { DUEL_BUFFET } from '$lib/plans/buffets';
 	import { playerName, parseResolutionData, pendingAimSettler } from './shared';
 
 	import PrepForm from './duel/PrepForm.svelte';
@@ -81,14 +85,6 @@
 		return Math.max(6 - r, 0);
 	}
 	const myMaxStakes = $derived(1 + statusOf(currentPlayerID));
-
-	// Difficulty = the challenged player's esteem status (mirrors
-	// game.ProposeDuelDifficulty). It's how many of the loser's stakes change
-	// hands on a mar, so it's worth surfacing up front.
-	const difficulty = $derived.by(() => {
-		const r = esteemRank(plan?.target_player_id ?? null);
-		return r == null ? null : Math.max(6 - r, 1);
-	});
 
 	// ── Duel-state fetch + live refresh ──────────────────────────────────────
 	let duelState = $state<DuelStateResponse | null>(null);
@@ -162,8 +158,15 @@
 		<p class="choices-note">
 			{playerName(players, plan.preparer_id)}
 			vs {playerName(players, plan.target_player_id)}
-			{#if difficulty != null}· difficulty <strong>{difficulty}</strong>{/if}
 		</p>
+
+		<!-- Until the dice land: the difficulty (the challenged player's esteem status; on a
+		     mar it is how many of the loser's stakes change hands, so it is worth knowing
+		     before staking), and what a make and a mar do. -->
+		{#if diceNotYetLanded(plan, ctx) && duelRes.phase !== 'done'}
+			<PlanDifficulty {plan} {ctx} />
+			<Buffet tabs={DUEL_BUFFET} />
+		{/if}
 
 		{#if aimSettler != null}
 			<p class="ft-prompt muted">

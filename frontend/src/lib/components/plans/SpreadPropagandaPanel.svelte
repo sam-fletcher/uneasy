@@ -33,6 +33,8 @@
 	import Stepper from './shared/Stepper.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
+	import PlanDifficulty from './shared/PlanDifficulty.svelte';
+	import { diceNotYetLanded } from '$lib/plans/difficulty';
 
 	// make and mar option keys don't overlap, so a completed choice list can
 	// be labelled without knowing which outcome produced it.
@@ -201,10 +203,16 @@
 	// plan context, so fetch them once the mar picker is up. Fail OPEN on a fetch
 	// error — the server re-checks and stays the authority; failing closed would
 	// strand a legitimate pick behind a flaky request.
+	//
+	// Every player fetches them, not just the one choosing: a watcher's greyed copy of
+	// the picker has to grey the same options for the same reasons, or its counter-
+	// propaganda row would read "checking who interfered…" for good. The mar has
+	// resolved by now, so every die is revealed and the route is open to the table
+	// (it is the same roll the dice panel already shows everyone).
 	let rollDice = $state<{ rollID: number; dice: DiceRollDie[] | null } | null>(null);
 	$effect(() => {
 		const rollID = activeRoll != null && activeRoll.plan_id === plan?.id ? activeRoll.id : null;
-		if (rollID == null || rollOutcome !== 'mar' || !amChoiceActor || choicesDone) return;
+		if (rollID == null || rollOutcome !== 'mar' || choicesDone) return;
 		let stale = false;
 		getRoll(rollID)
 			.then(d => { if (!stale) rollDice = { rollID, dice: d.dice }; })
@@ -248,7 +256,8 @@
 		const cap = marCap[key] ?? 0;
 		if (cap === 0) {
 			if (key === 'give_peer') return 'no peers to give';
-			if (key === 'break_self') return 'nothing of yours left to break';
+			// "yours" is the preparer's own word; anyone else reads whose it is.
+			if (key === 'break_self') return isPreparer ? 'nothing of yours left to break' : 'nothing of the preparer’s left to break';
 			if (key === 'counter_prop') return coOptBlocker;
 			return null;
 		}
@@ -332,6 +341,8 @@
 	// preparer every one of them). The retinue and assets are still the
 	// PREPARER's, so copy that says "your" has to say whose when they aren't.
 	const whose = $derived(isPreparer || !plan ? 'your' : `${playerName(players, plan.preparer_id)}'s`);
+	// Who is choosing, for the lines a watcher reads about them.
+	const actorName = $derived(plan ? playerName(players, resolutionActorID(plan, plans)) : '');
 	const whoHas = $derived(isPreparer || !plan ? 'You have' : `${playerName(players, plan.preparer_id)} has`);
 
 	// give_peer: pick one of the preparer's peers and a recipient player.
@@ -434,6 +445,10 @@
 	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
+		<!-- How hard the roll is, for everyone, until the dice land. -->
+		{#if diceNotYetLanded(plan, ctx)}
+			<PlanDifficulty {plan} {ctx} />
+		{/if}
 		{#if !choicesDone}
 			<Buffet tabs={BUFFET_TABS} />
 		{/if}
@@ -479,24 +494,34 @@
 
 		<!-- While the dice are out the roll is the open step and carries its own
 		     heading, so there is nothing to say until it lands. -->
-		{:else if rollOutcome === 'mar' && !choicesDone && amChoiceActor}
-			<div class="choices-section">
+		{:else if rollOutcome === 'mar' && !choicesDone}
+			<!-- Option-picking. The choice actor picks; everyone else sees the same option
+			     list greyed out and inert (ADR-006's mirror, as Spread Rumors draws it). The
+			     counts a watcher sees are their own zeroed local state: mirroring the actor's
+			     uncommitted ticks would need the resolve-draft channel, which is not built,
+			     and a draft must never carry anything the table has not been told. -->
+			<fieldset class="resolve-mirror-wrap choices-section"
+				class:resolve-mirror={!amChoiceActor} disabled={!amChoiceActor}>
 				<p class="choices-header">
 					Result: <span class="outcome-mar">Mar</span>
 				</p>
+				<!-- The player choosing is told what to do; everyone else, what the actor is doing. -->
 				<p class="choices-note">
-					Pick options equal to (difficulty − result) (repeatable){#if marPicksNeeded != null}: choose exactly {marPicksNeeded}{/if}.
+					{#if amChoiceActor}Pick options{:else}{actorName} picks options{/if} equal to (difficulty − result) (repeatable){#if marPicksNeeded != null}: {amChoiceActor ? 'choose exactly' : 'exactly'} {marPicksNeeded}{/if}.
 				</p>
 				{#if marRequiredPicks != null && marPicksNeeded != null && marPicksNeeded < marRequiredPicks}
 					<p class="choices-note muted">
-						Only {marPicksNeeded} of the {marRequiredPicks} picks have a valid target, so take every one you can.
+						Only {marPicksNeeded} of the {marRequiredPicks} picks have a valid target, so {#if amChoiceActor}take every one you can{:else}{actorName} takes every one that can be{/if}.
 					</p>
 				{/if}
 				{#each MAR_OPTIONS.spread_propaganda ?? [] as opt}
 					{@const note = marNote(opt.key)}
-					<Stepper label={opt.label} count={marCounts[opt.key] ?? 0} onstep={(d) => bumpMar(opt.key, d)} dimmed={(marCap[opt.key] ?? 0) === 0}
+					<!-- The label is second person ("your retinue") for the player choosing; a
+					     watcher reads the same option in the neutral words the Buffet uses. -->
+					{@const optLabel = amChoiceActor ? opt.label : (opt.summary ?? opt.label)}
+					<Stepper label={optLabel} count={marCounts[opt.key] ?? 0} onstep={(d) => bumpMar(opt.key, d)} dimmed={(marCap[opt.key] ?? 0) === 0}
 						incDisabled={(marCounts[opt.key] ?? 0) >= (marCap[opt.key] ?? 0) || (marPicksNeeded != null && marTotalPicked >= marPicksNeeded)}>
-						{opt.label}{#if note}<span class="choices-note muted"> — {note}</span>{/if}
+						{optLabel}{#if note}<span class="choices-note muted">{' '}— {note}</span>{/if}
 					</Stepper>
 					{#if opt.key === 'counter_prop' && topInterfererLine}
 						<p class="choices-note muted">{topInterfererLine}</p>
@@ -505,15 +530,17 @@
 				<p class="choices-note">
 					Total picks: <strong>{marTotalPicked}</strong>{#if marPicksNeeded != null}{' '}/ {marPicksNeeded}{/if}
 				</p>
-				<button class="action-btn primary"
-					onclick={() => onApplyChoices(plan, 'mar')}
-					disabled={choicesBusy || marTotalPicked === 0 || (marPicksNeeded != null && marTotalPicked !== marPicksNeeded)}>
-					{choicesBusy ? '…' : 'Apply choices'}
-				</button>
-				<EndsNote
-					show={marTotalPicked > 0 && (marCounts.give_peer ?? 0) === 0 && (marCounts.break_self ?? 0) === 0}
-					text="No step is left after these picks, so Spread Propaganda resolves when you apply them." />
-			</div>
+				{#if amChoiceActor}
+					<button class="action-btn primary"
+						onclick={() => onApplyChoices(plan, 'mar')}
+						disabled={choicesBusy || marTotalPicked === 0 || (marPicksNeeded != null && marTotalPicked !== marPicksNeeded)}>
+						{choicesBusy ? '…' : 'Apply choices'}
+					</button>
+					<EndsNote
+						show={marTotalPicked > 0 && (marCounts.give_peer ?? 0) === 0 && (marCounts.break_self ?? 0) === 0}
+						text="No step is left after these picks, so Spread Propaganda resolves when you apply them." />
+				{/if}
+			</fieldset>
 
 		{:else if choicesDone}
 			<div class="complete-section">
@@ -547,77 +574,103 @@
 					</div>
 				{/if}
 
-				{#if amChoiceActor && needsGivePeer}
-					<div class="plan-form">
-						<p class="choices-header">
-							A peer leaves {whose} retinue — hand it to another player
-							{#if givePeerPicked > 1}({givePeerPicked - givePeerDone} of {givePeerPicked} remaining){/if}
-						</p>
-						<CardPicker
-							label="Peer to give up"
-							items={preparerPeers}
-							{players}
-							emptyMessage="{whoHas} no peers to give."
-							selected={givePeerID}
-							onSelect={(id) => (givePeerID = id)}
-						/>
-						{#if preparerPeers.length === 0}
-							<p class="choices-note muted">Nothing left to give — this pick has no valid target.</p>
-							<button class="action-btn primary"
-								onclick={() => forfeitStep(plan, 'give_peer')} disabled={forfeitBusy}>
-								{forfeitBusy ? '…' : 'Skip — no valid targets'}
-							</button>
-							<EndsNote show={stepsOwed === givePeerPicked - givePeerDone} text={lastStepText} />
-						{:else}
-							<PlayerChips
-								players={playersExcept(players, plan.preparer_id)}
-								isActive={(pl) => giveToPlayerID === pl.id}
-								onSelect={(pl) => (giveToPlayerID = pl.id)}
-							/>
-							<button class="action-btn primary" onclick={() => submitGivePeer(plan)}
-								disabled={giveBusy || givePeerID == null || giveToPlayerID == null}>
-								{giveBusy ? '…' : 'Give up peer'}
-							</button>
-							<EndsNote show={stepsOwed === 1} text={lastStepText} />
+				<!-- The picks still owed. The player acting on them works the live forms; every
+				     other player sees the same pickers greyed out and inert, with no button
+				     (the pickers take readOnly: their cards are not form controls, so the
+				     disabled fieldset alone would not stop the keyboard). Both are built from
+				     the preparer's public retinue. -->
+				{#if marEffectsPending}
+					<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!amChoiceActor} disabled={!amChoiceActor}>
+						{#if needsGivePeer}
+							<div class="plan-form">
+								<p class="choices-header">
+									{#if amChoiceActor}
+										A peer leaves {whose} retinue — hand it to another player
+									{:else}
+										A peer leaves {whose} retinue, to be handed to another player
+									{/if}
+									{#if givePeerPicked > 1}({givePeerPicked - givePeerDone} of {givePeerPicked} remaining){/if}
+								</p>
+								<CardPicker
+									label="Peer to give up"
+									items={preparerPeers}
+									{players}
+									emptyMessage="{whoHas} no peers to give."
+									selected={givePeerID}
+									onSelect={(id) => (givePeerID = id)}
+									readOnly={!amChoiceActor}
+								/>
+								{#if preparerPeers.length === 0}
+									<p class="choices-note muted">Nothing left to give — this pick has no valid target.</p>
+									{#if amChoiceActor}
+										<button class="action-btn primary"
+											onclick={() => forfeitStep(plan, 'give_peer')} disabled={forfeitBusy}>
+											{forfeitBusy ? '…' : 'Skip — no valid targets'}
+										</button>
+										<EndsNote show={stepsOwed === givePeerPicked - givePeerDone} text={lastStepText} />
+									{/if}
+								{:else}
+									<PlayerChips
+										players={playersExcept(players, plan.preparer_id)}
+										isActive={(pl) => giveToPlayerID === pl.id}
+										onSelect={(pl) => (giveToPlayerID = pl.id)}
+										readOnly={!amChoiceActor}
+									/>
+									{#if amChoiceActor}
+										<button class="action-btn primary" onclick={() => submitGivePeer(plan)}
+											disabled={giveBusy || givePeerID == null || giveToPlayerID == null}>
+											{giveBusy ? '…' : 'Give up peer'}
+										</button>
+										<EndsNote show={stepsOwed === 1} text={lastStepText} />
+									{/if}
+								{/if}
+							</div>
 						{/if}
-					</div>
-				{/if}
 
-				{#if amChoiceActor && needsBreakSelf}
-					<div class="plan-form">
-						<p class="choices-header">
-							Break yourself — break one of {whose} assets
-							{#if breakSelfPicked > 1}({breakSelfPicked - breakSelfDone} of {breakSelfPicked} remaining){/if}
-						</p>
-						<CardPicker
-							label="Marginalium to tear"
-							items={preparerBreakable}
-							{players}
-							emptyMessage="{whoHas} nothing left to break."
-							marginaliaMode
-							selectedMarginaliaID={breakMargID}
-							selectedAssetID={breakAssetID}
-							onSelectMarginalia={(mID, parent) => {
-								breakMargID = mID;
-								breakAssetID = parent?.id ?? null;
-							}}
-						/>
-						{#if breakWarn}<Notice>{breakWarn}</Notice>{/if}
-						{#if preparerBreakable.length === 0}
-							<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
-							<button class="action-btn primary"
-								onclick={() => forfeitStep(plan, 'break_self')} disabled={forfeitBusy}>
-								{forfeitBusy ? '…' : 'Skip — no valid targets'}
-							</button>
-							<EndsNote show={stepsOwed === breakSelfPicked - breakSelfDone} text={lastStepText} />
-						{:else}
-							<button class="action-btn primary" onclick={() => submitBreakSelf(plan)}
-								disabled={breakBusy || breakMargID == null}>
-								{breakBusy ? '…' : 'Break asset'}
-							</button>
-							<EndsNote show={stepsOwed === 1} text={lastStepText} />
+						{#if needsBreakSelf}
+							<div class="plan-form">
+								<p class="choices-header">
+									{#if amChoiceActor}
+										Break yourself — break one of {whose} assets
+									{:else}
+										{playerName(players, plan.preparer_id)} breaks one of their own assets
+									{/if}
+									{#if breakSelfPicked > 1}({breakSelfPicked - breakSelfDone} of {breakSelfPicked} remaining){/if}
+								</p>
+								<CardPicker
+									label="Marginalium to tear"
+									items={preparerBreakable}
+									{players}
+									emptyMessage="{whoHas} nothing left to break."
+									marginaliaMode
+									selectedMarginaliaID={breakMargID}
+									selectedAssetID={breakAssetID}
+									onSelectMarginalia={(mID, parent) => {
+										breakMargID = mID;
+										breakAssetID = parent?.id ?? null;
+									}}
+									readOnly={!amChoiceActor}
+								/>
+								{#if breakWarn}<Notice>{breakWarn}</Notice>{/if}
+								{#if preparerBreakable.length === 0}
+									<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
+									{#if amChoiceActor}
+										<button class="action-btn primary"
+											onclick={() => forfeitStep(plan, 'break_self')} disabled={forfeitBusy}>
+											{forfeitBusy ? '…' : 'Skip — no valid targets'}
+										</button>
+										<EndsNote show={stepsOwed === breakSelfPicked - breakSelfDone} text={lastStepText} />
+									{/if}
+								{:else if amChoiceActor}
+									<button class="action-btn primary" onclick={() => submitBreakSelf(plan)}
+										disabled={breakBusy || breakMargID == null}>
+										{breakBusy ? '…' : 'Break asset'}
+									</button>
+									<EndsNote show={stepsOwed === 1} text={lastStepText} />
+								{/if}
+							</div>
 						{/if}
-					</div>
+					</fieldset>
 				{/if}
 
 				{#if isPreparer && !preparerActionPending}
