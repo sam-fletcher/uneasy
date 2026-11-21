@@ -63,7 +63,8 @@ design principles, the rulings and decisions files, and the memory index,
 which together hold the owner's past rulings — without them the reviewer
 will flag a ruled deviation as a mistake. "Where does the change
 depart from the rules as written, or simplify them? Where did the session
-interpret a rule the owner hasn't ruled on? Which design principles apply,
+interpret a rule the owner hasn't ruled on, or stretch a ruling past the
+case it names? Which design principles apply,
 and does the change follow them? Cite the page or principle." Its findings
 quote private material, so they stay in this conversation.
 
