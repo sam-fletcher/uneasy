@@ -260,6 +260,11 @@ func TestRollFlow_HiddenBallot_RevealOnLastVote(t *testing.T) {
 		}
 	}
 
+	// The adjusted difficulty is the ballot's outcome: two of three votes are in, so the roll
+	// payload must not carry it yet (a client showing it would leak what the votes sum to).
+	require.Nil(t, asMap(t, active, "roll")["adjusted_difficulty"],
+		"adjusted_difficulty must be absent until the last vote reveals the ballot")
+
 	// Last voter (P2) casts -1 → reveal + advance to leverage.
 	status, _ = h.do(t, 2, "POST", vote, map[string]any{"vote": -1})
 	require.Equal(t, http.StatusOK, status)
@@ -270,6 +275,15 @@ func TestRollFlow_HiddenBallot_RevealOnLastVote(t *testing.T) {
 	require.NotNil(t, roll.AdjustedDifficulty)
 	// 3 + (1 + -1 + -1) = 2.
 	assert.Equal(t, int16(2), *roll.AdjustedDifficulty)
+
+	// From the reveal on, the same payload carries it, for every player.
+	for seat := 0; seat < 3; seat++ {
+		status, revealed := h.do(t, seat, "GET",
+			fmt.Sprintf("/api/tables/%d/rolls/active", h.tg.Game.ID), nil)
+		require.Equal(t, http.StatusOK, status)
+		assert.EqualValues(t, 2, asInt64(t, asMap(t, revealed, "roll")["adjusted_difficulty"]),
+			"player %d sees the adjusted difficulty once the ballot has revealed", seat)
+	}
 
 	// The reveal should have written one roll.vote_resolved action-log post:
 	// 2 lowered (the two -1 votes), 1 raised (the +1), 3 → 2.
