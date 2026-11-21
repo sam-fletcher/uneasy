@@ -457,6 +457,65 @@ describe('the host\'s extra Makes', () => {
 	});
 });
 
+describe('the host\'s pending Mar', () => {
+	// As the Make picker above: the panel subscribes to the table's live events,
+	// which a server render has no window for.
+	beforeAll(() => vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} }));
+	afterAll(() => vi.unstubAllGlobals());
+
+	// bob made and insisted, so the host owes a Mar choice. She has spent her one
+	// make, so the Make picker is off the page and the card is the only control.
+	// carol's roll is open unless `roller` is null.
+	function pendingMar(roller: number | null = CAROL): string {
+		const outcomes = roller === ALICE ? { [BOB]: 'make' } : { [ALICE]: 'host', [BOB]: 'make' };
+		const plan = {
+			id: 5, game_id: 1, plan_type: 'host_festivity', status: 'resolving', preparer_id: ALICE,
+			resolution_data: JSON.stringify({
+				festivity: {
+					outcomes,
+					host_makes_taken: ['spread_rumor'],
+					guest_roll_ids: roller == null ? {} : { [roller]: 31 },
+					unchosen_host_mars: [BOB],
+				},
+			}),
+		};
+		const ctx = {
+			gameID: 1, currentRow: 5, endingMode: null, plans: [plan] as never, assets: [], players,
+			rankings: [], currentPlayerID: ALICE, focusPlayerID: null, isFocusPlayer: false,
+			rollActive: false, rollOutcome: null, activeRoll: null,
+			onRollCreated: () => {}, onPlansChanged: () => {}, onPlanPrepared: () => {},
+			readOnly: false, prepDraft: null, emitPrepDraft: () => {},
+		} as unknown as PlanContext;
+		return strip(render(HostFestivityPanel, { props: { ctx, plan: plan as never, mode: 'resolve' } }).body);
+	}
+
+	it('holds the picker back while a guest is mid-roll: the mar stays named, and the card waits as the Make picker does', () => {
+		const body = pendingMar();
+		expect(body).toContain('bob insists you take a Mar');
+		expect(body).toContain('Waiting for carol to finish their roll');
+		expect(body).not.toContain('You choose which one');
+		expect(body).not.toContain('You must accept all duels');
+		expect(body).not.toContain('Take this Mar');
+	});
+
+	it('offers the Mar picker when nothing is in the way', () => {
+		const body = pendingMar(null);
+		expect(body).toContain('You choose which one');
+		expect(body).toContain('You must accept all duels');
+		expect(body).not.toContain('to finish their roll');
+	});
+
+	it('does not hold back a roller over their own roll', () => {
+		// The server exempts the roller from its own open roll (hfBlockOnActiveRoll).
+		// The real case is a Make Demands stand-in who both rolls and settles the mar,
+		// but the stand-in is set by an effect that a server render never runs. So
+		// this names the host as the roller: the same comparison, viewer and roller equal.
+		const body = pendingMar(ALICE);
+		expect(body).toContain('You choose which one');
+		expect(body).not.toContain('to finish their roll');
+	});
+});
+
 describe('a duel challenge that cannot be declined', () => {
 	const banner = (mustAccept: boolean, viewer = BOB) => strip(render(ChallengeBanner, {
 		props: {
