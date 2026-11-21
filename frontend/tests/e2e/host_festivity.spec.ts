@@ -32,6 +32,7 @@ const track = cleanupGameAfterEach();
 closeContextsAfterEach();
 
 const RUMOR = 'It is said the host watered the wine.';
+const MAR_RUMOR = 'Someone says the host keeps the good wine for herself.';
 
 async function newFestivity(browser: Parameters<typeof seedHFGame>[0]) {
 	const g = await seedHFGame(browser);
@@ -240,6 +241,39 @@ test('one roll at a time: while a roll-and-choice is open, nobody else may act �
 	await optOut(g, 'carol', planID);
 	const res = await act(g, 'alice', planID, 'host-choice', { choice: 'spread_rumor', rumor_text: RUMOR });
 	expect(res.status(), await res.text()).toBe(200);
+});
+
+test('the host\'s pending Mar waits too while a guest rolls, and what she typed survives the wait', async ({ browser }) => {
+	const { g, planID } = await newFestivity(browser);
+	await bobMakes(g, planID);
+	const { alice, carol } = await openPages(g, ['alice', 'carol']);
+
+	// Bob insists, so alice owes a Mar choice. She picks one and types its text.
+	expect((await act(g, 'bob', planID, 'insist-host-mar')).status()).toBe(200);
+	const card = alice.locator('.choices-section', { hasText: 'bob insists you take a Mar' });
+	await expect(card.getByText('bob insists you take a Mar')).toBeVisible();
+	await card.getByRole('button', { name: 'A rumor spreads about you' }).click();
+	await card.getByRole('textbox', { name: 'The rumor about you' }).fill(MAR_RUMOR);
+
+	// Carol's roll opens. The card waits as the Make picker does: no picker, no
+	// submit, and the same line.
+	const rollID = await startRoll(g, 'carol', planID);
+	await expect(card.getByText('Waiting for carol to finish their roll…')).toBeVisible();
+	await expect(card.getByRole('textbox', { name: 'The rumor about you' })).toHaveCount(0);
+	await expect(card.getByRole('button', { name: 'Take this Mar' })).toHaveCount(0);
+	// The server refuses her settle while the roll is open, too.
+	await expectLocked(await act(g, 'alice', planID, 'resolve-host-mar', {
+		insister_id: g.ids.bob, mar_option: 'rumor_about_you', rumor_text: MAR_RUMOR,
+	}));
+
+	// Carol concludes. The card comes back with the pick and the text still in it,
+	// and her submit goes through.
+	await forceRoll(g, rollID, 'make');
+	await choose(g, 'carol', planID, { choice: 'spread_rumor', rumor_text: RUMOR });
+	await expect(card.getByText('Waiting for carol to finish their roll…')).toHaveCount(0);
+	await expect(card.getByRole('textbox', { name: 'The rumor about you' })).toHaveValue(MAR_RUMOR);
+	await card.getByRole('button', { name: 'Take this Mar' }).click();
+	await expect.poll(async () => (await festivity(g, planID)).host_mar_insists).toEqual(['rumor_about_you']);
 });
 
 test('the lock also covers insisting, settling a mar and challenging, and frees when the roller chooses', async ({ browser }) => {
