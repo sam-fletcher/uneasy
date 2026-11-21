@@ -8,6 +8,11 @@
   word). Options carrying a `level` show it as a signed number ("+1", "−2");
   the parent gates out-of-reach levels via `disabledKeys` and explains why via
   `lockReason`. Parent owns selected[].
+
+  `readOnly` is a watcher's view: the same cards inside the shared greyed mirror
+  (planPanel.css), described in the neutral words (`neutralDesc`), with no button.
+  It shows the options on offer and which the margin puts out of reach, never a
+  pick: the picker's own picks are local state that nobody else is sent.
 -->
 <script lang="ts">
 	import './planPanel.css';
@@ -36,11 +41,13 @@
 		lockReason?: (key: string) => string | undefined;
 		/** Shown under the submit button when applying the current picks ends the plan. */
 		endsText?: string | null;
+		/** A watcher's greyed, inert copy: neutral wording, no button. */
+		readOnly?: boolean;
 	}
 
 	let {
 		outcome, options, selected, busy, onToggle, onSubmit, header,
-		single = false, disabledKeys = [], lockReason, endsText = null,
+		single = false, disabledKeys = [], lockReason, endsText = null, readOnly = false,
 	}: Props = $props();
 
 	const nothingSelected = $derived(selected.length === 0);
@@ -48,33 +55,50 @@
 	const sign = $derived(outcome === 'make' ? '+' : '−');
 </script>
 
-<div class="choices-section">
-	<p class="choices-header">
-		Result: <span class="outcome-{outcome}">{outcome === 'make' ? 'Make' : 'Mar'}</span>
-	</p>
+{#snippet picker()}
+	<div class="choices-section">
+		<p class="choices-header">
+			Result: <span class="outcome-{outcome}">{outcome === 'make' ? 'Make' : 'Mar'}</span>
+		</p>
 
-	{#if header}{@render header()}{/if}
+		{#if header}{@render header()}{/if}
 
-	{#if options.length > 0}
-		<p class="choices-note">{single ? 'Choose one option:' : 'Select options to apply:'}</p>
-		<div class="option-list">
-			{#each options as opt (opt.key)}
-				{@const isLocked = disabledKeys.includes(opt.key)}
-				<OptionCard
-					title={opt.label}
-					badge={opt.level != null ? `${sign}${opt.level}` : undefined}
-					description={opt.desc || undefined}
-					reason={isLocked ? lockReason?.(opt.key) : undefined}
-					selected={selected.includes(opt.key)}
-					disabled={isLocked}
-					onclick={() => onToggle(opt.key)}
-				/>
-			{/each}
-		</div>
-	{/if}
+		{#if options.length > 0}
+			<!-- The player choosing is told what to do; a watcher, what is being chosen. -->
+		<p class="choices-note">{readOnly
+			? (single ? 'One of these options is chosen:' : 'The options to apply:')
+			: (single ? 'Choose one option:' : 'Select options to apply:')}</p>
+			<div class="option-list">
+				{#each options as opt (opt.key)}
+					{@const isLocked = disabledKeys.includes(opt.key)}
+					<OptionCard
+						title={opt.label}
+						badge={opt.level != null ? `${sign}${opt.level}` : undefined}
+						description={(readOnly ? opt.neutralDesc ?? opt.desc : opt.desc) || undefined}
+						reason={isLocked ? lockReason?.(opt.key) : undefined}
+						selected={selected.includes(opt.key)}
+						disabled={isLocked}
+						onclick={() => onToggle(opt.key)}
+					/>
+				{/each}
+			</div>
+		{/if}
 
-	<button class="action-btn primary" onclick={onSubmit} disabled={busy || (single && nothingSelected)}>
-		{busy ? '…' : 'Apply choices'}
-	</button>
-	{#if endsText}<EndsNote text={endsText} />{/if}
-</div>
+		{#if !readOnly}
+			<button class="action-btn primary" onclick={onSubmit} disabled={busy || (single && nothingSelected)}>
+				{busy ? '…' : 'Apply choices'}
+			</button>
+			{#if endsText}<EndsNote text={endsText} />{/if}
+		{/if}
+	</div>
+{/snippet}
+
+<!-- A watcher's copy sits inside the shared mirror: a disabled fieldset, so every card is
+     inert, and nothing in it can be committed. -->
+{#if readOnly}
+	<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
+		{@render picker()}
+	</fieldset>
+{:else}
+	{@render picker()}
+{/if}
