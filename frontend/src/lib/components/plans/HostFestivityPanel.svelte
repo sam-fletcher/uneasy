@@ -251,7 +251,7 @@
 			{#if isResolving && amStepActor && !fest.pendingChallenge
 				&& fest.unchosenHostMars.length + fest.pendingHostMars.length > 0}
 				<HostPendingMar
-					{plan} {players} {assets}
+					{plan} {players} {assets} {blockedByOtherRoll} {activeRollerID}
 					unchosenHostMars={fest.unchosenHostMars}
 					pendingHostMars={fest.pendingHostMars}
 					{onPlansChanged}

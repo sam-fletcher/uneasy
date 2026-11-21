@@ -9,6 +9,11 @@
     • break_self      → which marginalia on the host's main character to tear.
   Mars are settled one at a time (a legacy mar first, then the oldest insistence).
 
+  While a guest's roll-and-choice is open, the server refuses the settlement, so
+  the card keeps its place and names the wait in place of its picker, as the
+  host's Make picker does (HostChoosing). The picker's draft stays mounted through
+  the wait, so a half-written rumor or a half-made pick is still there after.
+
   Legacy: a game in flight across the Q13 change can hold a mar the insisting
   guest already chose (`pendingHostMars`). That card has no choice left to make
   — only the asset pick — so the option is fixed and the picker is hidden.
@@ -25,7 +30,7 @@
 	import { MAR_OPTS } from './options';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
-	let { plan, players, assets, unchosenHostMars, pendingHostMars, onPlansChanged }: {
+	let { plan, players, assets, unchosenHostMars, pendingHostMars, blockedByOtherRoll, activeRollerID, onPlansChanged }: {
 		plan: Plan;
 		players: Player[];
 		assets: Asset[];
@@ -33,6 +38,11 @@
 		unchosenHostMars: number[];
 		/** Legacy: a mar the insisting guest chose, awaiting the host's asset pick. */
 		pendingHostMars: string[];
+		/** True while a guest's roll-and-choice is in progress: the server refuses a
+		 *  settlement until it concludes, so the picker waits too. */
+		blockedByOtherRoll: boolean;
+		/** The guest whose roll-and-choice is in progress, for the "waiting" note. */
+		activeRollerID: number | null;
 		onPlansChanged: () => void;
 	} = $props();
 
@@ -130,72 +140,78 @@
 			{#if total > 1}<span class="taken-count"> · {total} mars to settle</span>{/if}
 		</p>
 
-		{#if legacyOption == null}
-			<p class="choices-note muted">You choose which one — pick one from the Mar list.</p>
-			<div class="option-list">
-				{#each MAR_OPTS as o (o.key)}
-					{@const reason = lockReason(o.key)}
-					<OptionCard
-						title={o.label}
-						description={o.desc || undefined}
-						{reason}
-						selected={picked === o.key}
-						disabled={reason != null}
-						onclick={() => { picked = picked === o.key ? null : o.key; }}
-					/>
-				{/each}
-			</div>
+		{#if blockedByOtherRoll}
+			<p class="choices-note muted">
+				Waiting for {playerName(players, activeRollerID)} to finish their roll…
+			</p>
 		{:else}
-			<p class="choices-note muted">
-				A guest has chosen this for you. Make the specific call below.
-			</p>
-		{/if}
-
-		{#if current === 'rumor_about_you'}
-			<label class="form-label">
-				The rumor about you:
-				<textarea rows={2} bind:value={rumor} class="form-textarea"
-					maxlength={TEXT_LIMITS.LONG_TEXT} placeholder="What does the rumor say?"></textarea>
-			</label>
-		{:else if current === 'accept_duels'}
-			<p class="choices-note muted">
-				You must accept any duel challenge for the rest of the event.
-			</p>
-		{:else if current === 'break_self'}
-			{#if canBreak}
-				<CardPicker
-					label="Marginalia to tear"
-					items={hostMC}
-					{players}
-					emptyMessage="You have nothing left to break."
-					marginaliaMode
-					selectedMarginaliaID={marginaliaID}
-					selectedAssetID={hostMC[0]?.id ?? null}
-					onSelectMarginalia={(mID) => (marginaliaID = mID)}
-				/>
-				{#if breakWarn}<Notice tone="warning">{breakWarn}</Notice>{/if}
+			{#if legacyOption == null}
+				<p class="choices-note muted">You choose which one — pick one from the Mar list.</p>
+				<div class="option-list">
+					{#each MAR_OPTS as o (o.key)}
+						{@const reason = lockReason(o.key)}
+						<OptionCard
+							title={o.label}
+							description={o.desc || undefined}
+							{reason}
+							selected={picked === o.key}
+							disabled={reason != null}
+							onclick={() => { picked = picked === o.key ? null : o.key; }}
+						/>
+					{/each}
+				</div>
 			{:else}
-				<p class="choices-note muted">You have nothing left to tear — you can pass the break.</p>
+				<p class="choices-note muted">
+					A guest has chosen this for you. Make the specific call below.
+				</p>
 			{/if}
-		{:else if current === 'disagreement'}
-			<CardPicker
-				label="Peer to set in the center"
-				items={hostPeers}
-				{players}
-				emptyMessage="You have no peers to set in the center."
-				ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
-				selected={assetID}
-				onSelect={(id) => (assetID = id)}
-			/>
-		{/if}
 
-		{#if error}<ErrorText message={error} variant="panel" />{/if}
-		{#if current}
-			<button class="action-btn primary" onclick={submit} disabled={busy || !ready}>
-				{busy ? '…'
+			{#if current === 'rumor_about_you'}
+				<label class="form-label">
+					The rumor about you:
+					<textarea rows={2} bind:value={rumor} class="form-textarea"
+						maxlength={TEXT_LIMITS.LONG_TEXT} placeholder="What does the rumor say?"></textarea>
+				</label>
+			{:else if current === 'accept_duels'}
+				<p class="choices-note muted">
+					You must accept any duel challenge for the rest of the event.
+				</p>
+			{:else if current === 'break_self'}
+				{#if canBreak}
+					<CardPicker
+						label="Marginalia to tear"
+						items={hostMC}
+						{players}
+						emptyMessage="You have nothing left to break."
+						marginaliaMode
+						selectedMarginaliaID={marginaliaID}
+						selectedAssetID={hostMC[0]?.id ?? null}
+						onSelectMarginalia={(mID) => (marginaliaID = mID)}
+					/>
+					{#if breakWarn}<Notice tone="warning">{breakWarn}</Notice>{/if}
+				{:else}
+					<p class="choices-note muted">You have nothing left to tear — you can pass the break.</p>
+				{/if}
+			{:else if current === 'disagreement'}
+				<CardPicker
+					label="Peer to set in the center"
+					items={hostPeers}
+					{players}
+					emptyMessage="You have no peers to set in the center."
+					ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
+					selected={assetID}
+					onSelect={(id) => (assetID = id)}
+				/>
+			{/if}
+
+			{#if error}<ErrorText message={error} variant="panel" />{/if}
+			{#if current}
+				<button class="action-btn primary" onclick={submit} disabled={busy || !ready}>
+					{busy ? '…'
 					: current === 'break_self' && !canBreak ? 'Pass the break'
 					: 'Take this Mar'}
-			</button>
+				</button>
+			{/if}
 		{/if}
 	</div>
 {/if}
