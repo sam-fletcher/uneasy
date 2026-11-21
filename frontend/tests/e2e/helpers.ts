@@ -1,8 +1,25 @@
-import { test, expect, type APIRequestContext, type Page } from './fixtures';
+import { test, expect, tableDeleted, type APIRequestContext, type Page } from './fixtures';
 import { THREE_COLUMN_PX, TWO_COLUMN_PX } from '../../src/lib/breakpoints';
 
-/** Hard-deletes a game via the dev-only endpoint (handler/dev.go: DevDeleteGame). */
-export async function deleteGame(request: APIRequestContext, gameId: number): Promise<void> {
+/**
+ * Hard-deletes a game via the dev-only endpoint (handler/dev.go: DevDeleteGame).
+ *
+ * The test's pages are usually still open, and once their game is gone their
+ * socket drops and their refetch on reconnecting gets a 403 or 404. That is the
+ * teardown, so this tells the fixtures guard to stop counting console errors
+ * (`tableDeleted`, tests/e2e/fixtures.ts) for the rest of the test.
+ *
+ * That is right at the end of a test and wrong in the middle of one. A delete
+ * made while the test goes on (a helper that reseeds a game, say) passes
+ * `pagesOpen: false`, after closing the pages itself, so that the rest of the
+ * test keeps its console.error check.
+ */
+export async function deleteGame(
+  request: APIRequestContext,
+  gameId: number,
+  { pagesOpen = true }: { pagesOpen?: boolean } = {},
+): Promise<void> {
+  if (pagesOpen) tableDeleted();
   const res = await request.post('/api/dev/delete-game', { data: { game_id: gameId } });
   if (!res.ok()) {
     console.warn(`cleanup: delete-game ${gameId} failed: ${res.status()} ${await res.text()}`);
