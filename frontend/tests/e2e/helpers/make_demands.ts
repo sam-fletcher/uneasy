@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest, type APIRequestContext, type Browser, type BrowserContext, type Page } from '../fixtures';
 import { E2E } from '../baseUrl';
+import { deleteGame } from '../helpers';
 
 // Setup shared by the Make Demands specs. Three players: alice prepares the
 // TARGET plan, bob is the demander, carol a bystander. Everything up to the
@@ -38,7 +39,7 @@ export function cleanupAfterEach() {
 		const ids = gameIDs.splice(0);
 		if (ids.length === 0) return;
 		const c = await pwRequest.newContext({ baseURL: E2E });
-		for (const id of ids) await c.post('/api/dev/delete-game', { data: { game_id: id } }).catch(() => {});
+		for (const id of ids) await deleteGame(c, id).catch(() => {});
 		await c.dispose();
 	});
 }

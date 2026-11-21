@@ -153,20 +153,43 @@ make test-e2e
 Specs live in `frontend/tests/e2e/`. Playwright config:
 `frontend/playwright.config.ts`.
 
-**A page that shows the error-boundary fallback fails its test.** The table
-page's `<svelte:boundary>` logs what it catches as `[uneasy:boundary]`; a spec
-can keep passing over a half-drawn table, so
-[`fixtures.ts`](../frontend/tests/e2e/fixtures.ts) listens to every page's
-console and fails the test when that line appears, naming the page and the
-logged error. It covers the `page` fixture and every context made with
+**A page that breaks without the spec noticing fails its test.** A spec can
+keep passing over a half-drawn table, so
+[`fixtures.ts`](../frontend/tests/e2e/fixtures.ts) listens to every page and
+fails the test, naming the page and the stack, for any of three things:
+
+- **The error boundary's fallback.** The table page's `<svelte:boundary>` logs
+  what it catches as `[uneasy:boundary]`. A unit test requires every boundary
+  to log through `logBoundaryError`, so a new one can't go unheard.
+- **An exception nothing caught** (an event handler, an `$effect`, a promise
+  nobody awaited). Always a failure; there is no allow-list for it.
+- **A `console.error` that is not on the allow-list.** Chrome logs one for every
+  4xx/5xx a page's own fetch gets, so the few specs that fake a server failure or
+  cut the socket on purpose are named in
+  [`allowedConsoleErrors.ts`](../frontend/tests/e2e/allowedConsoleErrors.ts),
+  each with its spec, a pattern for the line and a reason. When a test fails on
+  one you didn't expect, look at what logged it first. Add an entry only if the
+  app is meant to log it, and keep it narrow: `make check-fast` fails when the
+  list passes ten, names a spec that is gone, or points at a finished tracker
+  item.
+
+Delete a game through `deleteGame` (`helpers.ts`), not a raw request. Once a
+test deletes its game, its still-open pages get 403s and 404s from a table that
+no longer exists, and `deleteGame` tells the guard to stop counting console
+errors from then on. A delete in the middle of a test, after closing its pages
+(a helper that reseeds a game), passes `{ pagesOpen: false }` so the rest of the
+test is still checked.
+
+The guard covers the `page` fixture and every context made with
 `browser.newContext()` or `browser.newPage()` inside a test or its
 `beforeEach`/`afterEach` hooks, and runs on its own for every test. It does not
 cover a page opened in `beforeAll`/`afterAll`, which run outside any one test
-(no spec uses them today). Import `test` from it, never from `@playwright/test`: `import { test,
-expect } from './fixtures'` (`'../fixtures'` in `helpers/`; it re-exports the
-rest of Playwright, so one import line does for everything). The unit suite
-(`src/lib/e2eFixtures.test.ts`, part of `make check-fast`) fails a file that
-imports `test` from Playwright directly.
+(no spec uses them today; if one does, give the guard a worker-scoped listener
+or open the pages inside a test). Import `test` from it, never from
+`@playwright/test`: `import { test, expect } from './fixtures'` (`'../fixtures'`
+in `helpers/`; it re-exports the rest of Playwright, so one import line does
+for everything). The unit suite (`src/lib/e2eFixtures.test.ts`, part of
+`make check-fast`) fails a file that imports `test` from Playwright directly.
 
 **Preflight.** Before any spec runs, `frontend/tests/e2e/globalSetup.ts`
 fetches the base URL once. A healthy app passes silently. If the app is
