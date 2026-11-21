@@ -124,3 +124,18 @@ describe('the way in, for someone outside the war', () => {
 		}
 	});
 });
+
+// A war has no make or mar to preview, so "What can happen?" is the war's own: the cost
+// of battle each row, surrender and peace. It is for everyone in an active war, and goes
+// when the war is over.
+describe('WarStatus: "What can happen?"', () => {
+	const toggle = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?What can happen\?/;
+
+	it.each([1, 2, 3])('is a collapsed row for player %i while the war is active', (seat) => {
+		expect(render(WarStatus, { props: props(seat, active) }).body).toMatch(toggle);
+	});
+
+	it('is gone once the war has ended', () => {
+		expect(render(WarStatus, { props: props(3) }).body).not.toContain('What can happen?');
+	});
+});
