@@ -1,4 +1,4 @@
-import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, request as pwRequest, type APIRequestContext, type Page } from './fixtures';
 import { deleteGame } from './helpers';
 import { E2E } from './baseUrl';
 

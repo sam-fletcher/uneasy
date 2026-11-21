@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { cleanupGameAfterEach, stepHeading, expectWaitingOn, waitingOnNames } from './helpers';
 import {
 	seedWarGame, runScene, declareWar, joinWar, revealFaces, advanceTo, warAtCostRow, warState,

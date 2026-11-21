@@ -1,4 +1,4 @@
-import { test, expect, request as pwRequest, type APIResponse, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, request as pwRequest, type APIResponse, type Browser, type BrowserContext, type Page } from '../fixtures';
 import { E2E } from '../baseUrl';
 
 // Setup shared by the Host Festivity specs: a four-player main-event game where

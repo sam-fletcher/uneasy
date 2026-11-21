@@ -153,6 +153,21 @@ make test-e2e
 Specs live in `frontend/tests/e2e/`. Playwright config:
 `frontend/playwright.config.ts`.
 
+**A page that shows the error-boundary fallback fails its test.** The table
+page's `<svelte:boundary>` logs what it catches as `[uneasy:boundary]`; a spec
+can keep passing over a half-drawn table, so
+[`fixtures.ts`](../frontend/tests/e2e/fixtures.ts) listens to every page's
+console and fails the test when that line appears, naming the page and the
+logged error. It covers the `page` fixture and every context made with
+`browser.newContext()` or `browser.newPage()` inside a test or its
+`beforeEach`/`afterEach` hooks, and runs on its own for every test. It does not
+cover a page opened in `beforeAll`/`afterAll`, which run outside any one test
+(no spec uses them today). Import `test` from it, never from `@playwright/test`: `import { test,
+expect } from './fixtures'` (`'../fixtures'` in `helpers/`; it re-exports the
+rest of Playwright, so one import line does for everything). The unit suite
+(`src/lib/e2eFixtures.test.ts`, part of `make check-fast`) fails a file that
+imports `test` from Playwright directly.
+
 **Preflight.** Before any spec runs, `frontend/tests/e2e/globalSetup.ts`
 fetches the base URL once. A healthy app passes silently. If the app is
 unreachable, hangs for 15s, or returns a non-2xx status, the whole run stops

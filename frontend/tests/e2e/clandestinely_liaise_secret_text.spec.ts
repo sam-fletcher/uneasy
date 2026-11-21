@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { cleanupGameAfterEach } from './helpers';
 import {
 	NOTES, SECRET_MARKER, ALICE_SECRET, BOB_SECRET, ALICE_UNDERSIDE, BOB_UNDERSIDE, closeContextsAfterEach, seedLiaise,

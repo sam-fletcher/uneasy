@@ -1,4 +1,4 @@
-import { test, expect, type APIResponse, type Page } from '@playwright/test';
+import { test, expect, type APIResponse, type Page } from './fixtures';
 import { cleanupGameAfterEach, expectHeading } from './helpers';
 import {
 	seedECGame, runScene, prepareEC, resolveEC, openAll, offerTrade, declineAndForce,

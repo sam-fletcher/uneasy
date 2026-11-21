@@ -1,4 +1,4 @@
-import { test, expect, request as pwRequest, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, request as pwRequest, type APIRequestContext, type Browser, type BrowserContext, type Page } from '../fixtures';
 import { E2E } from '../baseUrl';
 
 // Setup shared by the Make Demands specs. Three players: alice prepares the

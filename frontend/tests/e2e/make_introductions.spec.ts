@@ -1,4 +1,4 @@
-import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, request as pwRequest, type APIRequestContext, type Page } from './fixtures';
 import { cleanupGameAfterEach, expectHeading, expectWaitingOn, stepHeading } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import { E2E } from './baseUrl';

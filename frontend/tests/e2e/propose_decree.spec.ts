@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { cleanupGameAfterEach, expectHeading, openRecordTab, expectWaitingOn } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import {
