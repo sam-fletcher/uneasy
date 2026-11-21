@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest, type APIResponse, type Browser, type BrowserContext, type Page } from '../fixtures';
 import { E2E } from '../baseUrl';
+import { deleteGame } from '../helpers';
 
 // Setup shared by the Propose Duel specs: a five-player main-event game where
 // alice challenges bob. The esteem track is pinned so bob is last (rank 5): the
@@ -40,7 +41,7 @@ export function cleanupDuelsAfterEach() {
 		const ids = games.splice(0);
 		if (ids.length === 0) return;
 		const api = await pwRequest.newContext({ baseURL: E2E });
-		for (const id of ids) await api.post('/api/dev/delete-game', { data: { game_id: id } });
+		for (const id of ids) await deleteGame(api, id);
 		await api.dispose();
 	});
 }
@@ -50,7 +51,7 @@ export async function deleteDuel(g: Duel) {
 	for (const w of WHO) opened.splice(opened.indexOf(g.ctx[w]), 1);
 	games.splice(games.indexOf(g.gameID), 1);
 	const api = await pwRequest.newContext({ baseURL: E2E });
-	await api.post('/api/dev/delete-game', { data: { game_id: g.gameID } });
+	await deleteGame(api, g.gameID);
 	await api.dispose();
 }
 
