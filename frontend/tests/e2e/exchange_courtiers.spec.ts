@@ -146,6 +146,12 @@ test('fair trade accepted: both peers change hands, the log names both, then the
 	await expect(alice.getByText(`bob will hand over ${PEER.bob} if you give them ${PEER.alice}`)).toBeVisible();
 	await expect(bob.getByText("Waiting for alice's decision…")).toBeVisible();
 	await expect(alice.getByRole('button', { name: 'Accept — exchange without rolling' })).toBeVisible();
+	// The players waiting on that answer are told what each leads to, and are given no button of their own.
+	for (const waiting of [bob, carol]) {
+		await expect(waiting.getByText('If alice accepts, the peers swap and Exchange Courtiers resolves with no roll.')).toBeVisible();
+		await expect(waiting.getByText('If alice declines, it goes on to the dice.')).toBeVisible();
+		await expect(waiting.getByRole('button', { name: /^(Accept|Decline)/ })).toHaveCount(0);
+	}
 	// Nothing has moved yet.
 	expect(await ownerOf(g, g.peers.bob)).toBe(g.ids.bob);
 	expect(await ownerOf(g, g.peers.alice)).toBe(g.ids.alice);
