@@ -134,6 +134,7 @@ test-frontend-unit: frontend-install
 # The Claude Code guard hook: what it must block, and what it must allow.
 test-hooks:
 	python3 .claude/hooks/test_guard_git.py
+	python3 .claude/hooks/test_guard_zsh_globs.py
 
 # The work tracker: one file per item in docs/work/next/ and per owner
 # question in docs/work/questions/. `tracker` prints the overview;
