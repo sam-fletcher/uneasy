@@ -613,11 +613,17 @@ describe('the Make Demands draft', () => {
 		expect(perform).toContain('aria-disabled="false"');
 	});
 
-	it('shows the player who is not up no option cards, and no line about who is (the heading says it)', () => {
+	it('shows the player who is not up the same cards, greyed out and inert, and no line about who is (the heading says it)', () => {
 		const body = draft(CAROL);
 		expect(body).not.toContain('Waiting for bob to pick');
 		expect(body).not.toContain('Your turn to pick');
-		expect(body).not.toContain('option-card');
+		// The board is there, in a disabled mirror, with nothing to pick with (the cards and their
+		// third-person wording are pinned in MakeDemandsPanel.test.ts).
+		expect(body).toMatch(/<fieldset[^>]*resolve-mirror[^>]*disabled/);
+		expect(body).not.toContain('Pick option');
+		expect(card(body, 'Perform steps')).toContain('disabled');
+		// Control leverage is already taken, and the card says by whom.
+		expect(card(body, 'Control leverage')).toContain('Taken by alice');
 	});
 });
 

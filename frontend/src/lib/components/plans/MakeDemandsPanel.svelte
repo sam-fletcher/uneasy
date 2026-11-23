@@ -207,6 +207,15 @@
 		return { title, effect: effect.charAt(0).toUpperCase() + effect.slice(1) };
 	}
 
+	// What an option does against THIS target, or that it does nothing and why: the same line as the
+	// "What can happen?" before the dice. The generic effect is only the fallback for a target plan that
+	// is not on this client. The picker and a watcher's mirror both say it with this.
+	function optionLine(opt: DemandOption): string {
+		return targetPlan
+			? demandOptionLine(opt, targetPlan.plan_type, playerName(players, targetPlan.preparer_id))
+			: optionParts(opt).effect;
+	}
+
 	let pickedOption = $state<DemandOption | null>(null);
 	let draftBusy = $state(false);
 	let resError = $state('');
@@ -395,12 +404,7 @@
 							{#each optionViews as v (v.option)}
 								{@const opt = v.option}
 								{@const parts = optionParts(opt)}
-								<!-- What this option does against THIS target, or that it does nothing and why:
-								     the same line as the "What can happen?" before the dice. The generic effect is
-								     only the fallback for a target plan that is not on this client. -->
-								{@const effect = targetPlan
-									? demandOptionLine(opt, targetPlan.plan_type, playerName(players, targetPlan.preparer_id))
-									: parts.effect}
+								{@const effect = optionLine(opt)}
 								<OptionCard
 									title={parts.title}
 									description={effect}
@@ -416,6 +420,30 @@
 						</button>
 						<EndsNote show={draftChoices.length === 3}
 							text="This is the last pick: the draft ends and Make Demands resolves when you submit." />
+					{:else}
+						<!-- Everyone else sees the board the next player picks from: the four cards,
+						     greyed out and inert, in the third person. The options still on offer carry
+						     the same per-target lines as the picker's; a taken one says who holds it.
+						     Built from the draft's picks (in resolution_data) and the target plan, both
+						     public; the next picker's own tap is local state nobody else is sent. -->
+						<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
+							{#if allRemainingInert}
+								<p class="choices-note">None of what's left does anything against this plan.</p>
+							{/if}
+							<div class="option-list">
+								{#each DEMAND_OPTIONS as opt (opt)}
+									{@const parts = optionParts(opt)}
+									{@const holder = winners[opt]}
+									{#if holder != null}
+										<OptionCard title={parts.title} description="Taken by {playerName(players, holder)}"
+											selected disabled />
+									{:else}
+										<OptionCard title={parts.title} disabled
+											description={optionLine(opt)} />
+									{/if}
+								{/each}
+							</div>
+						</fieldset>
 					{/if}
 				{:else}
 					<p class="choices-note">
