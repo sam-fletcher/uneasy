@@ -30,13 +30,17 @@ function renderFor(opts: {
 	difficulty?: number;
 	assets?: unknown[];
 	top?: Record<string, unknown>;
+	/** Fields of the plan's own `seek_answers` data (the sub-flow counters). */
+	seek?: Record<string, unknown>;
+	/** Other plans on the record (a Make Demands that gave someone the preparer's seat). */
+	plans?: unknown[];
 }): string {
 	const plan = {
 		id: 9, plan_type: 'seek_answers', status: 'resolving', preparer_id: PREPARER, preparation_notes: 'x',
-		resolution_data: JSON.stringify({ seek_answers: { pre_roll_done: true }, ...opts.top }),
+		resolution_data: JSON.stringify({ seek_answers: { pre_roll_done: true, ...opts.seek }, ...opts.top }),
 	};
 	const ctx = {
-		gameID: 1, currentRow: 5, endingMode: null, plans: [plan] as never,
+		gameID: 1, currentRow: 5, endingMode: null, plans: [plan, ...(opts.plans ?? [])] as never,
 		assets: (opts.assets ?? []) as never, players: PLAYERS as never, rankings: [],
 		currentPlayerID: opts.seat, focusPlayerID: null, isFocusPlayer: false,
 		rollActive: false, rollOutcome: opts.outcome,
@@ -131,6 +135,111 @@ describe('a break-a-resource pick with nothing to break', () => {
 	it('says so once to everyone else, who see the same step read-only', () => {
 		const t = text(renderFor({ seat: OTHER, outcome: 'make', result: 1, difficulty: 1, assets: [], top: picked }));
 		expect(count(t)).toBe(1);
+	});
+});
+
+// The other two sub-steps with the same picker-plus-note shape said the reason twice, in
+// different words ("No assets available." then "No asset's secrets remain to learn — this
+// pick has no valid target."). Each pair now reads as one explanation, as the break-a-resource
+// pair does: the picker says what is empty, the note says what that means for the pick.
+describe('a reveal-a-secret pick with nothing to learn', () => {
+	const picked = { make_mar_choices: [{ option: 'reveal_secret', player_id: PREPARER }], choice_submitted: true };
+	const forPreparer = () => text(renderFor({ seat: PREPARER, outcome: 'make', result: 1, difficulty: 1, assets: [], top: picked }));
+	const forOther = () => text(renderFor({ seat: OTHER, outcome: 'make', result: 1, difficulty: 1, assets: [], top: picked }));
+	const count = (t: string, s: string) => t.split(s).length - 1;
+
+	it('says it once, then what it means for the pick: one explanation', () => {
+		const t = forPreparer();
+		expect(t).toContain("No asset's secrets remain to learn. This pick has no valid target.");
+		expect(count(t, "No asset's secrets remain to learn")).toBe(1);
+		expect(count(t, 'has no valid target')).toBe(1);
+		expect(t).toContain('Skip — no valid targets');
+	});
+
+	it('no longer opens with a vaguer line the note then repeats', () => {
+		for (const t of [forPreparer(), forOther()]) {
+			expect(t).not.toContain('No assets available');
+			expect(t).not.toContain('remain to learn —');
+		}
+	});
+
+	it('says the reason once to everyone else too, who see the same step read-only', () => {
+		const t = forOther();
+		expect(count(t, "No asset's secrets remain to learn")).toBe(1);
+		expect(t).not.toContain('Skip');
+	});
+});
+
+describe('a mar penalty with nothing to break', () => {
+	const picked = { make_mar_choices: [{ option: 'declare_truth', player_id: PREPARER }], choice_submitted: true };
+	// Nothing left to pick but the penalty: one flaw owed, and no resource of the preparer's to give.
+	const render = (seat: number, plans?: unknown[]) => text(renderFor({
+		seat, outcome: 'mar', result: 0, difficulty: 1, assets: [resource(41, OTHER)], top: picked,
+		seek: { mar_self_flaws_required: 1, declare_truth_done: 1 }, plans,
+	}));
+	const count = (t: string, s: string) => t.split(s).length - 1;
+
+	it('says it once to the preparer, then what it means for the penalty: one explanation', () => {
+		const t = render(PREPARER);
+		expect(t).toContain("None of your resources can be broken. This penalty can't be applied.");
+		expect(count(t, 'can be broken')).toBe(1);
+		expect(count(t, "can't be applied")).toBe(1);
+		expect(t).toContain('Skip — no valid targets');
+	});
+
+	it('no longer says "eligible resources of your own remain" before the note', () => {
+		expect(render(PREPARER)).not.toContain('No eligible resources');
+		expect(render(PREPARER)).not.toContain('can be broken —');
+	});
+
+	it('names the preparer to everyone else, in the third person, without the note', () => {
+		const t = render(OTHER);
+		expect(t).toContain("None of ravi's resources can be broken.");
+		expect(count(t, 'can be broken')).toBe(1);
+		expect(t).not.toContain("can't be applied");
+		expect(t).not.toContain('Skip');
+		// The picker is the one thing here whose words depend on who is looking.
+		expect(t).not.toContain('None of your resources');
+		expect(t).not.toContain('of your own remain');
+	});
+
+	describe('when a Make Demands winner takes the preparer\'s steps', () => {
+		const winner = [{
+			id: 12, plan_type: 'make_demands', status: 'resolved', result: 'make', preparer_id: 3, targeted_plan_id: 9,
+			resolution_data: JSON.stringify({ make_demands: { draft_choices: [{ option: 'perform_steps', player_id: 3 }] } }),
+		}];
+
+		it('names the preparer, not "your", to the stand-in', () => {
+			const t = render(3, winner);
+			expect(t).toContain("None of ravi's resources can be broken.");
+			expect(t).not.toContain('None of your resources');
+		});
+
+		it('still says "your" to the preparer, whose own resources they are, though they are watching', () => {
+			const t = render(PREPARER, winner);
+			expect(t).toContain('None of your resources can be broken.');
+			expect(t).not.toContain("None of ravi's resources");
+			// Greyed, not theirs to act on: the note and the skip belong to the stand-in.
+			expect(t).not.toContain('Skip');
+		});
+
+		it('names the preparer to a watcher', () => {
+			const t = render(OTHER, winner);
+			expect(t).toContain("None of ravi's resources can be broken.");
+			expect(t).not.toContain('None of your resources');
+		});
+	});
+});
+
+// The option stepper's note ("— no valid targets") was glued to the label: a note's leading
+// space is trimmed inside its own span, so it read "Learn the secrets of an asset— no valid
+// targets".
+describe('the option stepper\'s note', () => {
+	it('is set off from the label by a space', () => {
+		const t = text(renderFor({ seat: PREPARER, outcome: 'make', result: 1, difficulty: 1, assets: [] }));
+		expect(t).toContain('Learn the secrets of an asset — no valid targets');
+		expect(t).toContain('Break a resource (describe a flaw) — no valid targets');
+		expect(t).not.toMatch(/\w— (no valid targets|all targets picked)/);
 	});
 });
 
