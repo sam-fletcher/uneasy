@@ -26,10 +26,11 @@ const PANELS = [
 ] as const;
 
 // A panel that has been split into a frame and one component per step keeps the steps in a
-// folder beside it (`rumors/` for Spread Rumors). The rules are about what the panel draws,
-// so a panel's source is the frame and every step.
+// folder beside it (`rumors/` for Spread Rumors, `seek/` for Seek Answers). The rules are
+// about what the panel draws, so a panel's source is the frame and every step.
 const STEP_FOLDERS: Record<string, string> = {
 	'SpreadRumorsPanel.svelte': 'rumors',
+	'SeekAnswersPanel.svelte': 'seek',
 };
 const source = (name: string) => {
 	const folder = STEP_FOLDERS[name];
