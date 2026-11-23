@@ -528,15 +528,47 @@
 						</button>
 					</div>
 				</div>
-			{:else if amDeclined}
-				<p class="choices-note muted">
-					You declined to join the council.
-				</p>
-			{:else if !amMember && currentPlayerID != null}
-				<p class="choices-note muted">
-					The Monarch and members with higher power than the decree proposer
-					are already seated.
-				</p>
+			{:else}
+				{#if amDeclined}
+					<p class="choices-note muted">
+						You declined to join the council.
+					</p>
+				{:else if !amMember && currentPlayerID != null}
+					<p class="choices-note muted">
+						The Monarch and members with higher power than the decree proposer
+						are already seated.
+					</p>
+				{/if}
+
+				<!-- Everyone who is not deciding sees each pending decider's picker, greyed out and
+				     inert, in the third person: the same cards that player picks from, their own
+				     un-leveraged assets, which every client holds. A player who still owes the
+				     decision has the live picker above and is shown no one else's. The
+				     explanation is said once, under the first. -->
+				{#each pendingDeciderIDs as pid, i (pid)}
+					{@const who = playerName(players, pid)}
+					<div class="plan-form">
+						<div class="titled">
+							<p class="choices-header">{who} may join the council</p>
+							{#if i === 0}
+								<p class="ft-prompt">
+									They may leverage one asset to join the debate, or decline. It becomes a die
+									they can use during the roll to help or interfere.
+								</p>
+							{/if}
+						</div>
+						<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
+							<CardPicker
+								label="Assets {who} may leverage"
+								items={ownerUnleveragedAssets(assets, pid)}
+								{players}
+								emptyMessage="{who} has no un-leveraged assets to offer, so can only decline."
+								selected={null}
+								readOnly
+							/>
+						</fieldset>
+					</div>
+				{/each}
 			{/if}
 
 			<!-- Step 4: the signatory closes the debate (only once it's open and
