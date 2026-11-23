@@ -16,220 +16,49 @@
   target-asset owner drives everything: first they WRITE the counter-rumor (the
   rumor that spreads about the preparer instead), then pick options — all aimed
   at the preparer's main character, which is the counter-rumor's subject.
+
+  This panel is the frame. Each step's UI lives in `rumors/`: PrepForm, StateRumor,
+  CounterRumor, TakeConsent, TakeAssets, PickOptions, AfterChoices. The frame draws
+  the rumor as the table has it, picks which step is open, and keeps what has to
+  outlive a step: the picks (the picker is off screen during the take-asset screen
+  and the consent wait, and the counts must still be there when it comes back) and
+  the error line.
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
 	import './planPanel.css';
-	import {
-		preparePlan, makeChoice, completePlan,
-		breakTarget, requestTakeConsent, respondTakeConsent, hideSource, forfeitSpreadRumorsStep,
-		castSpreadRumorsRoll, writeCounterRumor, getSecrets,
-		type Plan,
-	} from '$lib/api';
 	import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
-	import { spreadRumorsPrepDraft } from '$lib/plans/prepDraft';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
-	import PlayerChips from './PlayerChips.svelte';
-	import CardPicker from './CardPicker.svelte';
-	import ChoicesApplied from './ChoicesApplied.svelte';
-	import PreRollStep from './shared/PreRollStep.svelte';
-	import { choicesCommitted, parseResolutionData, playerName, assetName, breakableAssets, breaksAvailable, resolutionActorID } from './shared';
-	import { destructionWarning } from '$lib/assetRisk';
+	import { choicesCommitted, parseResolutionData, assetName } from './shared';
 
 	import type { PlanPanelProps } from './types';
-	import { TEXT_LIMITS } from '$lib/textLimits';
-	import FormField from './FormField.svelte';
-	import Checkbox from '$lib/components/shared/Checkbox.svelte';
-	import ErrorText from '$lib/components/shared/ErrorText.svelte';
-	import Notice from '$lib/components/shared/Notice.svelte';
-	import Stepper from './shared/Stepper.svelte';
-	import EndsNote from './shared/EndsNote.svelte';
-	import Buffet, { type BuffetTab } from './shared/Buffet.svelte';
+	import Buffet from './shared/Buffet.svelte';
 	import PlanDifficulty from './shared/PlanDifficulty.svelte';
 	import { diceNotYetLanded } from '$lib/plans/difficulty';
 
+	import PrepForm from './rumors/PrepForm.svelte';
+	import StateRumor from './rumors/StateRumor.svelte';
+	import CounterRumor from './rumors/CounterRumor.svelte';
+	import TakeConsent from './rumors/TakeConsent.svelte';
+	import TakeAssets from './rumors/TakeAssets.svelte';
+	import PickOptions from './rumors/PickOptions.svelte';
+	import AfterChoices from './rumors/AfterChoices.svelte';
+	import { RumorPicks } from './rumors/picks.svelte';
+	import { rumorScene } from './rumors/shared';
+
 	let { ctx, plan = null, mode }: PlanPanelProps = $props();
 
-	const gameID = $derived(ctx.gameID);
 	const assets = $derived(ctx.assets);
 	const players = $derived(ctx.players);
 	const currentPlayerID = $derived(ctx.currentPlayerID);
 	const plans = $derived(ctx.plans);
 	const rollOutcome = $derived(ctx.rollOutcome);
 	const activeRoll = $derived(ctx.activeRoll);
-	const onPlansChanged = $derived(ctx.onPlansChanged);
-	const onPlanPrepared = $derived(ctx.onPlanPrepared);
-
-	const readOnly = $derived(ctx.readOnly);
-	const prepDraft = $derived(ctx.prepDraft as {
-		filter_owner_id?: number | null;
-		target_asset_id?: number | null;
-		keep_secret?: boolean;
-		secret_asset_id?: number | null;
-	} | null);
-
-	// Whether the preparer is keeping the rumor secret, as a watcher's mirror has it. Read
-	// straight from the draft (not from prepKeepSecret, which an effect copies in) so it
-	// holds on first paint.
-	const mirrorKeptSecret = $derived(prepDraft?.keep_secret === true);
 
 	let performStepsWinnerID = $state<number | null>(null);
-	// The preparer resolves their own plan; the perform_steps demand winner may
-	// drive the choice in their place.
-	const isPreparer = $derived(plan != null && currentPlayerID === plan.preparer_id);
-	// Post-roll steps belong to the perform_steps winner when one holds the plan,
-	// else the preparer (mirrors the server's actsForPreparer). Pre-roll steps
-	// stay on isPreparer: perform_steps is post-roll only.
-	const amChoiceActor = $derived(
-		plan != null && currentPlayerID != null
-			&& currentPlayerID === resolutionActorID(plan, plans),
-	);
 
-	// The book's make list. (d) and (e) are its words verbatim: (e) is GLOATING —
-	// "Relish in its glory" is the point — not a change of attribution, which is why
-	// it carries the whole sentence. The labels read for the branch in play: on a
-	// mar every option is aimed at the preparer's main character and the preparer's
-	// assets, not at the rumor's original subject.
-	const OPTION_KEYS = ['break_target', 'leverage_target', 'take_asset', 'hide_source', 'reveal_source'] as const;
-	function optionsFor(mar: boolean) {
-		const mc = mar ? mcName : '';
-		return [
-			{ key: 'break_target', label: mar
-				? `Break ${mc} — tear one of its marginalia`
-				: 'Break the target asset — tear a marginalia' },
-			{ key: 'leverage_target', label: mar ? `Leverage ${mc}` : 'Leverage the target asset' },
-			{ key: 'take_asset', label: mar
-				? `Take an asset from ${playerName(players, plan?.preparer_id ?? null)} — they must consent`
-				: `Take an asset from ${playerName(players, targetAssetOwnerID)} — they must consent` },
-			{ key: 'hide_source', label: 'Hide yourself as the source of the rumor. Add it as a secret to one of your assets.',
-				summary: 'The source of the rumor is hidden — it becomes a secret on one of their assets.' },
-			{ key: 'reveal_source', label: 'Reveal yourself as the source of the rumor. Relish in its glory.',
-				summary: 'The source of the rumor is revealed, and relishes in its glory.' },
-		] as const;
-	}
-	const OPTIONS = $derived(optionsFor(rollOutcome === 'mar'));
-
-	// Read-only "what can happen?" reference (shared Buffet). Viewer-neutral
-	// wording, since everyone at the table reads it.
-	const BUFFET_TABS = $derived<BuffetTab[]>([
-		{
-			key: 'make', label: 'Make', intro: 'Pick options equal to the dice result (repeatable):',
-			opts: optionsFor(false).map(o => ({ key: o.key, label: ('summary' in o ? o.summary : o.label) as string })),
-		},
-		{
-			key: 'mar', label: 'Mar', intro: 'Pick options equal to (difficulty − result), aimed at the preparer’s main character (repeatable):',
-			opts: optionsFor(true).map(o => ({ key: o.key, label: ('summary' in o ? o.summary : o.label) as string })),
-		},
-	]);
-
-	// The picker speaks to its actor ("Hide yourself…"); everyone else sees the
-	// same greyed list, so they get the viewer-neutral wording where there is one.
-	const optionText = (o: { label: string; summary?: string }) =>
-		isActor ? o.label : (o.summary ?? o.label);
-
-	// ── Prep ─────────────────────────────────────────────────────────────────
-	let prepTargetAssetID = $state<number | null>(null);
-	let prepNotes = $state('');
-	let prepBusy = $state(false);
-	let prepError = $state('');
-
-	// "Keep it secret for now": the rumor text is written on the underside of one
-	// of the preparer's own assets instead of announced openly. prepSecretAssetID
-	// is which own asset holds it.
-	let prepKeepSecret = $state(false);
-	let prepSecretAssetID = $state<number | null>(null);
-
-	const intactAssets = $derived(assets.filter(a => !a.is_destroyed));
-
-	// The preparer's own intact assets — candidate holders for the secret. In
-	// prep mode the focus player drives the form, so currentPlayerID is the
-	// preparer (read-only viewers don't pick; they see a summary line instead).
-	const ownIntactAssets = $derived(
-		intactAssets.filter(a => a.owner_id === currentPlayerID)
-	);
-	const secretHolderName = $derived(
-		prepSecretAssetID == null ? '' : assetName(assets, prepSecretAssetID)
-	);
-
-	// Owner filter for the asset picker. Rumours about your own assets are
-	// allowed (preserves the dropdown's old behaviour), so every player —
-	// including the current one — appears as a chip.
-	let prepFilterOwnerID = $state<number | null>(null);
-	const ownersWithAssets = $derived(
-		players.filter(p => intactAssets.some(a => a.owner_id === p.id))
-	);
-	const filteredIntactAssets = $derived(
-		prepFilterOwnerID == null
-			? []
-			: intactAssets.filter(a => a.owner_id === prepFilterOwnerID)
-	);
-
-	// Pre-select the first owner so cards appear without an extra tap.
-	// Skip in read-only — the draft sync below is authoritative for viewers.
-	$effect(() => {
-		if (readOnly) return;
-		if (prepFilterOwnerID == null && ownersWithAssets.length > 0) {
-			prepFilterOwnerID = ownersWithAssets[0].id;
-		}
-	});
-
-	function selectRumorOwner(pid: number) {
-		if (prepFilterOwnerID === pid) return;
-		prepFilterOwnerID = pid;
-		prepTargetAssetID = null;
-	}
-
-
-	async function submitPrep() {
-		if (prepBusy) return;
-		if (prepTargetAssetID == null) { prepError = 'Pick the asset the rumor is about.'; return; }
-		if (!prepNotes.trim()) { prepError = 'Describe the rumor.'; return; }
-		if (prepKeepSecret && prepSecretAssetID == null) {
-			prepError = 'Pick one of your assets to hide the rumor under.'; return;
-		}
-		prepBusy = true; prepError = '';
-		try {
-			await preparePlan(gameID, {
-				plan_type: 'spread_rumors',
-				target_asset_id: prepTargetAssetID,
-				preparation_notes: prepNotes.trim(),
-				secret_asset_id: prepKeepSecret ? prepSecretAssetID : undefined,
-			});
-			prepTargetAssetID = null; prepNotes = '';
-			prepKeepSecret = false; prepSecretAssetID = null;
-			onPlanPrepared();
-		} catch (e) {
-			prepError = e instanceof Error ? e.message : 'Could not prepare plan.';
-		} finally { prepBusy = false; }
-	}
-
-	$effect(() => {
-		if (!readOnly) return;
-		prepFilterOwnerID = prepDraft?.filter_owner_id ?? null;
-		prepTargetAssetID = prepDraft?.target_asset_id ?? null;
-		prepKeepSecret = prepDraft?.keep_secret ?? false;
-		prepSecretAssetID = prepDraft?.secret_asset_id ?? null;
-	});
-	let emitTimer: ReturnType<typeof setTimeout> | null = null;
-	$effect(() => {
-		if (readOnly || mode !== 'prep') return;
-		// Not prepNotes: the draft never carries the rumor's text (lib/plans/prepDraft.ts), so
-		// typing it sends nothing.
-		void prepFilterOwnerID; void prepTargetAssetID;
-		void prepKeepSecret; void prepSecretAssetID;
-		if (emitTimer) clearTimeout(emitTimer);
-		emitTimer = setTimeout(() => {
-			emitTimer = null;
-			ctx.emitPrepDraft(spreadRumorsPrepDraft({
-				filterOwnerID: prepFilterOwnerID,
-				targetAssetID: prepTargetAssetID,
-				keepSecret: prepKeepSecret,
-				secretAssetID: prepSecretAssetID,
-			}));
-		}, 150);
-	});
-	onDestroy(() => { if (emitTimer) clearTimeout(emitTimer); });
+	// The error line ResolvingCard draws; every resolve step writes it.
+	let resError = $state('');
 
 	const srData = $derived(parseSpreadRumorsData(plan));
 
@@ -244,450 +73,34 @@
 	);
 	const preRollDone = $derived((srData.pre_roll_done ?? false) || rollForThisPlan || hasCommittedChoices);
 
-	// The draft to start the "rumor" field from. A kept-secret rumor's draft lives in
-	// a Secret, not the (blanked) public note; the preparer, its author, can read it
-	// through the ordinary grant-checked secrets endpoint. Nobody else ever sees it.
-	let secretDraft = $state<string | null>(null);
-	$effect(() => {
-		const holder = srData.secret_asset_id;
-		const secretID = srData.secret_id;
-		if (preRollDone || !isPreparer || !srData.is_secret || holder == null || secretID == null) return;
-		let stale = false;
-		getSecrets(holder)
-			.then(r => { if (!stale) secretDraft = r.secrets.find(x => x.id === secretID)?.text ?? null; })
-			.catch(() => { /* no draft to offer: the field simply starts blank */ });
-		return () => { stale = true; };
-	});
-	const rumorDraft = $derived(plan?.preparation_notes ?? secretDraft);
-
-	let preRollBusy = $state(false);
-	async function submitPreRoll(p: Plan, values: Record<string, string>) {
-		if (preRollBusy) return;
-		preRollBusy = true; resError = '';
-		try {
-			const res = await castSpreadRumorsRoll(p.id, (values.rumor ?? '').trim(), (values.how ?? '').trim());
-			if (res.roll) ctx.onRollCreated(res.roll);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not open the roll.';
-		} finally { preRollBusy = false; }
-	}
-
-	// ── Mar: the counter-rumor ───────────────────────────────────────────────
-	// "The target player describes the rumor that spreads about you instead." The
-	// text is written first, server-gated; every option after it is aimed at the
-	// preparer's main character (pinned server-side once the options apply).
-	const liveMainCharacter = $derived(
-		plan ? assets.find(a => a.owner_id === plan.preparer_id && a.is_main_character && !a.is_destroyed) ?? null : null,
-	);
-	const mcAsset = $derived(
-		srData.counter_target_asset_id != null
-			? assets.find(a => a.id === srData.counter_target_asset_id) ?? null
-			: liveMainCharacter,
-	);
-	const mcName = $derived(mcAsset?.name ?? 'their main character');
-	let counterText = $state('');
-	let counterBusy = $state(false);
-	async function submitCounterRumor(p: Plan) {
-		if (counterBusy || !counterText.trim()) return;
-		counterBusy = true; resError = '';
-		try {
-			await writeCounterRumor(p.id, counterText.trim());
-			counterText = '';
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not write the counter-rumor.';
-		} finally { counterBusy = false; }
-	}
-
-	// ── Resolve ──────────────────────────────────────────────────────────────
-	let counts = $state<Record<string, number>>({
-		break_target: 0, leverage_target: 0, take_asset: 0,
-		hide_source: 0, reveal_source: 0,
-	});
-	let choicesBusy = $state(false);
-	let resError = $state('');
-
-	const totalPicked = $derived(Object.values(counts).reduce((a, b) => a + b, 0));
-
-	// Players must pick options equal to the dice result (make) or
-	// (difficulty − result) (mar). Compute that exact count so the picker can
-	// cap increments and require the full quota before applying.
-	const requiredPicks = $derived.by(() => {
-		const result = activeRoll?.result;
-		if (result == null) return null;
-		const difficulty = activeRoll?.adjusted_difficulty ?? activeRoll?.difficulty ?? null;
-		if (rollOutcome === 'make') return Math.max(0, result);
-		if (rollOutcome === 'mar' && difficulty != null) return Math.max(0, difficulty - result);
-		return null;
-	});
-
-	function bump(key: string, delta: number) {
-		// "Take asset" is locked off once the owner has declined it (no looping).
-		if (key === 'take_asset' && takeAssetDenied) return;
-		// Don't pick break_target more times than there are marginalia to tear.
-		if (delta > 0 && key === 'break_target' && (counts.break_target ?? 0) >= btMarginaliaCap) return;
-		// Don't let the running total exceed the dice quota.
-		if (delta > 0 && requiredPicks != null && totalPicked >= requiredPicks) return;
-		const next = Math.max(0, (counts[key] ?? 0) + delta);
-		counts = { ...counts, [key]: next };
-	}
-
-	function flatChoices(): string[] {
-		const flat: string[] = [];
-		for (const opt of OPTIONS) {
-			for (let i = 0; i < (counts[opt.key] ?? 0); i++) flat.push(opt.key);
-		}
-		return flat;
-	}
-
-	// Two-step apply: when "take asset" is picked, the aggressor first names the
-	// specific assets to take (consent screen), since those can be ANY of the
-	// victim's assets. Without a take, choices commit straight away.
-	type TakeStep = 'options' | 'assets';
-	let takeStep = $state<TakeStep>('options');
-	let takeSelected = $state<number[]>([]);
-
-	async function onApplyChoices(p: Plan, outcome: 'make' | 'mar') {
-		if (choicesBusy || totalPicked === 0) return;
-		if (requiredPicks != null && totalPicked !== requiredPicks) return;
-		if ((counts.take_asset ?? 0) > 0) {
-			// Advance to the asset-selection screen rather than committing.
-			takeSelected = [];
-			takeStep = 'assets';
-			return;
-		}
-		choicesBusy = true; resError = '';
-		try {
-			await makeChoice(p.id, outcome, flatChoices());
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not apply choices.';
-		} finally { choicesBusy = false; }
-	}
-
-	// Submit the take-asset consent request: the aggressor's full picks plus the
-	// chosen victim assets. Nothing commits until the victim agrees.
-	async function onRequestConsent(p: Plan, outcome: 'make' | 'mar') {
-		if (choicesBusy) return;
-		if (takeSelected.length !== (counts.take_asset ?? 0)) return;
-		choicesBusy = true; resError = '';
-		try {
-			await requestTakeConsent(p.id, outcome, flatChoices(), takeSelected);
-			takeStep = 'options';
-			takeSelected = [];
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not request consent.';
-		} finally { choicesBusy = false; }
-	}
-
-	// ── Actor routing ────────────────────────────────────────────────────────
-	// On make the preparer drives the picker and sub-flows. On mar the
-	// target-asset owner does. `isActor` captures whichever applies.
-	const targetAssetOwnerID = $derived(
-		plan?.target_asset_id != null
-			? (assets.find(a => a.id === plan.target_asset_id)?.owner_id ?? null)
-			: null
-	);
-	const isActor = $derived.by(() => {
-		if (!plan || currentPlayerID == null) return false;
-		if (rollOutcome === 'mar') return currentPlayerID === targetAssetOwnerID;
-		// make (or unresolved): preparer drives — or the perform_steps winner
-		// of a demand against this plan, when one applies.
-		return amChoiceActor;
-	});
-
-	// ── Take-asset consent state (from resolution_data) ───────────────────────
-	const pendingConsent = $derived(srData.pending_take_consent ?? null);
-	const takeAssetDenied = $derived(srData.take_asset_denied ?? false);
-	const isConsentVictim = $derived(
-		pendingConsent != null && currentPlayerID === pendingConsent.victim_id,
-	);
-
-	// The victim of a take: target-asset owner on make, preparer on mar. The
-	// aggressor selects from this player's intact assets on the consent screen.
-	const victimID = $derived(
-		rollOutcome === 'mar' ? (plan?.preparer_id ?? null) : targetAssetOwnerID,
-	);
-	const victimAssets = $derived(
-		victimID == null ? [] : assets.filter(a => a.owner_id === victimID && !a.is_destroyed),
-	);
+	// ── The picks, held here ─────────────────────────────────────────────────
+	const picks = new RumorPicks();
 
 	// Once the owner declines, blank any take_asset picks so the quota re-fills
 	// with other options and the disabled control reads 0.
+	const takeAssetDenied = $derived(srData.take_asset_denied ?? false);
 	$effect(() => {
-		if (takeAssetDenied && (counts.take_asset ?? 0) > 0) {
-			counts = { ...counts, take_asset: 0 };
+		if (takeAssetDenied && (picks.counts.take_asset ?? 0) > 0) {
+			picks.counts = { ...picks.counts, take_asset: 0 };
 		}
 	});
 
-	async function onRespondConsent(p: Plan, agree: boolean) {
-		if (choicesBusy) return;
-		choicesBusy = true; resError = '';
-		try {
-			await respondTakeConsent(p.id, agree);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not respond.';
-		} finally { choicesBusy = false; }
-	}
-
-	// ── Sub-flows ─────────────────────────────────────────────────────────────
-	// take_asset has no post-commit sub-flow: the transfer happens at consent
-	// time, so only break_target and hide_source remain here. Their completion
-	// is server-authoritative (resolution_data counters), so a refresh/remount
-	// can't re-prompt — and re-submit — a step that already ran.
-	const btDone = $derived(srData.break_target_done ?? 0);
-	const hsDone = $derived(srData.hide_source_done ?? 0);
 	let lastPlanID = $state<number | null>(null);
 	$effect(() => {
 		if (plan && plan.id !== lastPlanID) {
 			lastPlanID = plan.id;
-			takeStep = 'options'; takeSelected = [];
+			picks.takeStep = 'options'; picks.takeSelected = [];
 		}
 	});
-
-	// On a mar, break_target lands on the preparer's main character and take_asset
-	// picks from the preparer's assets; on a make they operate on the plan's target
-	// asset. btAssetID only feeds the pre-tear destruction warning.
-	let btAssetID = $state<number | null>(null);
-	let btMargID = $state<number | null>(null);
-	let btBusy = $state(false);
-	const targetAsset = $derived(
-		plan?.target_asset_id != null
-			? assets.find(a => a.id === plan.target_asset_id) ?? null
-			: null
-	);
-	const preparerAssets = $derived(
-		plan ? assets.filter(a => a.owner_id === plan.preparer_id && !a.is_destroyed) : []
-	);
-	// Candidate assets for the break-target picker.
-	//  - make: only the plan's target asset (one card).
-	//  - mar:  only the preparer's main character (one card).
-	// AssetCardSelectable's marginalia-pick mode renders the per-line
-	// checkboxes; asset identity is derived from the chosen marginalia (or,
-	// for a blank asset, from the card itself — see breakableAssets).
-	const btMarginaliaAssets = $derived.by(() => {
-		if (rollOutcome === 'mar') {
-			// Only the counter-rumor's subject: the actor picks WHICH marginalia, not
-			// which asset (ruling Q2).
-			return mcAsset ? breakableAssets([mcAsset]) : [];
-		}
-		return targetAsset ? breakableAssets([targetAsset]) : [];
-	});
-	// Each break_target pick spends one break, so the live cap is the total
-	// available — picking more would commit a pick with nothing left to tear,
-	// which then wedges resolution (CanComplete blocks until every break_target
-	// pick is performed or forfeited via sr-forfeit-step). Mirrors the server's
-	// srEligibleBreakTargets.
-	const btMarginaliaCap = $derived(
-		btMarginaliaAssets.reduce((sum, a) => sum + breaksAvailable(a), 0),
-	);
-	// Pre-tear warning for the currently-selected break target.
-	const btWarn = $derived(destructionWarning(assets.find(a => a.id === btAssetID)));
-
-	async function submitBreakTarget(p: Plan) {
-		if (btBusy || btMargID == null) return;
-		btBusy = true; resError = '';
-		try {
-			await breakTarget(p.id, btMargID);
-			btMargID = null; btAssetID = null;
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not break target.';
-		} finally { btBusy = false; }
-	}
-
-	// hide_source: actor hides their own role as source on one of their own
-	// assets. Actor = preparer on make, target-asset owner on mar.
-	let hsAssetID = $state<number | null>(null);
-	let hsBusy = $state(false);
-	// A Make Demands winner standing in for the preparer on a make picks one of the
-	// PREPARER's assets, not their own (design principle 9).
-	const standingIn = $derived(
-		isActor && rollOutcome !== 'mar' && plan != null && currentPlayerID !== plan.preparer_id,
-	);
-	const hsAssetOptions = $derived(
-		rollOutcome === 'mar'
-			? assets.filter(a => a.owner_id === targetAssetOwnerID && !a.is_destroyed)
-			: preparerAssets
-	);
-	async function submitHideSource(p: Plan) {
-		if (hsBusy || hsAssetID == null) return;
-		hsBusy = true; resError = '';
-		try {
-			await hideSource(p.id, hsAssetID);
-			hsAssetID = null;
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not hide source.';
-		} finally { hsBusy = false; }
-	}
-
-	// Discharge a depletable step that has remaining picks but no live target —
-	// break_target with no intact marginalia, or hide_source with no own asset.
-	// The server re-checks no target exists, so this only resolves a genuine
-	// dead-end. Without it the plan wedges (completion is now server-gated).
-	let forfeitBusy = $state(false);
-	async function forfeitStep(p: Plan, step: 'break_target' | 'hide_source') {
-		if (forfeitBusy) return;
-		forfeitBusy = true; resError = '';
-		try {
-			await forfeitSpreadRumorsStep(p.id, step);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not skip step.';
-		} finally { forfeitBusy = false; }
-	}
-
-	// ── Complete ─────────────────────────────────────────────────────────────
-	let resBusy = $state(false);
-	async function onComplete(p: Plan) {
-		if (resBusy) return;
-		resBusy = true; resError = '';
-		try {
-			await completePlan(p.id);
-			onPlansChanged();
-		} catch (e) {
-			resError = e instanceof Error ? e.message : 'Could not complete plan.';
-		} finally { resBusy = false; }
-	}
-
-	function countIn(choices: string[], key: string) {
-		return choices.filter(c => c === key).length;
-	}
-
-	// ── Tier-1 committed state (ADR-006) ─────────────────────────────────────
-	// The specifics of each completed step, shown read-only to every viewer so a
-	// committed choice persists in the panel once its picker commits.
-	//
-	// Nothing here is hidden information. hide_source is fiction-level anonymity —
-	// the plan.prepared post already names the preparer, and the hide-source log
-	// entry states the concealment outright as dramatic irony — so listing it, and
-	// naming the sheltering asset, gives the table nothing it doesn't have. The
-	// Secret's *text* is never in resolution_data and never shown here.
-	const brokenAssetIDs = $derived(srData.broken_asset_ids ?? []);
-	const hideSourceAssetIDs = $derived(srData.hide_source_asset_ids ?? []);
-	const takenAssetIDs = $derived(srData.taken_asset_ids ?? []);
-	const revealedSource = $derived(
-		(parseResolutionData(plan).make_mar_choices ?? []).some(c => c.option === 'reveal_source'),
-	);
-	const leveragedCount = $derived(
-		(parseResolutionData(plan).make_mar_choices ?? []).filter(c => c.option === 'leverage_target').length,
-	);
-	// The player whose deeds these are: the preparer on make, the target-asset
-	// owner driving the counter-rumor on mar.
-	const actorName = $derived(
-		rollOutcome === 'mar' && targetAssetOwnerID != null
-			? playerName(players, targetAssetOwnerID)
-			: (plan ? playerName(players, resolutionActorID(plan, plans)) : ''),
-	);
-	// Whose assets shelter the secret: the preparer's on a make (whoever is acting),
-	// the counter-rumor's author on a mar.
-	const shelterName = $derived(
-		rollOutcome === 'mar' || plan == null ? actorName : playerName(players, plan.preparer_id),
-	);
-	const anyResolved = $derived(
-		brokenAssetIDs.length > 0 || hideSourceAssetIDs.length > 0 || takenAssetIDs.length > 0
-			|| revealedSource || leveragedCount > 0,
-	);
 </script>
 
 {#if mode === 'prep'}
-	<fieldset class="plan-form-fieldset" disabled={readOnly}>
-		<div class="plan-form">
-			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
-			<FormField label="Asset owner">
-				<PlayerChips
-					players={ownersWithAssets}
-					isActive={(p) => prepFilterOwnerID === p.id}
-					onSelect={(p) => selectRumorOwner(p.id)}
-					{readOnly}
-				/>
-			</FormField>
-
-			{#if prepFilterOwnerID != null}
-				<CardPicker
-					label="Asset the rumor is about"
-					items={filteredIntactAssets}
-					{players}
-					emptyMessage="This player has no intact assets."
-					selected={prepTargetAssetID}
-					onSelect={(id) => (prepTargetAssetID = id)}
-					{readOnly}
-				/>
-			{/if}
-			{#if readOnly}
-				<!-- A watcher is never sent the rumor's text, kept secret or not: the draft is read by
-				     the whole table, and the box can be ticked after the words are typed. An empty box
-				     would read as a rumor not yet written, so say what is going on instead. -->
-				<p class="form-hint">
-					{#if mirrorKeptSecret}
-						Kept secret for now. Only {playerName(players, ctx.focusPlayerID)} can read it.
-					{:else}
-						{playerName(players, ctx.focusPlayerID)} is writing the rumor.
-					{/if}
-				</p>
-			{:else}
-				<label class="form-label">
-					Rumor:
-					<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
-						placeholder={prepKeepSecret
-							? 'Write the rumor — only you will see it until you spread it.'
-							: 'What are people starting to say?'}></textarea>
-				</label>
-			{/if}
-
-			<Checkbox
-				bind:checked={prepKeepSecret}
-				disabled={readOnly}
-				label="Keep it secret for now"
-				description="Hide the rumor under one of your own assets instead of announcing it. Others won't see the text until you spread it."
-			/>
-
-			{#if prepKeepSecret}
-				{#if readOnly}
-					<p class="plan-notes">
-						Hidden under: <em>{secretHolderName || '—'}</em>
-					</p>
-				{:else}
-					<CardPicker
-						label="Hide the rumor under"
-						items={ownIntactAssets}
-						{players}
-						emptyMessage="You have no intact assets to hide it under."
-						selected={prepSecretAssetID}
-						onSelect={(id) => (prepSecretAssetID = id)}
-						{readOnly}
-					/>
-				{/if}
-			{/if}
-
-			{#if !readOnly}
-				<div class="form-actions">
-					<button class="action-btn primary" onclick={submitPrep}
-						disabled={prepBusy || prepTargetAssetID == null || !prepNotes.trim()
-							|| (prepKeepSecret && prepSecretAssetID == null)}>
-						{prepBusy ? '…' : 'Prepare Plan'}
-					</button>
-				</div>
-			{/if}
-		</div>
-	</fieldset>
+	<PrepForm {ctx} />
 
 {:else if plan}
-	{@const existingChoices = (parseResolutionData(plan).make_mar_choices ?? []).map(c => c.option)}
+	{@const scene = rumorScene(ctx, plan, srData)}
+	{@const pendingConsent = srData.pending_take_consent ?? null}
 	{@const choicesDone = hasCommittedChoices}
-	{@const btNeeded = countIn(existingChoices, 'break_target')}
-	{@const hsNeeded = countIn(existingChoices, 'hide_source')}
-	{@const btRemaining = Math.max(0, btNeeded - btDone)}
-	{@const hsRemaining = Math.max(0, hsNeeded - hsDone)}
-	{@const subflowsDone = btRemaining === 0 && hsRemaining === 0}
-	<!-- Every route here auto-completes the plan the moment nothing is owed, so the
-	     submit that leaves nothing owed is the one that ends Spread Rumors. -->
-	{@const subflowsOwed = btRemaining + hsRemaining}
-	{@const lastText = 'This is the last step: Spread Rumors resolves when you submit.'}
 
 	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
@@ -698,14 +111,14 @@
 			<PlanDifficulty {plan} {ctx} />
 		{/if}
 		{#if !choicesDone}
-			<Buffet tabs={BUFFET_TABS} />
+			<Buffet tabs={scene.buffet} />
 		{/if}
 		<div class="rumor-summary">
 			<!-- Before the pre-roll the prep note is only a draft (principle 2), and a
 			     secret rumor's text is nobody's business yet — so neither is shown as
 			     though it were the rumor. After it, the STATED rumor is. -->
 			{#if preRollDone && srData.rumor_text}
-				<p class="rumor-label">{rollOutcome === 'mar' ? 'The rumor that backfired' : 'The rumor, as stated'}</p>
+				<p class="rumor-label">{scene.mar ? 'The rumor that backfired' : 'The rumor, as stated'}</p>
 				<p class="rumor-quote">“{srData.rumor_text}”</p>
 				{#if srData.how_spread}
 					<p class="rumor-target">How it's spreading: {srData.how_spread}</p>
@@ -716,7 +129,7 @@
 					Kept under <em>{srData.secret_asset_id != null ? assetName(assets, srData.secret_asset_id) : 'an asset'}</em>
 					until it is stated before the roll.
 				</p>
-			{:else if plan.preparation_notes && (preRollDone || !isPreparer)}
+			{:else if plan.preparation_notes && (preRollDone || !scene.isPreparer)}
 				<!-- (The preparer's own draft is not repeated here: it is already in the
 				     field below, where they are about to restate it.) -->
 				<p class="rumor-label">{preRollDone ? 'Rumor' : 'As prepared — a draft, restated before the roll'}</p>
@@ -726,7 +139,7 @@
 				<p class="rumor-label">The rumor that spreads instead</p>
 				<p class="rumor-quote">“{srData.counter_rumor_text}”</p>
 			{/if}
-			{#if plan.target_asset_id && rollOutcome !== 'mar'}
+			{#if plan.target_asset_id && !scene.mar}
 				<p class="rumor-target">
 					Targeting: <em>{assetName(assets, plan.target_asset_id)}</em>
 				</p>
@@ -734,338 +147,24 @@
 		</div>
 
 		{#if !preRollDone}
-			<PreRollStep
-				title="Spread the rumor"
-				prompt="State the rumor you plan to spread and explain how you're spreading it."
-				fields={[
-					{
-						key: 'rumor',
-						label: 'The rumor',
-						placeholder: 'What are people about to be told?',
-						draft: rumorDraft,
-						rows: 3,
-						max: TEXT_LIMITS.NARRATIVE,
-					},
-					{
-						key: 'how',
-						label: 'How you are spreading it',
-						placeholder: 'Letting it slip in taverns? Whispering it in ears around court?',
-						rows: 3,
-						max: TEXT_LIMITS.NARRATIVE,
-					},
-				]}
-				canAct={isPreparer}
-				busy={preRollBusy}
-				onSubmit={(v) => submitPreRoll(plan, v)}
-			/>
+			<StateRumor {ctx} {plan} bind:error={resError} />
 
 		<!-- While the dice are out the roll is the open step and carries its own
 		     heading, so there is nothing to say until it lands. -->
-		{:else if rollOutcome === 'mar' && !choicesDone && !srData.counter_rumor_text && pendingConsent == null}
-			<!-- The mar opens with the counter-rumor: its author is the target player,
-			     and the table reads it before the options land. -->
-			{#if isActor}
-				<div class="plan-form">
-					<p class="choices-header">The rumor backfires</p>
-					<p class="choices-note">
-						Describe the rumor that spreads about <em>{mcName}</em>,
-						{playerName(players, plan.preparer_id)}'s main character, instead.
-					</p>
-					<label class="form-label">
-						<span class="form-label-text">The rumor that spreads instead</span>
-						<textarea rows={3} bind:value={counterText} class="form-textarea"
-							maxlength={TEXT_LIMITS.NARRATIVE} disabled={counterBusy}
-							placeholder="What is the court whispering about them now?"></textarea>
-					</label>
-					<p class="choices-note muted">The table reads this before you choose what it does.</p>
-					<button class="action-btn primary" onclick={() => submitCounterRumor(plan)}
-						disabled={counterBusy || !counterText.trim()}>
-						{counterBusy ? '…' : 'Spread it'}
-					</button>
-				</div>
-			{/if}
+		{:else if scene.mar && !choicesDone && !srData.counter_rumor_text && pendingConsent == null}
+			<CounterRumor {ctx} {plan} {scene} bind:error={resError} />
 
 		{:else if pendingConsent != null}
-			<!-- A take-asset request is open: everything holds until the victim
-			     (the asset owner) agrees or disagrees. -->
-			{#if isConsentVictim}
-				{@const takeCount = pendingConsent.asset_ids.length}
-				{@const breakCount = countIn(pendingConsent.choices, 'break_target')}
-				{@const leverageCount = countIn(pendingConsent.choices, 'leverage_target')}
-				{@const aboutName = rollOutcome === 'mar'
-					? (mcAsset?.name ?? null)
-					: plan.target_asset_id != null ? assetName(assets, plan.target_asset_id) : null}
+			<TakeConsent {ctx} {plan} {scene} {pendingConsent} {picks} bind:error={resError} />
 
-				<!-- Secondary effects hit the rumor's subject (the target asset on a make,
-				     the preparer's main character on a mar) but need no
-				     consent — kept out of the callout as a plain FYI line. -->
-				{#if (breakCount > 0 || leverageCount > 0) && aboutName}
-					<p class="choices-note">
-						No consent on these — {rollOutcome === 'mar' ? 'their counter-rumor' : 'this rumor'}
-						also hits <em>{aboutName}</em>:
-					</p>
-					<ul class="effect-fyi">
-						{#if breakCount > 0}<li>Tears a marginalia{#if breakCount > 1}{' '}(×{breakCount}){/if}</li>{/if}
-						{#if leverageCount > 0}<li>Leverages it{#if leverageCount > 1}{' '}(×{leverageCount}){/if}</li>{/if}
-					</ul>
-				{/if}
-
-				<!-- The callout: the one thing the victim actually decides. -->
-				<div class="consent-group">
-					<p class="choices-header">Consent needed</p>
-					<p class="choices-note">
-						{playerName(players, pendingConsent.requested_by)} wants to take
-						{takeCount === 1 ? 'this asset' : `these ${takeCount} assets`} from you:
-					</p>
-					<ul class="consent-assets">
-						{#each pendingConsent.asset_ids as aid}
-							<li><em>{assetName(assets, aid)}</em></li>
-						{/each}
-					</ul>
-					<div class="form-actions start">
-						<button class="action-btn primary"
-							onclick={() => onRespondConsent(plan, true)} disabled={choicesBusy}>
-							{choicesBusy ? '…' : 'Agree'}
-						</button>
-						<button class="action-btn secondary"
-							onclick={() => onRespondConsent(plan, false)} disabled={choicesBusy}>
-							Disagree
-						</button>
-					</div>
-					<EndsNote
-						show={countIn(pendingConsent.choices, 'break_target') === 0 && countIn(pendingConsent.choices, 'hide_source') === 0}
-						text="If you agree, that is the last step: Spread Rumors resolves. If you disagree, the preparer picks again." />
-				</div>
-			{:else}
-				<p class="ft-prompt muted">
-					Waiting for {playerName(players, pendingConsent.victim_id)} to agree to give up
-					{pendingConsent.asset_ids.length === 1
-						? assetName(assets, pendingConsent.asset_ids[0])
-						: `${pendingConsent.asset_ids.length} assets`}…
-				</p>
-			{/if}
-
-		{:else if rollOutcome != null && !choicesDone && isActor && takeStep === 'assets'}
-			<!-- Step 2 of a take: name the specific assets to take from the victim. -->
-			{@const k = counts.take_asset ?? 0}
-			<div class="choices-section">
-				<p class="choices-header">Choose {k} asset{k === 1 ? '' : 's'} to take</p>
-				<p class="choices-note">
-					From {playerName(players, victimID)}'s assets — they'll be asked to consent.
-				</p>
-				<CardPicker
-					label="Assets to take"
-					items={victimAssets}
-					{players}
-					emptyMessage="This player has no assets to take."
-					multi
-					max={k}
-					selectedMulti={takeSelected}
-					onSelectMulti={(ids) => (takeSelected = ids)}
-				/>
-				<p class="choices-note">
-					Selected: <strong>{takeSelected.length}</strong> / {k}
-				</p>
-				<div class="form-actions start">
-					<button class="action-btn primary"
-						onclick={() => onRequestConsent(plan, rollOutcome!)}
-						disabled={choicesBusy || takeSelected.length !== k}>
-						{choicesBusy ? '…' : 'Request consent'}
-					</button>
-					<button class="action-btn" onclick={() => { takeStep = 'options'; }}>
-						Back
-					</button>
-				</div>
-			</div>
+		{:else if rollOutcome != null && !choicesDone && scene.isActor && picks.takeStep === 'assets'}
+			<TakeAssets {ctx} {plan} {scene} {picks} bind:error={resError} />
 
 		{:else if rollOutcome != null && !choicesDone}
-			<!-- Option-picking. The actor picks; everyone else sees the same option
-			     list greyed out and inert. The counts shown to a watcher are their
-			     own (zeroed) local state — mirroring the actor's uncommitted picks
-			     would need the Tier-2 resolve-draft channel ADR-006 leaves open. -->
-			<fieldset class="resolve-mirror-wrap choices-section"
-				class:resolve-mirror={!isActor} disabled={!isActor}>
-				<p class="choices-header">
-					Result: <span class="outcome-{rollOutcome}">
-						{rollOutcome === 'make' ? 'Make' : 'Mar'}
-					</span>
-				</p>
-				<p class="choices-note">
-					{#if rollOutcome === 'mar'}
-						Pick options equal to (difficulty − result) (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
-						They land on <em>{mcName}</em>, {playerName(players, plan.preparer_id)}'s main character —
-						the subject of {isActor ? 'your' : `${actorName}'s`} counter-rumor.
-					{:else}
-						Pick options equal to {isActor ? 'your' : 'the'} dice result (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
-					{/if}
-				</p>
-				{#if takeAssetDenied}
-					<p class="choices-note muted">
-						The owner declined the asset transfer — choose other options.
-					</p>
-				{/if}
-				{#each OPTIONS as opt}
-					{@const optDisabled = opt.key === 'take_asset' && takeAssetDenied}
-					{@const atBreakCap = opt.key === 'break_target' && (counts.break_target ?? 0) >= btMarginaliaCap}
-					<Stepper label={optionText(opt)} count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={optDisabled}
-						incDisabled={optDisabled || atBreakCap || (requiredPicks != null && totalPicked >= requiredPicks)}>
-						{optionText(opt)}{#if optDisabled}{' '}<em>(declined)</em>{:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}
-					</Stepper>
-				{/each}
-				<p class="choices-note">
-					Total picks: <strong>{totalPicked}</strong>{#if requiredPicks != null}{' '}/ {requiredPicks}{/if}
-				</p>
-				{#if isActor}
-					<button class="action-btn primary"
-						onclick={() => onApplyChoices(plan, rollOutcome!)}
-						disabled={choicesBusy || totalPicked === 0 || (requiredPicks != null && totalPicked !== requiredPicks)}>
-						{choicesBusy ? '…' : ((counts.take_asset ?? 0) > 0 ? 'Next: choose assets' : 'Apply choices')}
-					</button>
-					<EndsNote show={totalPicked > 0 && (counts.take_asset ?? 0) === 0 && (counts.break_target ?? 0) === 0 && (counts.hide_source ?? 0) === 0} text={lastText} />
-				{/if}
-			</fieldset>
+			<PickOptions {ctx} {plan} {scene} {picks} bind:error={resError} />
 
 		{:else if choicesDone}
-			<div class="complete-section">
-				<!-- Committed state (Tier-1, ADR-006): the picked options and what each
-				     step actually did, at full opacity for EVERY viewer, outside the
-				     greyed picker area. -->
-				<ChoicesApplied choices={existingChoices} options={OPTIONS} />
-				{#if anyResolved}
-					<div class="resolved-so-far">
-						<p class="resolved-so-far-label">Resolved so far:</p>
-						<ul class="resolved-so-far-list">
-							{#each brokenAssetIDs as id}
-								<li>Broke <em>{assetName(assets, id)}</em></li>
-							{/each}
-							{#if leveragedCount > 0}
-								<li>
-									Leveraged <em>{assetName(assets, (rollOutcome === 'mar' ? mcAsset?.id : plan.target_asset_id) ?? 0)}</em>
-									{#if leveragedCount > 1}(×{leveragedCount}){/if}
-								</li>
-							{/if}
-							{#each takenAssetIDs as id}
-								<li>Took <em>{assetName(assets, id)}</em></li>
-							{/each}
-							{#each hideSourceAssetIDs as id}
-								<li>
-									Hid as the source — the secret is discoverable from
-									<em>{assetName(assets, id)}</em>
-								</li>
-							{/each}
-							{#if revealedSource}
-								<li>{actorName} relished the rumor's glory</li>
-							{/if}
-						</ul>
-					</div>
-				{/if}
-
-				<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!isActor} disabled={!isActor}>
-
-				{#if btRemaining > 0}
-					<div class="plan-form">
-						<p class="choices-header">
-							{rollOutcome === 'mar' ? `Break ${mcName}` : 'Break target asset'} ({btRemaining} remaining)
-						</p>
-						<CardPicker
-							label="Marginalium to tear"
-							items={btMarginaliaAssets}
-							{players}
-							readOnly={!isActor}
-							emptyMessage="Nothing left to break."
-							marginaliaMode
-							selectedMarginaliaID={btMargID}
-							selectedAssetID={btAssetID}
-							onSelectMarginalia={(mID, parent) => {
-								btMargID = mID;
-								btAssetID = parent?.id ?? null;
-							}}
-						/>
-						{#if btWarn}<Notice>{btWarn}</Notice>{/if}
-						{#if isActor}
-							{#if btMarginaliaAssets.length === 0}
-								<p class="choices-note muted">Nothing left to break — this pick has no valid target.</p>
-								<button class="action-btn primary"
-									onclick={() => forfeitStep(plan, 'break_target')} disabled={forfeitBusy}>
-									{forfeitBusy ? '…' : 'Skip — no valid targets'}
-								</button>
-								<EndsNote show={subflowsOwed === btRemaining} text={lastText} />
-							{:else}
-								<button class="action-btn primary"
-									onclick={() => submitBreakTarget(plan)}
-									disabled={btBusy || btMargID == null}>
-									{btBusy ? '…' : 'Tear marginalia'}
-								</button>
-								<EndsNote show={subflowsOwed === 1} text={lastText} />
-							{/if}
-						{/if}
-					</div>
-				{/if}
-
-				{#if hsRemaining > 0}
-					<div class="plan-form">
-						<p class="choices-header">
-							Hide source ({hsRemaining} remaining)
-						</p>
-						<p class="choices-note muted">
-							{#if standingIn}
-								As the Make Demands winner you choose which of {shelterName}'s assets hides
-								the Secret that {shelterName} spread the rumor.
-							{:else if isActor}
-								An asset of your choice will hide the Secret that you spread the rumor.
-							{:else if shelterName !== actorName}
-								{actorName}, the Make Demands winner, chooses which of {shelterName}'s assets
-								hides the Secret that {shelterName} spread the rumor — their character stays
-								unnamed at court, but the table sees it.
-							{:else}
-								An asset of {actorName}'s choice will hide the Secret that they spread
-								the rumor — their character stays unnamed at court, but the table sees it.
-							{/if}
-						</p>
-						<CardPicker
-							label={isActor && !standingIn ? 'Hide on one of your assets' : `Hide on one of ${shelterName}'s assets`}
-							items={hsAssetOptions}
-							{players}
-							readOnly={!isActor}
-							selected={hsAssetID}
-							onSelect={(id) => (hsAssetID = id)}
-						/>
-						{#if isActor}
-							{#if hsAssetOptions.length === 0}
-								<p class="choices-note muted">{standingIn ? `${shelterName} has` : 'You have'} no asset to hide the source under — this pick has no valid target.</p>
-								<button class="action-btn primary"
-									onclick={() => forfeitStep(plan, 'hide_source')} disabled={forfeitBusy}>
-									{forfeitBusy ? '…' : 'Skip — no valid targets'}
-								</button>
-								<EndsNote show={subflowsOwed === hsRemaining} text={lastText} />
-							{:else}
-								<button class="action-btn primary"
-									onclick={() => submitHideSource(plan)}
-									disabled={hsBusy || hsAssetID == null}>
-									{hsBusy ? '…' : 'Hide source'}
-								</button>
-								<EndsNote show={subflowsOwed === 1} text={lastText} />
-							{/if}
-						{/if}
-					</div>
-				{/if}
-
-				</fieldset>
-
-				<!-- Completion is always the preparer's, even on a mar where the
-				     target-asset owner drove the sub-flows. -->
-				{#if subflowsDone}
-					{#if isPreparer}
-						<p class="complete-note">
-							Post any follow-scene narration in the chat, then complete.
-						</p>
-						<button class="action-btn primary"
-							onclick={() => onComplete(plan)} disabled={resBusy}>
-							{resBusy ? '…' : 'Complete plan'}
-						</button>
-					{/if}
-				{/if}
-			</div>
+			<AfterChoices {ctx} {plan} {scene} bind:error={resError} />
 		{/if}
 	</ResolvingCard>
 {/if}
@@ -1088,28 +187,4 @@
 		color: var(--color-text-secondary);
 		margin: 0;
 	}
-
-	/* The take-asset consent, shown to the victim: a group in the open step, not a
-	   box. Its heading says what is asked; the group only needs space around it. */
-	.consent-group {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2);
-	}
-	.consent-assets {
-		margin: 0;
-		padding-left: var(--space-4);
-		font-size: var(--text-small);
-	}
-
-	/* Secondary (no-consent) effects listed above the consent. A rule, not a result. */
-	.effect-fyi {
-		margin: 0;
-		padding-left: var(--space-4);
-		font-size: var(--text-small);
-		color: var(--color-text-secondary);
-		line-height: 1.4;
-	}
-
-	/* Choices-applied list styling */
 </style>
