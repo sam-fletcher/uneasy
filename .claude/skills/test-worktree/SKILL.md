@@ -59,7 +59,9 @@ UNEASY_DEV=1 PORT=8192 \
 
 Then point every tool at it:
 
-- **e2e:** `cd frontend && E2E_BASE_URL=http://localhost:8192 npx playwright test [spec]`
+- **e2e:** `cd frontend && E2E_BASE_URL=http://localhost:8192 caffeinate -i npx playwright test [spec]`.
+  `caffeinate -i` (built into macOS) keeps the Mac from idle-sleeping while the run lasts: a
+  sleep mid-run times tests out, and one PR lost about six hours to it.
 - **plandriver:** `go run ./cmd/plandriver setup <plan> -base http://localhost:8192`
 - **shot.mjs:** `node tests/shot.mjs --base http://localhost:8192 --game <id> --as <player>`
 

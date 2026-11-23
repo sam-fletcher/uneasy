@@ -30,6 +30,9 @@ keeps the work faithful to the game and the owner's rulings.
   re-open — check memory, the principles, and the rulings and decisions
   files (same place) before proposing one.
 - The rulings file's section for the plan or phase you're touching.
+- The decisions file's **"Recurring bug shapes"** list (same place): the
+  mistakes reviews keep finding. Check your change against it before you
+  report.
 - The rules for the plan or phase you're touching. **Ambiguous rule → read
   the rulebook page first** (the book is the final word over the rules
   files), **then ask the owner** (the `grilling` skill). Don't pick an
@@ -53,6 +56,16 @@ under "Noticed, not fixed" in your note — don't fix it.
 Each has burned this project before; the memory index has the detail.
 
 - **Rules fidelity:** implement the plan's rules as written, not simplified.
+  **When you change what the app says or does about a rule** (new copy that
+  states a rule, or a rule's behaviour), put a comment naming its source (a
+  rulebook page or a ruling) beside it, and check the server's validation
+  for the same action agrees. Rewording existing copy without changing what
+  it means doesn't need this.
+- **Who acts and who receives:** any line naming who decides or who gets
+  something must read right with a Make Demands perform-steps stand-in (who
+  makes the preparer's choices; never "you" for the preparer) and a
+  keep-assets winner (who receives what the plan would give the preparer).
+  Render it both ways in a test.
 - **Every state change posts to the action log**, including purely narrative
   effects. Raw effect helpers broadcast a WebSocket event but post nothing —
   pair them with an emitter (`handler/log_coverage_test.go` guards this).
@@ -91,6 +104,11 @@ On your branch, alongside the code:
   `docs/work/README.md`. Never edit another entry's file and never
   renumber: that's what made every parallel PR conflict. No "in progress"
   entry: open PRs are the list of work in flight.
+- **A question file says what you checked.** Before filing one, look for
+  the answer in the rulings, principles, decisions, ADRs and style guide;
+  about one question in three filed in November was already answered
+  there. Give the file a `checked:` front-matter field naming the sections
+  you read and why none settles it.
 - **Hand-over note:** `docs/work/notes/<branch-name>.md`, where
   `<branch-name>` is the last part of your branch's name
   (`claude/checkbox-width-af6bae` → `checkbox-width-af6bae`). Not the
