@@ -20,8 +20,10 @@ comment at the top explaining the *why*; this is just the map.
   - `plans/` — one panel per Main Event plan type (`SeekAnswersPanel`,
     `ProposeDecreePanel`, …), plus `registry.ts` mapping plan type →
     component, `shared.ts` for cross-plan helpers, and subdirs
-    (`demand/`, `duel/`, `festivity/`, `war/`) for plans complex enough to
-    need their own sub-components.
+    (`demand/`, `duel/`, `festivity/`, `liaise/`, `rumors/`, `seek/`, `war/`)
+    for plans complex enough to need their own sub-components: the panel is
+    the frame that picks the open step, and each step is a component of its
+    own.
   - `shared/` — CSS partials (not components) reused across many
     components: `actionButton.css`, `modalShell.css`, `rankStrip.css`, etc.
 
