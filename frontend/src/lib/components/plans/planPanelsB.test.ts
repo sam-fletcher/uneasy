@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ClandestinelyLiaisePanel from './ClandestinelyLiaisePanel.svelte';
 import ExchangeCourtiersPanel from './ExchangeCourtiersPanel.svelte';
@@ -24,9 +24,23 @@ const PANELS = [
 	'ReAimPanel.svelte',
 ];
 
+// A panel split into a frame and one component per step keeps the steps in a folder beside
+// it (`liaise/` for Clandestinely Liaise); the rules are about what the panel draws, so its
+// source is the frame and every step.
+const STEP_FOLDERS: Record<string, string> = {
+	'ClandestinelyLiaisePanel.svelte': 'liaise',
+};
+function sourceOf(file: string): string {
+	const folder = STEP_FOLDERS[file];
+	const files = [file, ...(folder
+		? readdirSync(join(HERE, folder)).filter((f) => f.endsWith('.svelte')).map((f) => `${folder}/${f}`)
+		: [])];
+	return files.map((f) => readFileSync(join(HERE, f), 'utf8')).join('\n');
+}
+
 /** The markup of a .svelte file: no script, no style, no comments. */
 function markupOf(file: string): string {
-	return readFileSync(join(HERE, file), 'utf8')
+	return sourceOf(file)
 		.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
 		.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
 		.replace(/<!--[\s\S]*?-->/g, '');
@@ -47,7 +61,7 @@ describe('the five panels draw no legacy chip or warning markup', () => {
 // none of the five uses one.
 describe('the five panels do not close a gap with a negative margin', () => {
 	function styleOf(file: string): string {
-		const src = readFileSync(join(HERE, file), 'utf8');
+		const src = sourceOf(file);
 		const blocks = [...src.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1]);
 		const inline = [...src.matchAll(/\sstyle="([^"]*)"/g)].map(m => m[1]);
 		return [...blocks, ...inline].join('\n').replace(/\/\*[\s\S]*?\*\//g, '');

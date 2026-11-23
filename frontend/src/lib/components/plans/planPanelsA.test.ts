@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /*
@@ -25,8 +25,21 @@ const PANELS = [
 	'ChronicleHistoriesPanel.svelte',
 ] as const;
 
-const source = (name: string) => readFileSync(join(__dirname, name), 'utf8');
-const ownStyle = (s: string) => s.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+// A panel that has been split into a frame and one component per step keeps the steps in a
+// folder beside it (`rumors/` for Spread Rumors, `seek/` for Seek Answers). The rules are
+// about what the panel draws, so a panel's source is the frame and every step.
+const STEP_FOLDERS: Record<string, string> = {
+	'SpreadRumorsPanel.svelte': 'rumors',
+	'SeekAnswersPanel.svelte': 'seek',
+};
+const source = (name: string) => {
+	const folder = STEP_FOLDERS[name];
+	const files = [name, ...(folder
+		? readdirSync(join(__dirname, folder)).filter((f) => f.endsWith('.svelte')).map((f) => `${folder}/${f}`)
+		: [])];
+	return files.map((f) => readFileSync(join(__dirname, f), 'utf8')).join('\n');
+};
+const ownStyle = (s: string) => [...s.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
 
 describe.each(PANELS)('%s', (name) => {
 	const s = source(name);
