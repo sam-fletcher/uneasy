@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import ExchangeCourtiersPanel from './ExchangeCourtiersPanel.svelte';
 import { MAR_OPTIONS } from './shared';
 import type { PlanContext } from './types';
+import { LIVE_WRAP, MIRROR, mirrorOf } from './mirrorMatchers';
 
 // A seat that isn't acting is told in the third person what the plan holds, and
 // only the actual addressee sees second-person wording. Who the plan is waiting on
@@ -261,8 +262,6 @@ describe('riposte: breaking the requested peer first', () => {
 // dice land, and each pick is shown to everyone else as the same picker, greyed out and
 // inert, worded in the third person.
 
-const MIRROR = /<fieldset[^>]*class="[^"]*\bresolve-mirror\b[^"]*"[^>]*disabled/;
-const LIVE = /<fieldset[^>]*class="[^"]*\bresolve-mirror-wrap\b(?![^"]*\bresolve-mirror\b)[^"]*"/;
 const rowsOf = (html: string) => [...html.matchAll(/<[^>]*role="checkbox"[^>]*>/g)].map(m => m[0]);
 
 describe('the difficulty, before the dice', () => {
@@ -292,6 +291,85 @@ describe('the difficulty, before the dice', () => {
 		}));
 		expect(t).not.toContain('1 easy');
 		expect(t).not.toContain('What can happen?');
+	});
+});
+
+// The preparer answers the target's offer with one of two buttons (accept, or decline and
+// roll). That is not a pick, so a watcher is given no greyed copy of the buttons: the
+// convention here is that a button only its actor can press is left out, not shown dead,
+// and two dead full-width buttons cost a phone screen to say what a sentence says. A
+// watcher is told what each answer does instead, in the third person.
+describe('the fair trade\'s answer, as a watcher sees it', () => {
+	const offered = { fair_trade_asset_id: 6 };
+	const ACCEPTS = 'If ravi accepts, the peers swap and Exchange Courtiers resolves with no roll.';
+	const DECLINES = 'If ravi declines, it goes on to the dice.';
+
+	it.each([['the target', TARGET], ['a bystander', BYSTANDER]] as const)('tells %s what each answer does', (_, seat) => {
+		const t = text(renderFor(seat, offered));
+		expect(t).toContain(ACCEPTS);
+		expect(t).toContain(DECLINES);
+	});
+
+	it('gives a watcher no button to answer with, greyed or otherwise', () => {
+		for (const seat of [TARGET, BYSTANDER]) {
+			const body = renderFor(seat, offered);
+			expect(body).not.toMatch(/<button[^>]*>\s*(Accept|Decline)/);
+			expect(body).not.toMatch(/<[^>]*(aria-label|title)="(Accept|Decline)/);
+			expect(text(body)).not.toContain('Accept — exchange without rolling');
+		}
+	});
+
+	it('speaks of ravi, not "you", to a bystander', () => {
+		expect(text(renderFor(BYSTANDER, offered))).not.toMatch(/\byou(r)?\b/i);
+	});
+
+	it('keeps the second person for the target\'s own offer only: the answers are said neutrally', () => {
+		const t = text(renderFor(TARGET, offered));
+		expect(t).toContain('You asked for Dame Orr');
+		expect(t.replace('You asked for Dame Orr in exchange.', '')).not.toMatch(/\byou(r)?\b/i);
+	});
+
+	it('is left to the preparer\'s own step: the two buttons, and what they do, once', () => {
+		const body = renderFor(PREPARER, offered);
+		expect(body).toMatch(/<button[^>]*>\s*Accept — exchange without rolling/);
+		expect(body).toMatch(/<button[^>]*>\s*Decline — proceed to dice roll/);
+		expect(text(body)).not.toContain(ACCEPTS);
+		expect(text(body)).toContain('Accepting ends the plan with no roll');
+	});
+
+	// A Make Demands winner holding keep-assets takes the targeted peer in the preparer's place
+	// (only the incoming side of an exchange redirects), so "the peers swap" would be wrong:
+	// the offered peer still goes to the target, the targeted one to the winner.
+	describe('when a keep-assets winner takes the targeted peer', () => {
+		const keeper = (winner: number) => [{
+			id: 12, plan_type: 'make_demands', status: 'resolved', result: 'make', preparer_id: BYSTANDER, targeted_plan_id: 9,
+			resolution_data: JSON.stringify({ make_demands: { draft_choices: [{ option: 'keep_assets', player_id: winner }] } }),
+		}];
+		const SAYS = 'Lord Vane goes to mel and Dame Orr goes to sol, and Exchange Courtiers resolves';
+
+		it.each([['the target', TARGET], ['a bystander', BYSTANDER]] as const)('tells %s who gets which peer, not that they swap', (_, seat) => {
+			const t = text(renderFor(seat, offered, null, ASSETS, { plans: keeper(BYSTANDER) }));
+			expect(t).toContain(`If ravi accepts, ${SAYS} with no roll.`);
+			expect(t).not.toContain('the peers swap');
+			expect(t).toContain(DECLINES);
+		});
+
+		it('tells the preparer the same, in the note under their buttons', () => {
+			const t = text(renderFor(PREPARER, offered, null, ASSETS, { plans: keeper(BYSTANDER) }));
+			expect(t).toContain(`Accepting ends the plan with no roll: ${SAYS}. Declining goes on to the dice.`);
+			expect(t).not.toContain('the peers swap');
+		});
+
+		it('still says the peers swap when the preparer holds keep-assets themself', () => {
+			const t = text(renderFor(PREPARER, offered, null, ASSETS, { plans: keeper(PREPARER) }));
+			expect(t).toContain('Accepting ends the plan with no roll: the peers swap and Exchange Courtiers resolves.');
+			expect(text(renderFor(BYSTANDER, offered, null, ASSETS, { plans: keeper(PREPARER) }))).toContain(ACCEPTS);
+		});
+	});
+
+	it('is not there before the offer, or once the answer is in', () => {
+		expect(text(renderFor(BYSTANDER, {}))).not.toContain(ACCEPTS);
+		expect(text(renderFor(BYSTANDER, { ...offered, fair_trade_accepted: false }, 'make'))).not.toContain(ACCEPTS);
 	});
 });
 
@@ -486,7 +564,7 @@ describe('what a watcher sees of the picks', () => {
 				renderFor(BYSTANDER, { ...declined, messy_break_required: true }, 'make', withNotes(6, [note(1, 6), note(2, 6)]), { top: { choice_submitted: true } }),
 			];
 			for (const body of cases) {
-				const m = body.match(/<fieldset[^>]*resolve-mirror[^>]*disabled[\s\S]*?<\/fieldset>/);
+				const m = [mirrorOf(body)];
 				expect(m, 'expected a mirror').not.toBeNull();
 				expect(m![0]).not.toContain('<textarea');
 				expect(m![0]).not.toMatch(/<button[^>]*class="[^"]*primary/);

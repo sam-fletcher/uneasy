@@ -360,6 +360,12 @@
 	     keep-assets (the exchange's incoming side redirects to them). -->
 	{@const demandAgainst = activeDemandAgainst(plan, plans)}
 	{@const peerGoesTo = (demandAgainst ? demandWinnersFromPlan(demandAgainst).keep_assets : undefined) ?? plan.preparer_id}
+	<!-- What accepting the fair trade does. "The peers swap" only while the preparer is who receives the
+	     targeted peer: a keep-assets winner takes that side in their place, and the offered peer still
+	     goes to the target. Ends with the connective, so both sentences that use it read on. -->
+	{@const acceptClause = peerGoesTo === plan.preparer_id
+		? 'the peers swap and'
+		: `${assetName(assets, plan.target_asset_id)} goes to ${playerName(players, peerGoesTo)} and ${assetName(assets, ftAssetID)} goes to ${playerName(players, plan.target_player_id)}, and`}
 
 	<!-- What the target is choosing among, shown to the players waiting on them: the
 	     preparer's peers, greyed out and inert. Built from the public retinue; the
@@ -375,6 +381,16 @@
 				readOnly
 			/>
 		</fieldset>
+	{/snippet}
+
+	<!-- What the preparer's answer does, for the players waiting on it. The answer is two
+	     buttons, not a pick, so a watcher is not given a greyed copy of them (a button only
+	     its actor can press is left out, not shown dead): they are told what each leads to. -->
+	{#snippet answersNote()}
+		<p class="ft-prompt muted">
+			If {playerName(players, plan.preparer_id)} accepts, {acceptClause} Exchange Courtiers
+			resolves with no roll. If {playerName(players, plan.preparer_id)} declines, it goes on to the dice.
+		</p>
 	{/snippet}
 
 	<ResolvingCard {plan} {players} error={resError}>
@@ -458,18 +474,20 @@
 								{ftDecideBusy ? '…' : 'Decline — proceed to dice roll'}
 							</button>
 						</div>
-						<EndsNote text="Accepting ends the plan with no roll: the peers swap and Exchange Courtiers resolves. Declining goes on to the dice." />
+						<EndsNote text={`Accepting ends the plan with no roll: ${acceptClause} Exchange Courtiers resolves. Declining goes on to the dice.`} />
 					</div>
 				{:else if isTarget}
 					<p class="ft-prompt">
 						You asked for <em>{assetName(assets, ftAssetID)}</em> in exchange.
 						Waiting for {playerName(players, plan.preparer_id)}'s decision…
 					</p>
+					{@render answersNote()}
 				{:else}
 					<p class="ft-prompt muted">
 						{playerName(players, plan.target_player_id)} asked for <em>{assetName(assets, ftAssetID)}</em>
 						in exchange. Waiting for {playerName(players, plan.preparer_id)}'s decision…
 					</p>
+					{@render answersNote()}
 				{/if}
 			{/if}
 

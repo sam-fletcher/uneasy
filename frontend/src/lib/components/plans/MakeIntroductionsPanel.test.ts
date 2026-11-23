@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import MakeIntroductionsPanel from './MakeIntroductionsPanel.svelte';
 import type { PlanContext } from './types';
+import { MIRROR, mirrorOf } from './mirrorMatchers';
 
 // A Make Demands perform_steps win hands the whole resolution to the winner and
 // locks the preparer out (the server 403s them). The arrival form must follow
@@ -217,7 +218,6 @@ describe('MakeIntroductionsPanel commit marker', () => {
 // player writes, not a pick: they are not mirrored, and nothing is streamed.)
 
 const textOf = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-const MIRROR = /<fieldset[^>]*class="[^"]*\bresolve-mirror\b[^"]*"[^>]*disabled/;
 
 describe('Make Introductions: the difficulty, from the shared meter', () => {
 	it('is 2 plus a peer each, for the preparer and for everyone else, before the dice', () => {
@@ -261,7 +261,7 @@ describe('Make Introductions: what a watcher sees of the mar fates', () => {
 
 	it('shows none of the fates as picked: the actor\'s choice is not sent to anyone', () => {
 		const body = renderFor(WINNER, TWO);
-		const mirror = body.match(/<fieldset[^>]*resolve-mirror[^>]*disabled[\s\S]*?<\/fieldset>/)![0];
+		const mirror = mirrorOf(body);
 		const chips = [...mirror.matchAll(/<button[^>]*class="chip[^"]*"[^>]*>/g)].map(m => m[0]);
 		expect(chips).toHaveLength(4);
 		for (const c of chips) expect(c).toContain('aria-pressed="false"');
@@ -269,7 +269,7 @@ describe('Make Introductions: what a watcher sees of the mar fates', () => {
 
 	it('has no button, no field and no sub-form: nothing to commit, nothing typed', () => {
 		const body = renderFor(WINNER, TWO);
-		const mirror = body.match(/<fieldset[^>]*resolve-mirror[^>]*disabled[\s\S]*?<\/fieldset>/)![0];
+		const mirror = mirrorOf(body);
 		expect(mirror).not.toContain('Resolve peer');
 		expect(mirror).not.toContain('<textarea');
 		expect(mirror).not.toContain('Joins which retinue');

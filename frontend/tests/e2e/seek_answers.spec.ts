@@ -619,7 +619,9 @@ test('seek answers make: a pick with no valid target is carried by the forfeit h
 	});
 	expect(commit.ok(), `commit: ${await commit.text()}`).toBeTruthy();
 
-	await expect(alice.page.getByText('No asset\'s secrets remain to learn')).toBeVisible({ timeout: 10_000 });
+	// The empty picker says why, and the note says what that means for the pick: once each.
+	await expect(alice.page.getByText('No asset\'s secrets remain to learn.')).toBeVisible({ timeout: 10_000 });
+	await expect(alice.page.getByText('This pick has no valid target.')).toBeVisible();
 	await expect(stepHeading(carol.page)).toHaveText("Waiting on alice — learn an asset's secrets", { timeout: 10_000 });
 	await expect(carol.page.getByRole('button', { name: 'Skip — no valid targets' })).toHaveCount(0);
 	expect(await sa.planStatus(alice.ctx.request, t.planID)).toBe('resolving');

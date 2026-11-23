@@ -570,7 +570,7 @@
 						{@const available = optionAvailable[opt.key]}
 						<Stepper label={opt.label} count={counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={!available}
 							incDisabled={!available || atCap(opt.key) || (requiredPicks != null && totalPicked >= requiredPicks)}>
-							{opt.label}{#if !available}<span class="choices-note muted"> — no valid targets</span>{:else if atCap(opt.key)}<span class="choices-note muted"> — all targets picked</span>{/if}
+							{opt.label}{#if !available}{' '}<span class="choices-note muted">— no valid targets</span>{:else if atCap(opt.key)}{' '}<span class="choices-note muted">— all targets picked</span>{/if}
 						</Stepper>
 					{/each}
 					<p class="choices-note">
@@ -715,14 +715,15 @@
 								items={revealableAssets}
 								{players}
 								readOnly={!canSubflow}
-								emptyMessage="No assets available."
+								emptyMessage="No asset's secrets remain to learn."
 								ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
 								selected={rsAssetID}
 								onSelect={(id) => (rsAssetID = id)}
 							/>
 							{#if canSubflow}
 								{#if revealableAssets.length === 0}
-									<p class="choices-note muted">No asset's secrets remain to learn — this pick has no valid target.</p>
+									<!-- The empty picker above says why; this says what it means for the pick. -->
+									<p class="choices-note muted">This pick has no valid target.</p>
 									<button class="action-btn primary"
 										onclick={() => forfeitStep(plan, 'reveal_secret')} disabled={forfeitBusy}>
 										{forfeitBusy ? '…' : 'Skip — no valid targets'}
@@ -819,7 +820,9 @@
 								items={penaltyResources}
 								{players}
 								readOnly={!canSubflow}
-								emptyMessage="No eligible resources of your own remain."
+								emptyMessage={isPreparer
+										? 'None of your resources can be broken.'
+										: `None of ${playerName(players, plan.preparer_id)}'s resources can be broken.`}
 								marginaliaMode
 								selectedMarginaliaID={maMargID}
 								selectedAssetID={maAssetID}
@@ -831,7 +834,8 @@
 							{#if maWarn}<Notice>{maWarn}</Notice>{/if}
 							{#if canSubflow}
 								{#if penaltyResources.length === 0}
-									<p class="choices-note muted">None of your resources can be broken — this penalty can't be applied.</p>
+									<!-- The empty picker above says whose resources are out; this says what it means for the penalty. -->
+									<p class="choices-note muted">This penalty can't be applied.</p>
 									<button class="action-btn primary"
 										onclick={() => forfeitStep(plan, 'mar_penalty')} disabled={forfeitBusy}>
 										{forfeitBusy ? '…' : 'Skip — no valid targets'}

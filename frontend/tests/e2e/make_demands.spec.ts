@@ -34,7 +34,7 @@ import * as H from './helpers/make_demands';
 H.cleanupAfterEach();
 
 const card = (page: Page, label: string) => page.getByRole('button', { name: new RegExp(`^${label}`) });
-/** Any of the draft's four option cards (a player who is not picking has none). */
+/** Any of the draft's four option cards (a player who is not picking sees them greyed out). */
 const draftCards = (page: Page) => page.getByRole('button', { name: /^(Control leverage|Keep or change target|Keep assets|Perform steps)/ });
 
 test('attaching: bob picks alices pending plan, gives a motivation, and the demand lands right before it', async ({ browser }) => {
@@ -112,8 +112,17 @@ test('the draft: duds are greyed with a reason while a live option remains, and 
 	await expectHeading(pick, 'Your move — draft pick');
 	await expectHeading(other, `Waiting on ${first} — draft pick`);
 	await expectHeading(pages.carol, `Waiting on ${first} — draft pick`);
-	await expect(draftCards(pages.carol)).toHaveCount(0);
-	await expect(draftCards(other)).toHaveCount(0);
+	// Everyone who is not picking sees the same four cards, greyed out and inert, and no button to
+	// pick with: the board the picker chooses from. A native `disabled` takes them out of the tab order.
+	for (const watcher of [pages.carol, other]) {
+		await expect(draftCards(watcher)).toHaveCount(4);
+		for (const c of await draftCards(watcher).all()) await expect(c).toBeDisabled();
+		await expect(watcher.getByRole('button', { name: 'Pick option' })).toHaveCount(0);
+		await expect(card(watcher, 'Keep or change target')).toContainText('Seek Answers isn’t aimed at anything a demand could redirect.');
+		await expect(card(watcher, 'Control leverage')).toContainText('Choose how many of');
+	}
+	await expect(draftCards(pick)).toHaveCount(4);
+	await expect(pick.getByRole('button', { name: 'Pick option' })).toBeVisible();
 
 	// Duds are shown, greyed, with the reason; the live ones are not.
 	const dud = card(pick, 'Keep or change target');
@@ -138,6 +147,11 @@ test('the draft: duds are greyed with a reason while a live option remains, and 
 	await submit.click();
 
 	await expect.poll(async () => draftOf(f)).toEqual([[first, 'control_leverage']]);
+	// A watcher's board marks the taken card with whoever holds it, still inert; the picker's own
+	// list has dropped it (it is a finished step above the cards now).
+	await expect(card(pages.carol, 'Control leverage')).toContainText(`Taken by ${first}`);
+	await expect(card(pages.carol, 'Control leverage')).toBeDisabled();
+	await expect(draftCards(pages.carol)).toHaveCount(4);
 
 	// The second picker takes the other live option; now only duds remain.
 	await expectHeading(other, 'Your move — draft pick');

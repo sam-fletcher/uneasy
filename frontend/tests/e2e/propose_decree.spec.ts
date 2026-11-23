@@ -157,6 +157,15 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	await expectWaitingOn(bob, ['bob', 'carol'], 'bob');
 	await expectWaitingOn(alice, ['bob', 'carol'], 'alice');
 
+	// alice is not deciding, so she sees each pending player's picker greyed out and inert (their own
+	// un-leveraged assets, in the third person); bob, who is deciding, has his live picker and is
+	// shown none of carol's.
+	await expect(alice.getByText('bob may join the council')).toBeVisible();
+	await expect(alice.getByText('carol may join the council')).toBeVisible();
+	await expect(alice.locator('.resolve-mirror .select-tap').first()).toHaveAttribute('aria-disabled', 'true');
+	await expect(alice.getByRole('button', { name: 'Join', exact: true })).toHaveCount(0);
+	await expect(bob.getByText('carol may join the council')).toHaveCount(0);
+
 	// bob joins by leveraging one asset, through the picker.
 	const spare = await spareAsset(g, 'bob');
 	expect(await bankedDice(g, 'bob')).toHaveLength(0);
@@ -164,6 +173,9 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	await bob.getByRole('button', { name: 'Join', exact: true }).click();
 	await expect(alice.getByText('Council (2) · Signatory: alice')).toBeVisible();
 	await expect(alice.getByText('Waiting on carol to decide if they want to join the council.')).toBeVisible();
+	// bob has decided, so his picker is gone from alice's page; carol's is now bob's to watch.
+	await expect(alice.getByText('bob may join the council')).toHaveCount(0);
+	await expect(bob.getByText('carol may join the council')).toBeVisible();
 	await expect
 		.poll(async () => (await assets(g)).find(a => a.id === spare.id)?.is_leveraged)
 		.toBe(true);
@@ -176,6 +188,8 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	await expect(carol.getByText('You declined to join the council.')).toBeVisible();
 	await expect(alice.getByText('Declined: carol')).toBeVisible();
 	await expect(endDebate).toBeEnabled();
+	// Nobody is left to decide, so there is no picker for anyone to watch.
+	for (const page of [alice, bob, carol]) await expect(page.locator('.resolve-mirror')).toHaveCount(0);
 
 	// A decision is made once.
 	expect((await act(g, 'bob', planID, 'join-council', { asset_ids: [spare.id] })).status()).toBe(409);
