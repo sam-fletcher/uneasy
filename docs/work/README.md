@@ -13,8 +13,20 @@ the hand-over notes up to 2026-10-30 — are private and live outside the repo
 | Folder | One file per | Front matter |
 |---|---|---|
 | [next/](next/) | piece of work still to do | `title`, `order`; optional `after:` or `blocked:` naming another file |
-| [questions/](questions/) | question waiting on the owner | `title` |
+| [questions/](questions/) | question waiting on the owner | `title`, `checked` (see below) |
 | [notes/](notes/) | work session's hand-over note | none |
+
+**Questions say what was checked.** Before you file one, read the rulings,
+design principles, decisions and ADR or style-guide sections it touches, then
+write in `checked:` what you read and why none of it settles the question.
+`make tracker-check` (part of `make check-fast`) fails a question without it.
+The question files already on `main` when this rule landed are frozen in
+`LEGACY_QUESTIONS` in [tracker.py](tracker.py) and exempt; that list never grows.
+
+```yaml
+title: "Should a spent pip show on the Shake-Up tray?"
+checked: "Rulings and ADR-008 read: they fix the cost, not the display, so it is open"
+```
 
 This used to be a single numbered `TRACKER.md`. Every PR edited it — each
 deleted its own item and renumbered the rest — so any two parallel PRs
