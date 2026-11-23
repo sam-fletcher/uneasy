@@ -45,11 +45,20 @@ Cheap, mechanical, and enough to send it straight back:
 
 ## 3. Review on separate axes
 
-Start one subagent per axis, in parallel, each with a fresh context. Give
-each the diff command, the commit list and its brief below, and ask for
-under 400 words, sorting findings into **must fix** and **judgement call**.
-Separate reviewers keep one kind of problem from hiding another: a PR can
-do exactly what the brief asked and still get a rule wrong.
+Review on four axes, reported separately, because a PR can do exactly what
+the brief asked and still get a rule wrong. Usage limits are a real cost (a
+reviewer per axis once used 270–455K tokens a PR), so:
+
+- **Default: one reviewer subagent covering all four axes,** on Opus at
+  medium effort (`model: opus`, `effort: medium`).
+- **Split in two** when the diff is over about 1,500 lines or writes copy
+  that states game rules: Brief plus Rules and design on Opus (medium, or
+  high for heavy rules work); House rules plus Correctness on Sonnet at
+  high effort.
+
+Give each reviewer the diff command, the commit list and the axes' briefs
+below, plus what to look hardest at for this PR. Ask for under 600 words,
+per axis, sorting findings into **must fix** and **judgement call**.
 
 **Brief.** Pass it the brief. "What the brief asked for that is missing or
 partial; what the diff does that wasn't asked for (scope creep — the
@@ -77,8 +86,10 @@ type's data more than its own; the same few parameters always travelling
 together; the same `switch` on the same type in several places; one change
 forcing edits across many files; flexibility nobody asked for."
 
-**Correctness.** When the diff changes Go or Svelte logic, also run the
-built-in `code-review` skill on the PR for bugs.
+**Correctness.** When the diff changes Go or Svelte logic, read every hunk
+and its enclosing function: wrong conditions, state lost when a component
+unmounts, effects on the wrong dependency, callers broken by a changed
+shape, and what a tab left open on old code does with the new server.
 
 ## 4. Check the evidence
 
@@ -86,6 +97,13 @@ Compare the Evidence section with the verification bar in `work-session`
 §4. A UI change needs 375px screenshots from each viewpoint that changed; a
 fix needs its test shown failing without it. If a claim looks doubtful,
 re-run that one cheap check yourself against the branch (`test-worktree`).
+
+**For each before/after screenshot pair, write one line on what differs.**
+Anything removed, flattened or newly plain (a staged reveal turned into a
+list, a drawn control turned into a browser default) is a question for the
+owner, not a pass, even when the after matches the style guide. Matching
+the guide isn't the same as being unchanged: two redesign regressions
+reached `main` that way.
 
 ## 5. Decide
 
