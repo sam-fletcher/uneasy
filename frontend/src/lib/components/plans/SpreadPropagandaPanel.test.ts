@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import SpreadPropagandaPanel from './SpreadPropagandaPanel.svelte';
 import type { PlanContext } from './types';
+import { LIVE_WRAP, MIRROR } from './mirrorMatchers';
 
 // The server records a mar committed with nothing picked as choice_submitted, with
 // make_mar_choices empty. The panel must read that as "choices made" (done-state comes
@@ -103,8 +104,6 @@ function renderSP(opts: {
 
 // What a mirror is: the picker inside a disabled fieldset with the mirror class, which
 // the shared CSS (planPanel.css) turns into "the same controls, greyed, not yours".
-const MIRROR = /<fieldset[^>]*class="[^"]*\bresolve-mirror\b[^"]*"[^>]*disabled/;
-const LIVE_FIELDSET = /<fieldset[^>]*class="[^"]*\bresolve-mirror-wrap\b(?![^"]*\bresolve-mirror\b)[^"]*"/;
 
 describe('Spread Propaganda: the difficulty before the dice', () => {
 	it('shows everyone how hard the roll is, and why, until the dice land', () => {
@@ -207,7 +206,7 @@ describe('Spread Propaganda: what a watcher sees of the mar picks', () => {
 
 	it('is still the live picker, with its button, for the player who chooses', () => {
 		const body = renderSP({ seat: PREPARER, outcome: 'mar' });
-		expect(body).toMatch(LIVE_FIELDSET);
+		expect(body).toMatch(LIVE_WRAP);
 		expect(body).not.toMatch(MIRROR);
 		expect(body).toContain('Apply choices');
 		expect(textOf(body)).toContain('A peer leaves your retinue');
@@ -266,7 +265,7 @@ describe('Spread Propaganda: a watcher sees the picks the preparer still owes', 
 
 	it('leaves the preparer\'s own steps live, with their buttons', () => {
 		const give = renderSP({ seat: PREPARER, outcome: 'mar', ...owed('give_peer') });
-		expect(give).toMatch(LIVE_FIELDSET);
+		expect(give).toMatch(LIVE_WRAP);
 		expect(give).toContain('Give up peer');
 		const brk = renderSP({ seat: PREPARER, outcome: 'mar', ...owed('break_self') });
 		expect(brk).toContain('Break asset');
