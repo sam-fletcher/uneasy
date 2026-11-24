@@ -212,7 +212,7 @@ func TestExtraPeerMonarchClaim_StampsAndTripsGate(t *testing.T) {
 	req := httptest.NewRequest("POST", "/tables/"+strconv.FormatInt(tg.Game.ID, 10)+"/prologue/extra-peer", bytes.NewReader(raw))
 	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	serveGuarded(t, router, rec, req)
 	require.Equalf(t, http.StatusOK, rec.Code, "extra-peer failed: %s", rec.Body.String())
 
 	var resp struct {

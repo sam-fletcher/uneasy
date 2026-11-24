@@ -92,7 +92,7 @@ func TestPlaceSetAsides_TopPlayerIsNotAlwaysRank1(t *testing.T) {
 		req := httptest.NewRequest("POST", path, bytes.NewReader(raw))
 		req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, req)
+		serveGuarded(t, router, rec, req)
 		return rec
 	}
 

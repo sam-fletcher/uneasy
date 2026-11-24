@@ -89,6 +89,11 @@ The suite is split into two layers:
 - **Integration tests** — guarded by the `integration` build tag. They talk
   to a real Postgres and TRUNCATE all user tables between cases, so they
   must point at a dedicated test database — never a dev or prod one.
+  A mutating request sent through one of the harnesses (`serveGuarded` in
+  `handler/log_coverage_board_integration_test.go`) is also checked: if it
+  changes the board (assets, marginalia, ranks, laws, rumors, secrets) and
+  writes no action-log post, the test fails and names the change. A
+  legitimately silent route goes in `silentBoardRoutes` with a reason.
 
 Common commands:
 

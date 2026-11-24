@@ -72,7 +72,7 @@ func TestFocusPassLog_PassFocus_Posts(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/tables/"+strconv.FormatInt(tg.Game.ID, 10)+"/pass-focus", nil)
 	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	serveGuarded(t, router, rec, req)
 	require.Equalf(t, http.StatusOK, rec.Code, "pass-focus: %s", rec.Body.String())
 
 	assertFocusPassPosted(t, q, tg)
@@ -140,7 +140,7 @@ func TestFocusPassLog_AutoPassFocus_Posts(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	serveGuarded(t, router, rec, req)
 	require.Equalf(t, http.StatusOK, rec.Code, "refresh-assets: %s", rec.Body.String())
 
 	assertFocusPassPosted(t, q, tg)
