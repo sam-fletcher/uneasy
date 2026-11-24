@@ -5,8 +5,11 @@
 // messages are never passed through here and show their asterisks verbatim.
 // Two marks exist, one per element identity the log names:
 //
-//   **name**      an asset name          → <em> (italic, not bold — see below)
-//   @@<id>|name@@ a player name          → that player's colour
+//   **name**      an asset name          → <em class="asset-name"> (italic, not bold)
+//   @@<id>|name@@ a player name          → <span class="player-name"> in that player's colour
+//
+// The classes are the ones <AssetName> and <PlayerName> use, and their look is
+// the one sheet shared/inlineText.css, so the log and the panels can't drift.
 //
 // which is the "one job per channel" ruling applied to typography: shape and
 // position carry structure, weight and colour carry importance, and typography
@@ -42,7 +45,7 @@ const PLAYER_MARK = /@@(\d+)\|([^@|]*)@@/g;
  * Hex colours only reach the style attribute. playerColorByID can return a
  * player's `token_color`, a free-text DB column, and this value is
  * interpolated into markup — so anything that isn't a plain hex is dropped and
- * the CSS fallback in `.player-mark` takes over.
+ * the fallback in `.player-name` (the unknown-player grey) takes over.
  */
 const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/;
 
@@ -72,11 +75,11 @@ function escapeHtml(s: string): string {
  */
 export function renderLogBody(body: string, players: ColorPlayer[]): string {
 	return escapeHtml(body)
-		.replace(ASSET_MARK, '<em>$1</em>')
+		.replace(ASSET_MARK, '<em class="asset-name">$1</em>')
 		.replace(PLAYER_MARK, (_match, id: string, name: string) => {
 			const color = playerColorByID(Number(id), players);
-			const style = HEX_COLOR.test(color) ? ` style="--mark-player-color: ${color}"` : '';
-			return `<span class="player-mark"${style}>${name}</span>`;
+			const style = HEX_COLOR.test(color) ? ` style="--player-name-color: ${color}"` : '';
+			return `<span class="player-name"${style}>${name}</span>`;
 		});
 }
 

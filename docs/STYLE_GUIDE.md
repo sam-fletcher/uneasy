@@ -177,14 +177,15 @@ Sapphire, Turquoise**.
 
 Spend them sparingly: in chat a message colours its **byline only** (never
 byline + rule), a **system-log body colours the player names inside it** (the
-log reports what a player did, not what a character said; see the `playerMark`
-convention under Typography), and **in-character speech wears the muted
+log reports what a player did, not what a character said; see the
+`player-name` convention under Typography), and **in-character speech wears the muted
 mask-cast**, `color-mix(in srgb, <player> 55%, var(--color-text-secondary))`,
 because a character's words aren't the player's own voice. **A peer's colour is
 always its owning retinue's**, never the player currently roleplaying it; the
-byline's faint `(name)` tag identifies a borrower. Grey (`--player-unknown`) is
-a defensive fallback for when no player can be resolved at all: never used for
-table-talk, and never means "a quieter player".
+byline's faint `(name)` tag identifies a borrower. Grey (`--player-unknown`)
+means "a player you can't see or can't find": a hidden source, or an id that
+matches nobody. It is upright, with no shape, and is never used for table-talk
+or to mean "a quieter player".
 
 ### Rules of thumb
 
@@ -374,7 +375,7 @@ tones balanced to a 5.2–7.0 contrast band on the page bg — legible as
 small byline text, no player louder than another. Spend them sparingly:
 in chat a message colours its **byline only** (never byline + rule), a
 **system-log body colours the player names inside it** (vivid — the log
-reports what a player did, not what a character said; see the `playerMark`
+reports what a player did, not what a character said; see the `@@id|name@@` mark
 convention under Typography), and
 **in-character speech wears the muted mask-cast** —
 `color-mix(in srgb, <player> 55%, var(--color-text-secondary))` — because
@@ -382,10 +383,11 @@ a character's words aren't the player's own voice. Vivid = the player as
 themselves; muted = the mask. **A peer's colour is always its owning
 retinue's**, never the player currently roleplaying it (scene present
 lists, IC bylines, the persona picker); the byline's faint `(name)` tag is
-what identifies a borrower. Grey (`--player-unknown`) is a defensive
-fallback for when no player can be resolved at all — it is never used for
-OOC/table-talk speech, which keeps the speaking player's own colour, and
-never means "a quieter player."
+what identifies a borrower. Grey (`--player-unknown`) means "a player you
+can't see or can't find" (a hidden source, or an id that matches nobody),
+drawn upright with no shape — it is never used for OOC/table-talk speech,
+which keeps the speaking player's own colour, and never means "a quieter
+player." Where a name is drawn, `<PlayerName>` does it: see "Inline text".
 
 ## The Public Record's lists
 
@@ -422,9 +424,9 @@ for controls, and a record is read, not pressed. `PublicRecord.svelte` and
   between entries, and no card. The list's own total ("2 laws") is faint 12px text at its top;
   totals never go on a tab.
 - **A byline** is a faint label, then the player's shape and name in their colour ("Proposed
-  by", "Signed by", "Spread by"). A hidden source reads "Unknown" in faint italics with **no**
-  shape. A rumor's "About" line, above its text, names the asset with the shape of whoever owns
-  it now.
+  by", "Signed by", "Spread by"). A hidden source reads "Unknown" in the unknown-player grey, upright, with **no**
+  shape (see "Inline text"). A rumor's "About" line, above its text, names the asset, in italics
+  as every asset name is, with the shape of whoever owns it now.
 - **The "new" dot** (`NewDot`) starts an entry above the viewer's marker. It is drawn against the
   marker **as it was when the list opened**: the table page reports a list as seen the moment it
   is on screen, and the dot must outlive that. Switching list, or leaving and returning, opens
@@ -439,16 +441,26 @@ for controls, and a record is read, not pressed. `PublicRecord.svelte` and
 - **Fully serif.** `--font-serif` (Spectral) drives body, headings, prose.
   `--font-display` (IM Fell English) is texture: the big cover-style hero
   **only** — never at small sizes.
-- **Italic** marks asset names in running text and log bodies (rendered
-  from the `assetMark` `**…**` convention). Other quoted user text stays
-  quoted, not styled.
+- **Italic means an asset and nothing else.** Asset and peer names are italic
+  in all running text, headings, buttons, chips and log bodies, drawn by
+  `<AssetName>` (the log's `**…**` mark renders the same class). Nothing else
+  is italic: not an empty state ("No laws yet"), a pending chip, a side note,
+  a game term or a screen name, and not a player's own words. In Help only
+  the book's title is italic, as the title of a work always is. A guard test
+  (`shared/inlineText.test.ts`) holds the list of files that may declare
+  `font-style: italic`. The few exceptions (an asset's own card title) are in
+  the table under "Inline text".
 - **Typography identifies what a word is, not how loud it is.** Log bodies
   carry two server-written marks and no more: `**name**` for an asset
-  (italic) and `@@id|name@@` for a player (that player's colour). Verbs and
+  (`.asset-name`, italic) and `@@id|name@@` for a player (`.player-name`, that
+  player's colour): the same classes the components use, from one sheet,
+  `shared/inlineText.css`. Verbs and
   everything else stay plain — importance is already carried by the row's
   tier. Both marks are emitted in `handler/system_posts.go` and parsed in
   `lib/logMarkup.ts`; posts written before a mark existed simply render
   plain.
+- **Inline text** has three kinds, each with its own component: see "Inline
+  text" below.
 - **Bold** is reserved for standalone numeric counters (rank/status
   numbers, badge counts), plus the label of the main button, where dark ink on
   a gold fill needs the weight to stay legible. Names, labels, and values stay
@@ -460,6 +472,60 @@ for controls, and a record is read, not pressed. `PublicRecord.svelte` and
   heading that needs weight overrides locally, with a reason.
 - Uppercase labels (badges, section headings) carry letter-spacing
   (`0.05–0.14em`) and small sizes; they are labels, not emphasis.
+
+## Inline text
+
+Three kinds of text sit inside other text, and each has **one component that owns its look**:
+a player's name (`PlayerName`), an asset or peer's name (`AssetName`) and a player's own words
+(`Quote`), all in `lib/components/shared/` with their look in `inlineText.css`. CSS lets the
+innermost element's own style win, so a name keeps its colour inside a deep-gold heading with no
+extra rule. A panel never writes one by hand: `shared/inlineText.test.ts` fails a hand-written
+`<em>`, an inline `style:color` from a player colour, and a second definition of the classes.
+The log is the same table: `renderLogBody` emits the components' classes (`.player-name`,
+`.asset-name`), so there is one look to change. `/dev/styleguide` shows each row below.
+
+**Components.**
+
+- `<PlayerName player={p} />` or `<PlayerName {players} id={id} />`: the name in the player's
+  colour (`playerColor`). `label` adds the player's shape first (the same `PlayerShape` as
+  everywhere), for a name that stands alone as a label. `fixed` is for a player chip. Passing
+  nobody, as `<PlayerName player={null} name="Unknown" />`, draws the unknown-player grey, upright,
+  with no shape, even as a label. `<PlayerNames {players} ids={…} />` is a comma-joined list.
+- `<AssetName name={…} />` or `<AssetName {assets} id={…} />`: italic, in the colour of the text
+  around it. Covers peers.
+- `<Quote text={…} />`: curly marks, upright, never parsed for names or assets.
+
+**The exceptions table.** The default is in the first row; the others say what overrides it.
+
+| Where the text sits | A player's name | An asset or peer's name |
+|---|---|---|
+| Sentence, finished line, heading, sheet title | In their colour, no shape: the words around it say who it is | Italic, in the text's colour |
+| Standing alone as a label (byline, who-line, chip, player row) | In their colour, shape first (`label`) | Italic, in the text's colour |
+| Warning or notice, faint text | Keeps its colour: who is at risk matters most. The warning's colour stays on its own words | Italic, in the text's colour |
+| Inside the filled main button | The button's dark ink (a player colour fails contrast on gold) | Italic, the button's ink |
+| Inside a choice chip | The chip's colour, whatever state it is in | Italic, the chip's colour |
+| Inside a player chip (`PlayerChips`) | Keeps the player's colour: the chip is the player, and its border shows the pick | n/a |
+| Inside a greyed-out control (a disabled button, or a chip that can't be picked: `.unavailable`) | Faint, with everything else in it, a player chip's shape included | Faint |
+| Read-only mirror of someone else's step (its chips are `disabled` for the browser, but not `.unavailable`) | As above for where it sits: a mirror is shown as it is, not faded, so a player chip's name and shape keep their colour | As above |
+| Your own name | In your colour like anyone's. "You" and "your" stay plain words (except the bright-gold "Your move") | n/a |
+| An asset's own card or sheet title | n/a | Upright: the card is the thing, not a mention of it |
+| An `<input>` value or `<option>` text | Plain: phone browsers don't reliably style them | Plain |
+| A player's own words (quote, law, rumor, decree, scene text, chat) | Never parsed: stays plain | Never parsed: stays plain, nothing italic |
+| A hidden source, or a player you can't find | `--player-unknown`, upright, no shape | n/a |
+
+Inside a control the control's text colour wins, **by inheritance, not by props**: `inlineText.css`
+sets `color: inherit` on a name inside `.action-btn`, and inside `.chip` unless it is `.fixed`, so
+no caller passes anything down. The faint rule for a chip that can't be picked is keyed on the
+`.unavailable` class (`PlayerChips` sets it from `isDisabled`), never on bare `:disabled`, which a
+read-only mirror's chips also have. A chip lays its children out as flex items with a gap, so a label that mixes words, a name and an asset goes in one `<span>`, or each piece gets the gap. Neither a name nor an asset shows a player colour on a selection:
+a pick is the control's own bright gold, never a player's colour.
+
+**Your own words.** In-character chat keeps its muted mask-cast (see "Player colours"). Quoted text
+keeps its curly marks and is never italic.
+
+**Not decided here.** The size of each tier of text, the step heading's who-line, the set piece's
+deep-gold peers and centred quotes are the next redesign piece's; this one only fixes how each kind
+of inline text looks wherever it sits.
 
 ## Layout widths
 

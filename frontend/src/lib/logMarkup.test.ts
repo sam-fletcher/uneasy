@@ -27,7 +27,7 @@ const PLAYERS: Player[] = [
 
 describe('renderLogBody — asset marks', () => {
 	it('renders **…** as italic emphasis, not bold', () => {
-		expect(renderLogBody('destroyed **Old Keep**.', PLAYERS)).toBe('destroyed <em>Old Keep</em>.');
+		expect(renderLogBody('destroyed **Old Keep**.', PLAYERS)).toBe('destroyed <em class="asset-name">Old Keep</em>.');
 	});
 
 	it('leaves a lone asterisk alone', () => {
@@ -39,7 +39,7 @@ describe('renderLogBody — player marks', () => {
 	it('paints a marked name in that player\'s colour', () => {
 		const html = renderLogBody('@@7|alice@@ ends the scene', PLAYERS);
 		expect(html).toBe(
-			'<span class="player-mark" style="--mark-player-color: #C5AEFE">alice</span> ends the scene'
+			'<span class="player-name" style="--player-name-color: #C5AEFE">alice</span> ends the scene'
 		);
 	});
 
@@ -59,16 +59,16 @@ describe('renderLogBody — player marks', () => {
 
 	it('drops a non-hex token_color rather than injecting it into the style attribute', () => {
 		// token_color is a free-text DB column; anything but a hex is refused
-		// and the CSS fallback in .player-mark takes over.
+		// and the CSS fallback in .player-name takes over.
 		const hostile = [makePlayer({ id: 7, token_color: 'red; background: url(x)' })];
 		expect(renderLogBody('@@7|alice@@ acted', hostile)).toBe(
-			'<span class="player-mark">alice</span> acted'
+			'<span class="player-name">alice</span> acted'
 		);
 	});
 
 	it('mixes with asset marks in one body', () => {
 		const html = renderLogBody('@@7|alice@@ took **The Crown** from @@8|bob@@', PLAYERS);
-		expect(html).toContain('<em>The Crown</em>');
+		expect(html).toContain('<em class="asset-name">The Crown</em>');
 		expect(html).toContain('>alice</span>');
 		expect(html).toContain('>bob</span>');
 	});
