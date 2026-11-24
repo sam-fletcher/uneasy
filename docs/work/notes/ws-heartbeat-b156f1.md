@@ -19,7 +19,7 @@ it has clients, so an empty table costs nothing. The interval lives on the `Hub`
 (`heartbeatEvery`) so the test can shorten it without a global.
 
 **Page** (`frontend/src/lib/ws.ts`).
-- `lastHeardAt` is set on open and on **every** message.
+- `lastHeardAt` is set when the socket opens (in `onopen`, and again when the attempt starts) and on **every** message.
 - A 5s `setInterval` (`HEARTBEAT_CHECK_MS`) runs `checkSilence()`: if the tab is
   visible, the socket claims to be open, and `HEARTBEAT_SILENCE_MS` (45s) have
   passed, it closes the socket.
@@ -28,9 +28,14 @@ it has clients, so an empty table costs nothing. The interval lives on the `Hub`
   answer it, so the browser's own `close` event can take minutes; waiting for it
   would defeat the point. `handleClose` is once-per-socket (`closeHandled`), so the
   late real `close` does nothing.
-- A hidden tab isn't checked. `onVisibility` calls `checkSilence()` first, so a
-  dead socket is closed the moment the player returns, and the pending-retry code
-  right after it reconnects at once with the backoff reset.
+- A hidden tab isn't checked. When the tab becomes visible onto a stale socket
+  (nothing heard for 45s+), the page does **not** close at once: a phone that was
+  frozen raises `visibilitychange` before the frames queued during the freeze are
+  delivered, so an instant close would throw away a healthy socket on almost every
+  unlock. `startGraceIfStale()` sets `graceUntil` and a one-shot timer for
+  `HEARTBEAT_GRACE_MS` (5s); the regular check also skips until then. A frame inside
+  the window refreshes `lastHeardAt` and nothing closes. Silence through it closes the
+  socket right as the grace ends, and the retry loop then reconnects.
 - The heartbeat is dropped inside `onmessage`, before the resync buffer and
   before `onMessage`. The table page's `handleWSMessage` therefore never sees it:
   no refetch, no reactivity. (Its dispatcher already ignores unknown types, but
@@ -42,14 +47,16 @@ it has clients, so an empty table costs nothing. The interval lives on the `Hub`
 - `go test ./hub -race`: `TestHubSendsHeartbeatToEveryClient` (three beats to each
   of two clients) and `TestHeartbeatSkipsAFullClientWithoutDroppingIt`. Bite
   checked: removing the `pushHeartbeat()` call fails the first.
-- `ws.test.ts`, nine new tests: silent socket closed then reconnected and notice
+- `ws.test.ts`, eleven new tests: silent socket closed then reconnected and notice
   raised; a message restarts the count; heartbeats keep a socket up and aren't
-  passed on; not buffered during a resync; not closed while hidden; checked and
-  reconnected at once on becoming visible; left alone on return if something was
-  heard while hidden; no watch after `disconnect()`; a late real `close` after the
-  watch dropped the socket doesn't schedule a second retry. Bite checked by
-  mutation: removing the visibility guard, the `lastHeardAt` update, the heartbeat
-  filter, the check on visible, and `closeHandled` each fails at least one test.
+  passed on; not buffered during a resync; not closed while hidden; on return to a
+  stale socket, closed only after the 5s grace and then reconnected; kept open if a
+  frame arrives during the grace; left alone on return if something was heard while
+  hidden; the open itself counts as heard; no watch after `disconnect()`; a late real
+  `close` after the watch dropped the socket doesn't schedule a second retry. Bite
+  checked by mutation: removing the visibility guard, the `lastHeardAt` updates, the
+  heartbeat filter, the grace guard, the grace timer, closing at once, and
+  `closeHandled` each fails at least one test.
 - `make check-fast` passes.
 - Manual, against this worktree's own server (:8167, private database, both torn
   down after): seeded a main-event game, opened `/table/1`, and from the page opened
@@ -68,11 +75,11 @@ it has clients, so an empty table costs nothing. The interval lives on the `Hub`
   heartbeats as a real server would (`advanceWithHeartbeats` in `ws.test.ts`),
   because the watch rightly closes such a socket. Tests written later that wait
   more than 45s on a socket meant to stay up need the same.
-- Returning to a tab that was frozen by the OS (phone lock) with nothing heard for
-  45s+ closes the socket and reconnects, even if the socket was actually fine and its
-  queued heartbeat was about to be delivered. The cost is one resync, only when
-  someone is looking. I kept the brief's "check right away".
-- Worst-case detection is 50s (45s limit + one 5s check), plus the notice's 5s delay.
+- Returning to a stale socket (phone unlock after a freeze) waits 5s for a frame
+  before closing, so a healthy socket isn't thrown away when `visibilitychange`
+  fires ahead of its queued frames. A half-open socket is closed about 5s after the
+  player looks, and the retry loop reconnects right then.
+- Worst-case detection while watching is 50s (45s limit + one 5s check); on return, about 5s, plus the notice's 5s delay.
 - Egress: one ~20-byte frame per client per 30s.
 
 ## Open questions for the owner

@@ -4,6 +4,7 @@ import {
 	DISCONNECT_NOTICE_DELAY_MS,
 	FOREGROUND_MIN_GAP_MS,
 	HEARTBEAT_CHECK_MS,
+	HEARTBEAT_GRACE_MS,
 	HEARTBEAT_SILENCE_MS,
 	type ConnectionStatus,
 } from './ws';
@@ -1046,7 +1047,31 @@ describe('createConnection: a silent socket', () => {
 		conn.disconnect();
 	});
 
-	it('is checked the moment the tab is visible again, and reconnects at once', async () => {
+	it('gets a grace period on return, then is closed and reconnected if still silent', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		const sock = latestSocket();
+
+		fireVisibility('hidden');
+		// +2s so the return falls between two of the 5s checks, not on one.
+		await vi.advanceTimersByTimeAsync(10 * 60_000 + 2_000);
+		fireVisibility('visible');
+
+		// Not closed at once: a frozen phone's queued frames may be about to land.
+		expect(sock.readyState).toBe(1);
+		await vi.advanceTimersByTimeAsync(HEARTBEAT_GRACE_MS - 1_000);
+		expect(sock.readyState).toBe(1);
+
+		// Nothing came: closed right as the grace ends (not up to a tick later),
+		// and the returning player gets the reconnect without the backoff wait.
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(sock.readyState).toBe(3);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(socketCount()).toBe(2);
+		conn.disconnect();
+	});
+
+	it('is kept open if a frame arrives during the grace period', async () => {
 		const { conn } = watched();
 		await openAndSettle();
 		const sock = latestSocket();
@@ -1055,9 +1080,23 @@ describe('createConnection: a silent socket', () => {
 		await vi.advanceTimersByTimeAsync(10 * 60_000);
 		fireVisibility('visible');
 
-		// No waiting for the next check, and no backoff wait for the retry.
-		expect(sock.readyState).toBe(3);
-		expect(socketCount()).toBe(2);
+		// The frames queued during the freeze are delivered just after the event.
+		await vi.advanceTimersByTimeAsync(100);
+		hear(sock, 'heartbeat');
+		await vi.advanceTimersByTimeAsync(HEARTBEAT_GRACE_MS * 3);
+		expect(sock.readyState).toBe(1);
+		expect(socketCount()).toBe(1);
+		conn.disconnect();
+	});
+
+	it('counts the open itself as the first thing heard', async () => {
+		const { conn } = watched();
+		// The socket sits CONNECTING for a long while, then opens: the silence is
+		// measured from the open, not from when the attempt began.
+		await vi.advanceTimersByTimeAsync(60_000);
+		await openAndSettle();
+		await vi.advanceTimersByTimeAsync(HEARTBEAT_SILENCE_MS - 1_000);
+		expect(latestSocket().readyState).toBe(1);
 		conn.disconnect();
 	});
 

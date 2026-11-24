@@ -254,8 +254,14 @@ export const DEMAND_EVENTS = [
 // From there it is the ordinary drop: the retry loop, and the notice.
 //
 // The watch only runs while the tab is visible: a hidden tab's timers are
-// throttled, and nobody is looking at it. When the tab becomes visible again it
-// checks at once.
+// throttled, and nobody is looking at it. When the tab becomes visible again and
+// the last thing heard is old, it does not close at once: a phone that was frozen
+// (lock screen) raises `visibilitychange` *before* the frames that arrived during
+// the freeze are delivered, and a socket that is fine must not be thrown away.
+// It gives HEARTBEAT_GRACE_MS for any frame to arrive and closes only if none does.
+// A healthy socket frozen for over 30s has a heartbeat queued, which lands almost
+// at once; a half-open one delivers nothing and is closed about that long after
+// the player looks.
 export type ConnectionStatus = 'live' | 'down';
 
 export interface ConnectionOptions {
@@ -312,6 +318,10 @@ export const HEARTBEAT_SILENCE_MS = 45_000;
  *  sends nothing. */
 export const HEARTBEAT_CHECK_MS = 5_000;
 
+/** How long a returning player's stale socket gets to prove itself before it is
+ *  closed (see the note above createConnection). One check interval. */
+export const HEARTBEAT_GRACE_MS = 5_000;
+
 export function createConnection(
 	gameID: string | number,
 	onMessage: MessageHandler,
@@ -324,6 +334,10 @@ export function createConnection(
 	let dropCurrent: (() => void) | null = null;
 	// When anything was last heard on the current socket (or it opened).
 	let lastHeardAt = Date.now();
+	// Set when the tab becomes visible onto a stale socket: no close before this
+	// time. See checkSilence.
+	let graceUntil = 0;
+	let graceTimer: ReturnType<typeof setTimeout> | null = null;
 	let stopped = false;
 	let retryDelay = 1000; // ms; doubles on each failed attempt, capped at 30s
 	// Pending reconnect timer, so a returning player can pre-empt it (see
@@ -424,10 +438,7 @@ export function createConnection(
 	// worth making; spending it every 5s into a sleeping tab is not.
 	function onVisibility() {
 		if (stopped || document.visibilityState !== 'visible') return;
-		// First, because it may close a dead socket: the pending-retry check just
-		// below then sees the retry that closing scheduled and reconnects at once,
-		// which is what a player returning to a stale table wants.
-		checkSilence();
+		startGraceIfStale();
 		retryDelay = 1000;
 		// Only when a retry is actually pending: if the socket is OPEN
 		// there's nothing to do, and if it's CONNECTING an attempt is
@@ -451,9 +462,25 @@ export function createConnection(
 	function checkSilence() {
 		if (stopped || document.visibilityState !== 'visible') return;
 		if (ws?.readyState !== WebSocket.OPEN) return;
-		if (Date.now() - lastHeardAt < HEARTBEAT_SILENCE_MS) return;
+		const now = Date.now();
+		if (now < graceUntil) return; // a returning player's socket is still proving itself
+		if (now - lastHeardAt < HEARTBEAT_SILENCE_MS) return;
 		console.log('[ws] nothing heard for a long while — closing the socket');
 		dropCurrent?.();
+	}
+	// On the tab becoming visible: if the socket looks stale, hold off for
+	// HEARTBEAT_GRACE_MS and then check again. Any frame arriving meanwhile
+	// refreshes lastHeardAt, so that check passes; none, and it closes the socket.
+	// The timer matters: without it the next 5s tick could be up to 5s later still.
+	function startGraceIfStale() {
+		if (stopped || ws?.readyState !== WebSocket.OPEN) return;
+		if (Date.now() - lastHeardAt < HEARTBEAT_SILENCE_MS) return;
+		graceUntil = Date.now() + HEARTBEAT_GRACE_MS;
+		if (graceTimer !== null) clearTimeout(graceTimer);
+		graceTimer = setTimeout(() => {
+			graceTimer = null;
+			checkSilence();
+		}, HEARTBEAT_GRACE_MS);
 	}
 	const silenceTimer = setInterval(checkSilence, HEARTBEAT_CHECK_MS);
 
@@ -568,6 +595,7 @@ export function createConnection(
 				sock.close();
 				return;
 			}
+			lastHeardAt = Date.now();
 			console.log('[ws] connected');
 			// No backoff reset here: an open socket proves nothing until its
 			// resync has landed (below). A server that accepts sockets but fails
@@ -669,6 +697,10 @@ export function createConnection(
 			}
 			settleAttempts();
 			clearInterval(silenceTimer);
+			if (graceTimer !== null) {
+				clearTimeout(graceTimer);
+				graceTimer = null;
+			}
 			window.removeEventListener('uneasy:typing', onTyping);
 			window.removeEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
 			window.removeEventListener('uneasy:prepare_plan_draft', onPreparePlanDraft);
