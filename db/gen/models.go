@@ -188,6 +188,11 @@ type Marginalium struct {
 	Title    *string            `db:"title" json:"title"`
 }
 
+type OpsBackupStatus struct {
+	ID            bool               `db:"id" json:"id"`
+	LastSuccessAt pgtype.Timestamptz `db:"last_success_at" json:"last_success_at"`
+}
+
 type PasswordResetToken struct {
 	TokenHash string             `db:"token_hash" json:"token_hash"`
 	AccountID int64              `db:"account_id" json:"account_id"`
