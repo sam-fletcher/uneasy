@@ -23,8 +23,10 @@ Discord alerts (the same webhook as feedback) now cover those gaps. New package
 - **Backup overdue.** Migration 059 adds `ops_backup_status` (one row, enforced
   by a `CHECK (id)` boolean primary key). The last step of `db-backup.yml`
   upserts `now()` into it with the existing `PROD_DATABASE_URL`. `ops.BackupWatch`
-  runs inside the existing 30-minute notify tick and does real work once a day:
-  it posts if the row is more than 8 days old, once a day while it stays so. No
+  runs inside the existing 30-minute notify tick and does real work only on ticks in
+  the 12:00 UTC hour, once per day (a fixed hour, because an in-memory "24 hours
+  since last check" resets on every redeploy and would repeat the message): it
+  posts if the row is more than 8 days old, at most one message a day. No
   row yet means quiet. It adds **no** database wake-ups, because the tick already
   queries every 30 minutes (so there was nothing to ask the owner about).
 - `handler.PostOpsAlert` posts in a goroutine under the existing 5-second
@@ -82,6 +84,15 @@ Decisions of mine, not ruled on:
 ## Open questions for the owner
 
 None.
+
+## Known limits (reviewed, accepted)
+
+- Alert posts run in separate goroutines, so two messages raised close together
+  (failing, then recovered) can arrive out of order.
+- The one-an-hour limit is shared across outages, so a second outage within an
+  hour of the first's message is not announced until the hour is up.
+- Neon's occasional maintenance restart gives one "failing" and one "recovered"
+  message (SQLSTATE 57P01); expected, noted in OPERATIONS.md.
 
 ## Noticed, not fixed
 

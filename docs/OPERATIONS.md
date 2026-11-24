@@ -50,6 +50,10 @@ gap without waking the database.
   with no traffic there is nothing to notice. A quiet table can therefore have
   an outage that only shows up at the next request or at the next 30-minute
   notify tick.
+- **Expected now and then:** Neon occasionally restarts a compute for
+  maintenance. A query in flight at that moment fails with SQLSTATE 57P01
+  (admin shutdown), which produces one "failing" and one "recovered" message a
+  few seconds apart. That is normal; don't chase it.
 - **What to do:** read the error in the message. Quota or suspended: check the
   Neon dashboard. Then `psql "$PROD_DATABASE_URL"` to confirm.
 - **Not covered:** a server that can't reach the database at startup exits
@@ -59,15 +63,17 @@ gap without waking the database.
 ### "Database backup overdue"
 
 - **Fires** when the last successful run of the weekly backup
-  (`.github/workflows/db-backup.yml`) is more than 8 days old. Once a day while
-  it stays overdue.
+  (`.github/workflows/db-backup.yml`) is more than 8 days old. At most one
+  message a day while it stays overdue.
 - **Why it exists:** GitHub switches scheduled workflows off after about 60
   days without repository activity, and a switched-off workflow can't report
   that it stopped. So the workflow's last step records its finish time in the
   production database (`ops_backup_status`, one row), and the server reads it.
-- **How it runs:** once a day, inside the existing 30-minute notify tick
-  (`ops/backupwatch.go`): the tick was already waking the database, so this adds
-  no extra wake-up.
+- **How it runs:** inside the existing 30-minute notify tick
+  (`ops/backupwatch.go`), only on ticks between 12:00 and 12:59 UTC and at most
+  once per day: the tick was already waking the database, so this adds no extra
+  wake-up. The fixed hour (rather than "24 hours since boot") is what stops a
+  redeploy from repeating the message; only a restart inside that hour can.
 - **Quiet when:** no backup has ever written the row (fresh database, or the
   first run after this shipped hasn't happened yet).
 - **What to do:** GitHub → Actions → db-backup. If it says the workflow is

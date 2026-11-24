@@ -439,8 +439,9 @@ says what to do about each:
   the pgx pool sees every query and connection attempt, so failures are noticed
   without any query of the monitor's own. One message at the first failure, at most
   one an hour while it continues, one on recovery.
-- **Backup overdue** (`ops/backupwatch.go`): checked once a day from the notify
-  ticker, so it adds no database wake-ups.
+- **Backup overdue** (`ops/backupwatch.go`): checked from the notify ticker in the
+  12:00 UTC hour, at most one message a day, so it adds no database wake-ups and
+  a redeploy can't repeat it.
 
 Neither runs a query to find out whether the database is up: anything that did
 would keep Neon awake. In dev, `DISCORD_WEBHOOK_URL` is unset and the messages

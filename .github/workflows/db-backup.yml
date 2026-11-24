@@ -48,7 +48,11 @@ jobs:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         # postgres:17 client can dump 16 and 17 servers; the local compose
         # stack runs 16 and Neon defaults to 17, so 17 covers both futures.
+        # pipefail: without it a failed pg_dump piped into gzip still exits 0
+        # (gzip succeeds on empty input), and the final step would record a
+        # broken backup as good.
         run: |
+          set -o pipefail
           docker run --rm -e DATABASE_URL postgres:17-alpine \
             pg_dump --no-owner --no-privileges "$DATABASE_URL" \
             | gzip > dump.sql.gz
