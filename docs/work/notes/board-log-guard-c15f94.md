@@ -25,14 +25,20 @@ new action-log row, the test fails and names the route and the change
 - **Allow-list:** `silentBoardRoutes`, keyed `"METHOD /path"` with numeric
   segments as `{id}`, each entry with a reason and optionally narrowed to
   snapshot kinds. **It is empty today** — see below.
+- **Can't switch off silently:** a request through `serveGuarded` with no
+  database pool fails the test, and a `TestMain` fails a full (unfiltered)
+  integration run in which no request was guarded.
 - **Self-test:** `TestBoardGuardCatchesASilentChange` proves a silent change
   fails, the same change with a post passes, and an allow-list entry is
   honoured only for its listed kinds.
 - **What is snapshotted:** assets (owner, `is_destroyed`, `is_main_character`,
   name), marginalia (position, text, title, `is_torn`), secrets (existence and
   `is_revealed`, never text), rankings (player/category/rank), laws (text,
-  addendum, `is_active`), rumors (text, target asset, `is_active`).
-- **Left out, and why:** `is_leveraged` (a token flipped on every roll and
+  addendum, `is_active`), rumors (text, target asset, `is_active`),
+  `players.shake_up_tokens`, `plan_tokens`, `banked_dice` (holder, source,
+  spent) and `shake_up_spends`.
+- **Left out, and why:** `player_cards` (a dealt hand is private, and dealing it
+  is setup, not story); `is_leveraged` (a token flipped on every roll and
   refresh, not story); `secret_visibility` and secret text (access, and text is
   gated); plans, dice rolls, wars, duels, scenes and `games` (current_row, phase)
   rows (the machinery — each posts through its own code, and what it does to the
@@ -82,6 +88,10 @@ Limits of the guard worth knowing before relying on it:
 - **Only requests sent through the wired harnesses are checked.** Setup done
   directly through `q.` calls, and the account/lobby/feedback/activity tests, are
   not. A new harness must call `serveGuarded` in place of `router.ServeHTTP`.
+- **Direct-call effect tests skip the guard**: `shake_up_effects_`,
+  `asset_effects_` and `plan_aftermath_integration_test.go` apply effects by
+  calling helpers, not requests. Shake-Up effects are mostly checked that way.
+  Both follow-ups are filed as `next/log-guard-followups.md` (ideas, not approved).
 - A failing request that rolled its writes back leaves no change and is not
   flagged; one that half-wrote then errored is, which is intended.
 

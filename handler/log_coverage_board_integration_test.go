@@ -19,9 +19,15 @@
 //	rankings    which player holds which rank in each category (track positions)
 //	laws        text, addendum, is_active
 //	rumors      text, target asset, is_active
+//	players     shake_up_tokens
+//	plan_tokens which plan a player's token for a plan type sits on
+//	banked_dice who holds a banked die, its source, whether it is spent
+//	shake_up_spends  each Shake-Up spend (player, category, option, target)
 //
 // # What it deliberately leaves out
 //
+//   - player_cards: a player's dealt hand is private, and dealing it is setup,
+//     not a story event.
 //   - is_leveraged: a token that flips on every roll and refresh; the roll and
 //     refresh routes narrate it themselves, and it isn't story.
 //   - secret_visibility and secret text: who may read a secret is access, not
@@ -53,12 +59,15 @@ package handler
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -125,6 +134,17 @@ UNION ALL
 SELECT game_id, 'law', id, format('text=%s addendum=%s active=%s', text, coalesce(addendum, ''), is_active) FROM laws
 UNION ALL
 SELECT game_id, 'rumor', id, format('text=%s target_asset=%s active=%s', text, coalesce(target_asset_id::text, 'none'), is_active) FROM rumors
+UNION ALL
+SELECT game_id, 'shake_up_tokens', id, format('player=%s tokens=%s', id, shake_up_tokens) FROM players
+UNION ALL
+SELECT game_id, 'plan_token', id, format('plan_type=%s player=%s plan=%s', plan_type, player_id, plan_id) FROM plan_tokens
+UNION ALL
+SELECT game_id, 'banked_die', id, format('player=%s source=%s used=%s', player_id, source, used_at IS NOT NULL) FROM banked_dice
+UNION ALL
+SELECT game_id, 'shake_up_spend', id,
+       format('player=%s category=%s option=%s asset=%s target_player=%s', player_id, category, option_key,
+              coalesce(target_asset_id::text, 'none'), coalesce(target_player_id::text, 'none'))
+  FROM shake_up_spends
 UNION ALL
 SELECT game_id, 'post', 0, count(*)::text FROM scene_posts WHERE system_code IS NOT NULL GROUP BY game_id
 `
@@ -196,13 +216,8 @@ func diffBoards(before, after boardSnapshot) map[int64][]boardChange {
 	return out
 }
 
-// boardGuardOff is the escape hatch for a test that must drive a route in a
-// state no player could reach — set it for the duration of one test, never
-// globally.
-var boardGuardOff bool
-
 // guardedRequests counts the requests the guard has bracketed (diagnostics).
-var guardedRequests int
+var guardedRequests atomic.Int64
 
 // boardT is the slice of *testing.T the guard uses, so the guard's own test can
 // watch it fail without failing itself.
@@ -217,11 +232,17 @@ type boardT interface {
 // changes the board and posts nothing fails the test that sent it.
 func serveGuarded(t boardT, router http.Handler, rec *httptest.ResponseRecorder, req *http.Request) {
 	t.Helper()
-	if boardGuardOff || harnessPool == nil || req.Method == http.MethodGet || req.Method == http.MethodHead {
+	if req.Method == http.MethodGet || req.Method == http.MethodHead {
 		router.ServeHTTP(rec, req)
 		return
 	}
-	guardedRequests++
+	// A harness reaches here only after openTestDB, which sets harnessPool. If it
+	// is nil the guard would silently do nothing, so fail instead.
+	if harnessPool == nil {
+		t.Errorf("board guard: harnessPool is nil, so this request would go unchecked; open the database with openTestDB first")
+		t.FailNow()
+	}
+	guardedRequests.Add(1)
 	ctx := context.Background()
 	before, err := takeBoardSnapshot(ctx)
 	require.NoError(t, err, "board guard: snapshot before")
@@ -316,4 +337,20 @@ func createBoardPeer(t *testing.T, q *dbgen.Queries, tg testGame) int64 {
 	})
 	require.NoError(t, err)
 	return a.ID
+}
+
+// TestMain fails a full integration run in which the guard never ran, so a
+// change that stops the harnesses reaching serveGuarded can't leave every test
+// green while the guard does nothing. A filtered run (-run) or one with no
+// database is exempt: it may legitimately touch no guarded route.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if code == 0 && harnessPool != nil && guardedRequests.Load() == 0 {
+		if f := flag.Lookup("test.run"); f == nil || f.Value.String() == "" {
+			fmt.Fprintln(os.Stderr, "board guard: a full integration run guarded no requests; "+
+				"serveGuarded is no longer reached from the harnesses")
+			code = 1
+		}
+	}
+	os.Exit(code)
 }
