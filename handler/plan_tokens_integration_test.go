@@ -53,7 +53,7 @@ func TestListPlanTokens(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/tables/"+strconv.FormatInt(tg.Game.ID, 10)+"/plan-tokens", nil)
 	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	serveGuarded(t, r, rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 

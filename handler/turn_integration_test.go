@@ -82,7 +82,7 @@ func TestPassFocus_TwoPlansOnRow_DoesNotAdvancePastUnresolvedPlan(t *testing.T) 
 	req := httptest.NewRequest("POST", path, nil)
 	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	serveGuarded(t, r, rec, req)
 	require.Equalf(t, http.StatusOK, rec.Code, "pass-focus failed: %s", rec.Body.String())
 
 	// Assert: focus passed, row held, second plan kicked off.

@@ -68,8 +68,9 @@ Each has burned this project before; the memory index has the detail.
   Render it both ways in a test.
 - **Every state change posts to the action log**, including purely narrative
   effects. Raw effect helpers broadcast a WebSocket event but post nothing —
-  pair them with an emitter (`handler/log_coverage_test.go` guards this).
-  Anchor posts with `logRow(game)`.
+  pair them with an emitter (`handler/log_coverage_test.go` guards this
+  statically; the integration harnesses also fail any request that changes the
+  board and posts nothing). Anchor posts with `logRow(game)`.
 - **Who must act:** a new wait must be wired into `ComputeRowState`,
   `ResolvingWaitees` and `frontend/src/lib/waitingOn.ts`. `ResolvingWaitees`
   *adds to* the acting set; it doesn't replace it.

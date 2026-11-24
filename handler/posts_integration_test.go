@@ -88,7 +88,7 @@ func (h *postsHarness) do(method string, playerIdx int, path string, body any) (
 		req.Header.Set("Content-Type", "application/json")
 	}
 	rec := httptest.NewRecorder()
-	h.router.ServeHTTP(rec, req)
+	serveGuarded(h.t, h.router, rec, req)
 	out := map[string]any{}
 	if rec.Body.Len() > 0 {
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)

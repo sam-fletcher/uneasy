@@ -103,7 +103,7 @@ func (h *shakeUpRollsHarness) do(t *testing.T, playerIdx int, method, path strin
 		req.Header.Set("Content-Type", "application/json")
 	}
 	rec := httptest.NewRecorder()
-	h.router.ServeHTTP(rec, req)
+	serveGuarded(t, h.router, rec, req)
 	out := map[string]any{}
 	if rec.Body.Len() > 0 {
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)

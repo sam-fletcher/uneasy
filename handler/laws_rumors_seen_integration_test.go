@@ -84,7 +84,7 @@ func (h *lawsRumorsHarness) do(method string, idx int, path string, body any) (i
 		req.Header.Set("Content-Type", "application/json")
 	}
 	rec := httptest.NewRecorder()
-	h.router.ServeHTTP(rec, req)
+	serveGuarded(h.t, h.router, rec, req)
 	return rec.Code, rec.Body.Bytes()
 }
 
@@ -232,7 +232,7 @@ func TestMarkSeen_RefusesANonMember(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, h.table("/seen/laws"), bytes.NewReader([]byte(`{"seen_rev":1}`)))
 	req.AddCookie(&http.Cookie{Name: appMiddleware.SessionCookie, Value: tok})
 	rec := httptest.NewRecorder()
-	h.router.ServeHTTP(rec, req)
+	serveGuarded(h.t, h.router, rec, req)
 	require.Contains(t, []int{http.StatusForbidden, http.StatusNotFound}, rec.Code)
 }
 

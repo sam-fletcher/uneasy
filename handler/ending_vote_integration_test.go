@@ -86,7 +86,7 @@ func (h *voteHarness) as(t *testing.T, actor dbgen.Player, method, path string, 
 	req := httptest.NewRequest(method, path, reader)
 	req.AddCookie(&http.Cookie{Name: "player_token", Value: tok})
 	rec := httptest.NewRecorder()
-	h.router.ServeHTTP(rec, req)
+	serveGuarded(t, h.router, rec, req)
 	return rec
 }
 
