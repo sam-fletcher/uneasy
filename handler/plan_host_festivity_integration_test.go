@@ -226,7 +226,6 @@ func TestHostFestivity_InsistBreakSelf_HostResolves(t *testing.T) {
 	// The mar is unchosen — the host has yet to pick, and nothing was torn.
 	state := hfChallengeState(t, h, plan.ID)
 	assert.Equal(t, []int64{h.tg.Players[g1].ID}, state.UnchosenHostMars, "insist queues an unchosen mar")
-	assert.Empty(t, state.PendingHostMars, "no option is recorded: the host hasn't chosen")
 	assert.Empty(t, state.HostMarInsists, "nothing counts as inflicted until the host chooses")
 	for _, id := range hostMargIDs {
 		m, err := h.q.GetMarginaliaByID(ctx, id)
@@ -1145,11 +1144,9 @@ func TestHostFestivity_HostChoosesInsistedMar_AppliesToHost(t *testing.T) {
 	})
 }
 
-// TestHostFestivity_ResolveHostMar_Guards pins the route's refusals and the
-// legacy path kept for games already in flight.
+// TestHostFestivity_ResolveHostMar_Guards pins the route's refusals.
 func TestHostFestivity_ResolveHostMar_Guards(t *testing.T) {
 	h := newPlanLifecycle(t, 3)
-	ctx := context.Background()
 	plan, hostIdx := hfPrepareToSocializing(t, h)
 	g1 := (hostIdx + 1) % len(h.tg.Players)
 	g1ID := h.tg.Players[g1].ID
@@ -1172,28 +1169,14 @@ func TestHostFestivity_ResolveHostMar_Guards(t *testing.T) {
 	})
 	require.Equalf(t, http.StatusConflict, code, "answering an insistence nobody made: %v", body)
 
-	// LEGACY: a game in flight holds a mar the old insister picked, as a bare option
-	// in pending_host_mars. It still settles with no insister_id, needs a
-	// host-resolved option, and is not double-counted as inflicted.
-	_, margIDs := hfSeedMCMarginalia(t, h, hostIdx, 2)
-	reloaded, err := h.q.GetPlanByID(ctx, plan.ID)
-	require.NoError(t, err)
-	rd := loadResolutionData(reloaded.ResolutionData)
-	st := rd.EnsureFestivity()
-	st.UnchosenHostMars = nil
-	st.PendingHostMars = []string{gamepkg.FestivityMarBreakSelf}
-	require.NoError(t, saveResolutionData(ctx, h.q, plan.ID, rd))
-
+	// A settle with no insister_id is refused: the host names whose insistence
+	// they are answering, and nothing is recorded.
 	code, body = h.post(hostIdx, resolve, map[string]any{"mar_option": "accept_duels"})
-	require.Equalf(t, http.StatusBadRequest, code, "legacy path only settles asset-pick mars: %v", body)
-	code, body = h.post(hostIdx, resolve, map[string]any{"mar_option": "break_self", "marginalia_id": margIDs[0]})
-	require.Equalf(t, http.StatusOK, code, "legacy settle: %v", body)
+	require.Equalf(t, http.StatusBadRequest, code, "a settle with no insister_id: %v", body)
+	assert.Contains(t, body["error"], "insister_id is required")
 	state := hfChallengeState(t, h, plan.ID)
-	assert.Empty(t, state.PendingHostMars)
-	assert.Empty(t, state.HostMarInsists, "a legacy mar was already recorded when it was insisted")
-	torn, err := h.q.GetMarginaliaByID(ctx, margIDs[0])
-	require.NoError(t, err)
-	assert.True(t, torn.IsTorn)
+	assert.Equal(t, []int64{g1ID}, state.UnchosenHostMars, "the refused settle leaves the insistence waiting")
+	assert.Empty(t, state.HostMarInsists, "the refused settle records no mar")
 }
 
 // TestHostFestivity_InsistedMarKeepsHostInWaitingBar proves the bar names the host

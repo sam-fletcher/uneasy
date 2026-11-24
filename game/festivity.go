@@ -94,7 +94,6 @@ type FestivityResolutionData struct {
 	GuestIOUs            []int64           `json:"guest_ious,omitempty"`         // players who succeeded and may still inflict a mar on the host
 	HostMarInsists       []string          `json:"host_mar_insists,omitempty"`   // mar options inflicted on the host
 	UnchosenHostMars     []int64           `json:"unchosen_host_mars,omitempty"` // guests (by id) who insisted the host take a mar, whose option the host hasn't chosen yet — one entry per consumed IOU, in insist order
-	PendingHostMars      []string          `json:"pending_host_mars,omitempty"`  // LEGACY: a mar option chosen by the insisting guest (the pre-2026-10-28 flow) that still awaits the host's asset pick (break_self / disagreement). New insists never write here; it survives only so a game in flight across the change can finish.
 	AcceptDuels          []int64           `json:"accept_duels,omitempty"`       // player IDs with accept_duels flag
 	PendingDuelPlanID    *int64            `json:"pending_duel_plan_id,omitempty"`
 	PendingChallenge     *PendingChallenge `json:"pending_challenge,omitempty"`
@@ -106,18 +105,6 @@ type FestivityResolutionData struct {
 	// parked in the center (adr/DRAFT_PEERS_AND_BLANK_ASSETS_PLAN.md, D4/D7).
 	// Players see one list: the UI merges these with CenteredAssetIDs.
 	CenteredDrafts []DraftPeer `json:"centered_drafts,omitempty"`
-}
-
-// MarNeedsHostResolution reports whether a mar option hinges on a choice about
-// the host's OWN asset — which marginalia to tear (break_self), which peer falls
-// out (disagreement) — rather than applying from the option alone. Only the
-// owner can make that call. It is what the legacy PendingHostMars queue holds.
-func MarNeedsHostResolution(marOption string) bool {
-	switch marOption {
-	case FestivityMarBreakSelf, FestivityMarDisagreement:
-		return true
-	}
-	return false
 }
 
 // ConsumeUnchosenHostMar removes insisterID's unchosen mar once the host has
@@ -133,22 +120,9 @@ func (s *FestivityResolutionData) ConsumeUnchosenHostMar(insisterID int64) bool 
 }
 
 // HostMarsOwed counts the insisted mars the host still has to settle: those
-// whose option they haven't chosen, plus legacy ones chosen by the insister but
-// not yet landed on an asset.
+// whose option they haven't chosen yet.
 func (s *FestivityResolutionData) HostMarsOwed() int {
-	return len(s.UnchosenHostMars) + len(s.PendingHostMars)
-}
-
-// RemovePendingHostMar removes one queued occurrence of marOption from the
-// host's pending list and reports whether one was found.
-func (s *FestivityResolutionData) RemovePendingHostMar(marOption string) bool {
-	for i, m := range s.PendingHostMars {
-		if m == marOption {
-			s.PendingHostMars = append(s.PendingHostMars[:i], s.PendingHostMars[i+1:]...)
-			return true
-		}
-	}
-	return false
+	return len(s.UnchosenHostMars)
 }
 
 // LoadFestivityData is a read-only convenience that parses a plan's
