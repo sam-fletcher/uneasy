@@ -43,12 +43,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uneasy/db"
 	"uneasy/handler"
 	"uneasy/hub"
 	appMiddleware "uneasy/middleware"
+	"uneasy/ops"
 )
 
 // compressLevel is the gzip level for API JSON and static assets. 5 is the
@@ -166,11 +168,16 @@ func runServer(
 		return fmt.Errorf("parse database url: %w", err)
 	}
 	poolCfg.MaxConnIdleTime = poolMaxConnIdleTime
+	// Database-failure alert (docs/OPERATIONS.md "Alerts"): a tracer on the pool
+	// sees every query and every connection attempt, so there is one place to
+	// notice the database failing and nothing extra is ever asked of it. In dev
+	// it also forwards to the per-request statement counter for the "db trace"
+	// log lines (dev only: production has no counter).
+	dbTracer := ops.DBTracer{Monitor: ops.NewDBMonitor(time.Now, handler.PostOpsAlert)}
 	if devMode || devRoutesEnabled() {
-		// Per-request statement counting for the "db trace" log lines. Dev
-		// only: production gets no tracer at all, not even a no-op one.
-		poolCfg.ConnConfig.Tracer = appMiddleware.QueryTracer{}
+		dbTracer.Inner = appMiddleware.QueryTracer{}
 	}
+	poolCfg.ConnConfig.Tracer = dbTracer
 	dbPool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
@@ -196,7 +203,7 @@ func runServer(
 		logger.Info("expired sessions cleaned up")
 	}
 	go expireSessionsDaily(logger, store)
-	go notifyTicker(logger, store)
+	go notifyTicker(logger, store, newBackupWatch(logger, store))
 
 	manager := hub.NewManager()
 
@@ -766,11 +773,34 @@ const notifyTickInterval = 30 * time.Minute
 // life of the process, the same reconcile+send pass every tick — no
 // separate hooks in mutation handlers to keep in sync (see the plan's
 // rationale).
-func notifyTicker(logger *slog.Logger, store *db.Store) {
+//
+// The daily backup-overdue check rides on the same tick (ops.BackupWatch): the
+// tick already wakes the database, so the check adds no wake-up of its own.
+func notifyTicker(logger *slog.Logger, store *db.Store, backups *ops.BackupWatch) {
 	ticker := time.NewTicker(notifyTickInterval)
 	defer ticker.Stop()
 	for range ticker.C {
 		handler.RunNotificationTick(context.Background(), store, logger)
+		backups.Tick(context.Background())
+	}
+}
+
+// newBackupWatch wires the backup-overdue check to the database and Discord.
+func newBackupWatch(logger *slog.Logger, store *db.Store) *ops.BackupWatch {
+	return &ops.BackupWatch{
+		Fetch: func(ctx context.Context) (time.Time, bool, error) {
+			ts, err := store.Q.GetBackupLastSuccess(ctx)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return time.Time{}, false, nil
+			}
+			if err != nil {
+				return time.Time{}, false, err
+			}
+			return ts.Time, true, nil
+		},
+		Now:  time.Now,
+		Post: handler.PostOpsAlert,
+		Log:  logger,
 	}
 }
 
