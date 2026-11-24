@@ -22,6 +22,67 @@ already have it exported) and connect directly:
 psql "$DATABASE_URL"
 ```
 
+## Alerts: what reaches Discord, and what to do
+
+The server posts to the same Discord channel that gets feedback and
+reset requests (`DISCORD_WEBHOOK_URL`). It never emails or pages anyone else.
+Two health alerts exist; each is described by what you'll see, why it exists
+and what to do.
+
+`/healthz` stays database-free on purpose (Neon bills awake time, so a probe
+that queried the database would exhaust the free compute cap mid-month), which
+means the uptime pinger cannot see a database outage. These alerts cover that
+gap without waking the database.
+
+### "Database failing" / "Database recovered"
+
+- **Fires** when requests to the database start failing: connection refused,
+  Neon suspended or over its quota, "too many connections", a server shutdown.
+  Ordinary results from a working database (a missing row, a duplicate
+  username) never count.
+- **Rate:** one message on the first failure; while it keeps failing, at most
+  one more an hour ("still failing", with how long and how many requests); one
+  "recovered" message on the first request that works again. A database that
+  flaps on and off still produces at most one failure message an hour.
+- **How it knows:** a tracer on the connection pool (`ops/tracer.go`) watches
+  every query and connection attempt the app makes anyway. It never queries
+  the database itself, so it costs nothing while the database is idle, and
+  with no traffic there is nothing to notice. A quiet table can therefore have
+  an outage that only shows up at the next request or at the next 30-minute
+  notify tick.
+- **Expected now and then:** Neon occasionally restarts a compute for
+  maintenance. A query in flight at that moment fails with SQLSTATE 57P01
+  (admin shutdown), which produces one "failing" and one "recovered" message a
+  few seconds apart. That is normal; don't chase it.
+- **What to do:** read the error in the message. Quota or suspended: check the
+  Neon dashboard. Then `psql "$PROD_DATABASE_URL"` to confirm.
+- **Not covered:** a server that can't reach the database at startup exits
+  rather than serving, so an alert posted at that moment is unlikely to get out. Railway's own
+  crash notifications are the signal for that.
+
+### "Database backup overdue"
+
+- **Fires** when the last successful run of the weekly backup
+  (`.github/workflows/db-backup.yml`) is more than 8 days old. At most one
+  message a day while it stays overdue.
+- **Why it exists:** GitHub switches scheduled workflows off after about 60
+  days without repository activity, and a switched-off workflow can't report
+  that it stopped. So the workflow's last step records its finish time in the
+  production database (`ops_backup_status`, one row), and the server reads it.
+- **How it runs:** inside the existing 30-minute notify tick
+  (`ops/backupwatch.go`), only on ticks between 12:00 and 12:59 UTC and at most
+  once per day: the tick was already waking the database, so this adds no extra
+  wake-up. The fixed hour (rather than "24 hours since boot") is what stops a
+  redeploy from repeating the message; only a restart inside that hour can.
+- **Quiet when:** no backup has ever written the row (fresh database, or the
+  first run after this shipped hasn't happened yet).
+- **What to do:** GitHub → Actions → db-backup. If it says the workflow is
+  disabled, enable it, then **Run workflow** once; that run writes a new time and
+  the alert stops. See the restore instructions at the top of the workflow if
+  you also need a dump. To see the row: `SELECT * FROM ops_backup_status;`.
+- **Same gap elsewhere:** the nightly e2e workflow has the same 60-day
+  switch-off and nothing alerts on it (tracked separately).
+
 ## List accounts
 
 ```sql

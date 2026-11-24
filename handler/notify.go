@@ -82,13 +82,39 @@ func NotifyDiscord(kind model.FeedbackKind, username, gameLabel, route, body, co
 		return
 	}
 
-	payload, err := json.Marshal(map[string]string{"content": msg})
+	sendDiscordContent(ctx, discordWebhookURL, msg)
+}
+
+// PostOpsAlert sends a server-health message (the database-failing and
+// backup-overdue alerts, package ops) to the same Discord webhook. It returns
+// at once: the post runs in its own goroutine under discordPostTimeout, so a
+// slow or unreachable Discord can never hold up the request or ticker that
+// raised the alert. With no webhook configured (dev) the message is logged.
+func PostOpsAlert(msg string) {
+	msg = truncateRunes(msg, discordMessageCap)
+	url := discordWebhookURL
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), discordPostTimeout)
+		defer cancel()
+		if url == "" {
+			slog.Default().WarnContext(ctx, "ops alert (DISCORD_WEBHOOK_URL unset)", "message", msg)
+			return
+		}
+		sendDiscordContent(ctx, url, msg)
+	}()
+}
+
+// sendDiscordContent POSTs one message to a webhook URL. Best effort: failures
+// are logged, never returned, and nothing is retried.
+func sendDiscordContent(ctx context.Context, url, content string) {
+	logger := slog.Default()
+	payload, err := json.Marshal(map[string]string{"content": content})
 	if err != nil {
 		logger.ErrorContext(ctx, "discord notify: encode payload", "err", err)
 		return
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, discordWebhookURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		logger.ErrorContext(ctx, "discord notify: build request", "err", err)
 		return
