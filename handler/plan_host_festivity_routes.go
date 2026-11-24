@@ -86,10 +86,9 @@ func hfChosenMarPhrase(marOption string) string {
 	return "a mar"
 }
 
-// hfSettleHostMar clears the obligation a resolve-host-mar call just met. A
-// legacy entry (insisterID 0: the insisting guest picked the option, before the
-// host chose) is dropped from PendingHostMars; a current one leaves the
-// unchosen queue and is recorded as inflicted, logging the host's choice.
+// hfSettleHostMar clears the obligation a resolve-host-mar call just met: the
+// insistence leaves the unchosen queue and the mar is recorded as inflicted,
+// logging the host's choice.
 func hfSettleHostMar(
 	ctx context.Context,
 	deps *PlanDeps,
@@ -98,10 +97,6 @@ func hfSettleHostMar(
 	insisterID int64,
 	marOption string,
 ) {
-	if insisterID == 0 {
-		state.RemovePendingHostMar(marOption)
-		return
-	}
 	state.ConsumeUnchosenHostMar(insisterID)
 	state.HostMarInsists = append(state.HostMarInsists, marOption)
 	hfLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
@@ -117,11 +112,7 @@ func hfSettleHostMar(
 // options to take (insister_id names which insistence they are answering) and
 // supplies whatever that option needs — rumor text, which peer falls out, which
 // marginalia to tear. Host-only: a mar dealt to the host is the host's call.
-//
-// A request with no insister_id settles a legacy entry instead: a mar the
-// *guest* chose under the old flow, which sits in PendingHostMars awaiting only
-// the host's asset pick (break_self / disagreement). It is kept so a game in
-// flight across the change can finish.
+// insister_id is required: a request without it is refused.
 //
 
 func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
@@ -148,13 +139,16 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 			respondErr(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		if !gamepkg.IsValidFestivityMarOption(body.MarOption) {
-			respondErr(w, http.StatusBadRequest, "invalid mar option")
+		if body.InsisterID == 0 {
+			respondErr(
+				w,
+				http.StatusBadRequest,
+				"insister_id is required: name the guest whose insistence you are answering",
+			)
 			return
 		}
-		legacy := body.InsisterID == 0
-		if legacy && !gamepkg.MarNeedsHostResolution(body.MarOption) {
-			respondErr(w, http.StatusBadRequest, "that mar is not one the host resolves")
+		if !gamepkg.IsValidFestivityMarOption(body.MarOption) {
+			respondErr(w, http.StatusBadRequest, "invalid mar option")
 			return
 		}
 
@@ -176,11 +170,7 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		if hfBlockOnActiveRoll(w, state, roster, player.ID) {
 			return
 		}
-		if legacy && !slices.Contains(state.PendingHostMars, body.MarOption) {
-			respondErr(w, http.StatusConflict, "you have no such mar to resolve")
-			return
-		}
-		if !legacy && !slices.Contains(state.UnchosenHostMars, body.InsisterID) {
+		if !slices.Contains(state.UnchosenHostMars, body.InsisterID) {
 			respondErr(w, http.StatusConflict, "no insistence from that guest is waiting on your choice")
 			return
 		}
@@ -229,7 +219,6 @@ func hfResolveHostMarHandler(deps *PlanDeps) http.HandlerFunc {
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
 			"plan_id":            plan.ID,
-			"pending_host_mars":  state.PendingHostMars,
 			"unchosen_host_mars": state.UnchosenHostMars,
 		})
 	}

@@ -82,7 +82,6 @@
 			guestIOUs: f.guest_ious ?? [],
 			hostMarInsists: f.host_mar_insists ?? [],
 			unchosenHostMars: f.unchosen_host_mars ?? [],
-			pendingHostMars: f.pending_host_mars ?? [],
 			acceptDuels: f.accept_duels ?? [],
 			pendingDuelPlanID: f.pending_duel_plan_id ?? null,
 			pendingChallenge: f.pending_challenge ?? null,
@@ -248,12 +247,10 @@
 				<HostChoosing {plan} {fest} {players} {assets} {blockedByOtherRoll} {activeRollerID} {onPlansChanged} />
 			{/if}
 
-			{#if isResolving && amStepActor && !fest.pendingChallenge
-				&& fest.unchosenHostMars.length + fest.pendingHostMars.length > 0}
+			{#if isResolving && amStepActor && !fest.pendingChallenge && fest.unchosenHostMars.length > 0}
 				<HostPendingMar
 					{plan} {players} {assets} {blockedByOtherRoll} {activeRollerID}
 					unchosenHostMars={fest.unchosenHostMars}
-					pendingHostMars={fest.pendingHostMars}
 					{onPlansChanged}
 				/>
 			{/if}

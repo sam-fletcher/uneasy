@@ -24,9 +24,6 @@ export interface FestivityResolutionData {
 	host_mar_insists?: string[];
 	/** Guests who insisted the host take a mar the host hasn't chosen yet. */
 	unchosen_host_mars?: number[];
-	/** Legacy: a mar the insisting guest chose (pre-2026-10-28 flow), awaiting
-	 *  only the host's asset pick. Only games in flight across the change hold it. */
-	pending_host_mars?: string[];
 	accept_duels?: number[];
 	pending_duel_plan_id?: number | null;
 	pending_challenge?: PendingChallenge | null;

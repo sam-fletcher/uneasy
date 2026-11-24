@@ -37,7 +37,6 @@ function fest(over: Partial<FestRes> = {}): FestRes {
 		guestIOUs: [],
 		hostMarInsists: [],
 		unchosenHostMars: [],
-		pendingHostMars: [],
 		acceptDuels: [],
 		pendingDuelPlanID: null,
 		pendingChallenge: null,
@@ -154,7 +153,5 @@ describe('festivityEndable', () => {
 		expect(festivityEndable(fest(settled))).toBe(true);
 		// The host hasn't chosen which mar to take yet.
 		expect(festivityEndable(fest({ ...settled, unchosenHostMars: [2] }))).toBe(false);
-		// Legacy: chosen by the insisting guest, awaiting only the host's asset pick.
-		expect(festivityEndable(fest({ ...settled, pendingHostMars: ['break_self'] }))).toBe(false);
 	});
 });

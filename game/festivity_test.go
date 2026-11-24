@@ -150,8 +150,7 @@ func TestFestivityValidators(t *testing.T) {
 	assert.False(t, IsValidFestivityMarOption(FestivityMakeSpreadRumor))
 }
 
-// An insisted mar is owed until the host has chosen it AND settled it, whichever
-// shape it is in: unchosen (current flow) or a legacy option the insister picked.
+// An insisted mar is owed until the host has chosen it.
 func TestFestivityHostMarsOwedHoldsTheEventOpen(t *testing.T) {
 	roster := []int64{1, 2}
 	s := &FestivityResolutionData{
@@ -168,18 +167,4 @@ func TestFestivityHostMarsOwedHoldsTheEventOpen(t *testing.T) {
 	assert.True(t, s.ConsumeUnchosenHostMar(2))
 	assert.False(t, s.ConsumeUnchosenHostMar(2), "an insistence is answered once")
 	assert.True(t, s.EventEndable(roster))
-
-	s.PendingHostMars = []string{FestivityMarBreakSelf}
-	assert.Equal(t, 1, s.HostMarsOwed())
-	assert.False(t, s.EventEndable(roster), "a legacy chosen-but-unsettled mar holds it open too")
-}
-
-// A game saved before the host chose the mar holds only pending_host_mars; it
-// must still load, and read as one mar owed.
-func TestFestivityLegacyPendingMarsStillLoad(t *testing.T) {
-	raw := `{"festivity":{"pending_host_mars":["break_self"]}}`
-	s := LoadFestivityData(&raw)
-	assert.Equal(t, []string{FestivityMarBreakSelf}, s.PendingHostMars)
-	assert.Empty(t, s.UnchosenHostMars)
-	assert.Equal(t, 1, s.HostMarsOwed())
 }

@@ -321,7 +321,7 @@ describe('the duel\'s setup: who duels', () => {
 
 const fest = (o: Record<string, unknown> = {}) => ({
 	guests: [ALICE, BOB, CAROL], outcomes: {}, guestMakes: {}, guestMars: {}, hostMakesTaken: [],
-	guestRollIDs: {}, guestIOUs: [], hostMarInsists: [], unchosenHostMars: [], pendingHostMars: [],
+	guestRollIDs: {}, guestIOUs: [], hostMarInsists: [], unchosenHostMars: [],
 	acceptDuels: [], pendingDuelPlanID: null, pendingChallenge: null, centeredAssetIDs: [], centeredDrafts: [], ...o,
 });
 const festPlan = { id: 5, game_id: 1, plan_type: 'host_festivity', preparer_id: ALICE } as never;

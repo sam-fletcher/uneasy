@@ -55,8 +55,6 @@ export type FestRes = {
 	hostMarInsists: string[];
 	/** Guests who insisted the host take a mar the host hasn't chosen yet. */
 	unchosenHostMars: number[];
-	/** Legacy: a mar the insisting guest chose, awaiting only the host's asset pick. */
-	pendingHostMars: string[];
 	acceptDuels: number[];
 	pendingDuelPlanID: number | null;
 	pendingChallenge: { challenger_id: number; target_id: number; notes?: string } | null;
@@ -84,8 +82,7 @@ export function earnedHostMakes(fest: FestRes, hostID: number): number {
  *  centre don't either — ending it is what settles them. */
 export function festivityEndable(fest: FestRes): boolean {
 	const allChosen = fest.guests.every((id) => String(id) in fest.outcomes);
-	return allChosen && fest.guestIOUs.length === 0
-		&& fest.unchosenHostMars.length === 0 && fest.pendingHostMars.length === 0;
+	return allChosen && fest.guestIOUs.length === 0 && fest.unchosenHostMars.length === 0;
 }
 
 /** Display-only asset id for a centered draft, so drafts and real peers can
