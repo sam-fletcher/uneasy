@@ -16,6 +16,7 @@
   `getDuelState`.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import './planPanel.css';
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
@@ -156,8 +157,8 @@
 			ownStakeLaid={myStakes.length > 0} />
 
 		<p class="choices-note">
-			{playerName(players, plan.preparer_id)}
-			vs {playerName(players, plan.target_player_id)}
+			<PlayerName {players} id={plan.preparer_id} />
+			vs <PlayerName {players} id={plan.target_player_id} />
 		</p>
 
 		<!-- Until the dice land: the difficulty (the challenged player's esteem status; on a
@@ -170,8 +171,8 @@
 
 		{#if aimSettler != null}
 			<p class="ft-prompt muted">
-				{playerName(players, aimSettler)}, the Make Demands winner, is settling who
-				{playerName(players, plan.preparer_id)} duels. The duel starts once they have.
+				<PlayerName {players} id={aimSettler} />, the Make Demands winner, is settling who
+				<PlayerName {players} id={plan.preparer_id} /> duels. The duel starts once they have.
 			</p>
 
 		{:else if duelRes.phase === 'setup' || duelRes.phase === ''}

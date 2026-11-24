@@ -5,6 +5,8 @@
   on; after a veto the replacement question stays with the same player.
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { askQuestion, type Plan } from '$lib/api';
 	import PlayerChips from '../PlayerChips.svelte';
 	import { playerName } from '../shared';
@@ -55,15 +57,15 @@
 	</p>
 	{#if pendingQuestion != null}
 		<p class="choices-note">
-			Waiting for {playerName(players, pendingQuestion.target_id)} to answer
+			Waiting for <PlayerName {players} id={pendingQuestion.target_id} /> to answer
 			{#if pendingQuestion.vetoable}or veto{' '}{/if}{canSubflow ? 'your' : 'the'} question:
 		</p>
-		<p class="q-quote">“{pendingQuestion.question}”</p>
+		<p class="q-quote"><Quote text={pendingQuestion.question} /></p>
 	{:else}
 		{#if askVetoedTargetID != null}
 			<p class="choices-note muted">
 				{canSubflow ? 'Your' : 'The'} last question was vetoed by
-				{playerName(players, askVetoedTargetID)} — ask them another (it can't be vetoed).
+				<PlayerName {players} id={askVetoedTargetID} /> — ask them another (it can't be vetoed).
 			</p>
 		{/if}
 		<PlayerChips

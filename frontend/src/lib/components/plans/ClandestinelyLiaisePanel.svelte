@@ -13,6 +13,7 @@
   demand overlay reports and the error line ResolvingCard draws.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import './planPanel.css';
 	import ResolvingCard from './ResolvingCard.svelte';
 	import TargetPlanDemandOverlay from './demand/TargetPlanDemandOverlay.svelte';
@@ -61,8 +62,8 @@
 			bind:performStepsWinnerID />
 		{#if aimSettler != null}
 			<p class="ft-prompt muted">
-				{playerName(players, aimSettler)}, the Make Demands winner, is settling who
-				{playerName(players, plan.preparer_id)} meets. The liaison begins once they have.
+				<PlayerName {players} id={aimSettler} />, the Make Demands winner, is settling who
+				<PlayerName {players} id={plan.preparer_id} /> meets. The liaison begins once they have.
 			</p>
 		{:else if !seats.amParticipant && !seats.amPreparer && !seats.amPartner}
 			<!-- A bystander has nothing to do or to read here: the heading says whose

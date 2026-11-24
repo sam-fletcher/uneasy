@@ -3,6 +3,8 @@
   agrees or disagrees. The victim decides; everyone else reads who is being waited on.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { respondTakeConsent, type Plan } from '$lib/api';
 	import type { TakeConsentRequest } from '$lib/plans/resolutionData/spread_rumors';
 	import EndsNote from '../shared/EndsNote.svelte';
@@ -54,7 +56,7 @@
 	{#if (breakCount > 0 || leverageCount > 0) && aboutName}
 		<p class="choices-note">
 			No consent on these — {scene.mar ? 'their counter-rumor' : 'this rumor'}
-			also hits <em>{aboutName}</em>:
+			also hits <AssetName name={aboutName} />:
 		</p>
 		<ul class="effect-fyi">
 			{#if breakCount > 0}<li>Tears a marginalia{#if breakCount > 1}{' '}(×{breakCount}){/if}</li>{/if}
@@ -66,12 +68,12 @@
 	<div class="consent-group">
 		<p class="choices-header">Consent needed</p>
 		<p class="choices-note">
-			{playerName(players, pendingConsent.requested_by)} wants to take
+			<PlayerName {players} id={pendingConsent.requested_by} /> wants to take
 			{takeCount === 1 ? 'this asset' : `these ${takeCount} assets`} from you:
 		</p>
 		<ul class="consent-assets">
 			{#each pendingConsent.asset_ids as aid}
-				<li><em>{assetName(assets, aid)}</em></li>
+				<li><AssetName {assets} id={aid} /></li>
 			{/each}
 		</ul>
 		<div class="form-actions start">
@@ -90,7 +92,7 @@
 	</div>
 {:else}
 	<p class="ft-prompt muted">
-		Waiting for {playerName(players, pendingConsent.victim_id)} to agree to give up
+		Waiting for <PlayerName {players} id={pendingConsent.victim_id} /> to agree to give up
 		{pendingConsent.asset_ids.length === 1
 			? assetName(assets, pendingConsent.asset_ids[0])
 			: `${pendingConsent.asset_ids.length} assets`}…

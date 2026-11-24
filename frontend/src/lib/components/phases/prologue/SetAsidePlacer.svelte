@@ -9,6 +9,7 @@
   component is never shown.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import type { Player } from '$lib/api';
 
@@ -34,11 +35,6 @@
 		onConfirm
 	}: Props = $props();
 
-	function playerName(id: number | null): string {
-		if (id == null) return '';
-		return players.find((p) => p.id === id)?.display_name ?? '?';
-	}
-
 	function move(i: number, dir: -1 | 1) {
 		const j = i + dir;
 		if (j < 0 || j >= setAsideOrdering.length) return;
@@ -52,7 +48,7 @@
 	<div class="placer-head">
 		<span class="placer-title">Set-aside placement</span>
 		{#if !isMyTurn}
-			<span class="decided-by">Decided by {playerName(topTrackPlayerID)}</span>
+			<span class="decided-by">Decided by <PlayerName {players} id={topTrackPlayerID} /></span>
 		{/if}
 	</div>
 
@@ -60,7 +56,7 @@
 		{#each setAsideOrdering as pid, i}
 			<li class="placer-row">
 				<span class="rank-label">Rank {openRanks[i] ?? '?'}</span>
-				<span class="placer-name">{playerName(pid)}</span>
+				<span class="placer-name"><PlayerName {players} id={pid} /></span>
 				{#if isMyTurn}
 					<div class="placer-controls">
 						<button
@@ -110,7 +106,6 @@
 	.decided-by {
 		color: var(--color-text-muted);
 		font-size: 0.8rem;
-		font-style: italic;
 	}
 	.placer-list {
 		list-style: none;

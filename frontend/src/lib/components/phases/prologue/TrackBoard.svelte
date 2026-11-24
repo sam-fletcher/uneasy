@@ -14,6 +14,7 @@
   See PROLOGUE_RANKING_UI_PLAN.md.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
 	import '$lib/components/shared/trackCode.css';
 	import { playerColorByID } from '$lib/playerColor';
@@ -386,7 +387,7 @@
 											aria-label="you"
 										></span>
 									{/if}
-									<span class="chip-name">{playerName(pid)}</span>
+									<span class="chip-name"><PlayerName {players} id={pid} /></span>
 									{#if showCards && c.doneSet.has(pid)}
 										<!-- The same ✓ the column header wears when a track settles,
 										     not a green disc: a bare coloured dot on a name reads as a
@@ -709,7 +710,7 @@
 	   orange: being set aside is procedural, not a hazard, and often not even
 	   actionable (you may simply hold no cards of that suit). */
 
-	.empty-slot { color: var(--color-text-faint); font-style: italic; font-size: 0.75rem; }
+	.empty-slot { color: var(--color-text-faint); font-size: 0.75rem; }
 
 	.chip {
 		flex: 1;

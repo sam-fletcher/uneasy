@@ -222,7 +222,7 @@ test('the ended screen lists the final standings, a shape and a name each', asyn
     expect(ranks, 'best rank first').toEqual([...ranks].sort((a, b) => a - b));
     // Every row carries the player's shape beside the name.
     await expect(rows.locator('svg.player-shape')).toHaveCount(3);
-    const names = (await rows.locator('.name').allTextContents()).sort();
+    const names = (await rows.locator('.player-name-text').allTextContents()).sort();
     expect(names).toEqual(['alice', 'bob', 'carol']);
   }
 

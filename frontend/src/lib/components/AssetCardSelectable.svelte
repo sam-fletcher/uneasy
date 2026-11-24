@@ -707,9 +707,9 @@
 	}
 
 	/* Blank-asset pick row: picking it destroys the asset, so the line reads in
-	   the danger colour rather than as ordinary marginalia text. Italic matches
-	   the .empty-note placeholder it replaces. */
-	.m-text.destroys { color: var(--color-danger); font-style: italic; }
+	   the danger colour rather than as ordinary marginalia text. Upright: italic
+	   means an asset and nothing else. */
+	.m-text.destroys { color: var(--color-danger); }
 
 	/* Named -note, not .empty: a bare state-class name collides with the
 	   marginalia tile's .empty slot (see RetinueView's .empty-note). */
@@ -717,6 +717,5 @@
 		font-size: var(--text-small);
 		color: var(--color-text-faint);
 		margin: var(--space-2) 0;
-		font-style: italic;
 	}
 </style>

@@ -134,7 +134,8 @@ describe('where, when and whose', () => {
 		const line = html.match(/<p class="focus-line[^"]*">([\s\S]*?)<\/p>/)![1];
 		expect(line).toContain('Focus:');
 		expect(line).toContain('data-shape="triangle"'); // seat 2, the second shape
-		expect(line).toMatch(/class="focus-name"[^>]*style="color: #8AD00B;?"[^>]*>\s*sol/i);
+		expect(line).toMatch(/class="player-name labelled"[^>]*style="--player-name-color: #8AD00B;?"/i);
+		expect(line.replace(/<!--[\s\S]*?-->/g, '')).toMatch(/>\s*sol\s*</i);
 	});
 });
 

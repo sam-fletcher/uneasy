@@ -186,8 +186,9 @@
 		color: var(--color-text-secondary);
 	}
 
-	/* The name as it will read on the card. Until one is typed it says
-	   "Unnamed" in faint italics, a placeholder and nothing more. */
+	/* The name as it will read on the card, which is the card's own title and so
+	   upright. Until one is typed it says "Unnamed" in faint upright text, like
+	   an empty state: a placeholder and nothing more. */
 	.acf-name {
 		min-height: var(--size-tap);
 		width: 100%;
@@ -199,7 +200,6 @@
 		text-align: center;
 		padding: 0 var(--space-3);
 		font-size: var(--text-body);
-		font-style: italic;
 		color: var(--color-text-faint);
 		overflow-wrap: anywhere;
 	}

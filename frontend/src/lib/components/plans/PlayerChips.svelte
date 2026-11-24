@@ -10,14 +10,21 @@
   in `onSelect`. A pick is the chip's bright gold border and gold text,
   never a player's colour: a player's colour only ever identifies the player,
   so the colour is on the name (a child of the chip) and the chip itself stays
-  neutral. A chip that can't be pressed takes the chip's locked look and its
-  name keeps the player's colour.
+  neutral.
+
+  Two different "can't press" cases, told apart on purpose:
+    - `isDisabled`: this player genuinely can't be picked. The chip is greyed
+      out and faint throughout, its shape and name too (it gets `unavailable`,
+      which inlineText.css reads).
+    - `readOnly`: a mirror of someone else's choice. The chips are inert but
+      shown as they are, not faded, so the name and shape keep the player's
+      colour. (The chips are `disabled` for the browser, but the faint rule
+      isn't keyed on that.)
 -->
 <script lang="ts">
 	import type { Player } from '$lib/api';
-	import { playerColor } from '$lib/playerColor';
 	import Chip from '$lib/components/shared/Chip.svelte';
-	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 
 	interface Props {
 		players: Player[];
@@ -31,17 +38,18 @@
 	}
 
 	let { players, isActive, onSelect, readOnly = false, isDisabled }: Props = $props();
+	const unavailable = (p: Player) => isDisabled?.(p) ?? false;
 </script>
 
 <div class="player-chips">
 	{#each players as p (p.id)}
 		<Chip
 			selected={isActive(p)}
-			disabled={readOnly || (isDisabled?.(p) ?? false)}
+			disabled={readOnly || unavailable(p)}
+			class={unavailable(p) ? 'unavailable' : undefined}
 			onclick={() => onSelect(p)}
 		>
-			<PlayerShape player={p} size={12} />
-			<span style:color={playerColor(p)}>{p.display_name}</span>
+			<PlayerName player={p} label fixed />
 		</Chip>
 	{/each}
 </div>

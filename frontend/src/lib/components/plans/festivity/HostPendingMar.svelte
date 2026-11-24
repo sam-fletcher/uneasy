@@ -15,6 +15,7 @@
   the wait, so a half-written rumor or a half-made pick is still there after.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import OptionCard from '$lib/components/shared/OptionCard.svelte';
@@ -126,13 +127,13 @@
 {#if total > 0}
 	<div class="choices-section">
 		<p class="choices-header">
-			{playerName(players, insisterID)} insists you take a Mar
+			<PlayerName {players} id={insisterID} /> insists you take a Mar
 			{#if total > 1}<span class="taken-count"> · {total} mars to settle</span>{/if}
 		</p>
 
 		{#if blockedByOtherRoll}
 			<p class="choices-note muted">
-				Waiting for {playerName(players, activeRollerID)} to finish their roll…
+				Waiting for <PlayerName {players} id={activeRollerID} /> to finish their roll…
 			</p>
 		{:else}
 			<p class="choices-note muted">You choose which one — pick one from the Mar list.</p>

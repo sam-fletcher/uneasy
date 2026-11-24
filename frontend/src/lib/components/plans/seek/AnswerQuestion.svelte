@@ -4,6 +4,8 @@
   player a question is pending for.
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { vetoQuestion, answerQuestion, type Plan } from '$lib/api';
 	import EndsNote from '../shared/EndsNote.svelte';
 	import { playerName } from '../shared';
@@ -52,9 +54,9 @@
 
 <div class="plan-form">
 	<p class="choices-header">
-		{playerName(players, plan.preparer_id)} asks you a question:
+		<PlayerName {players} id={plan.preparer_id} /> asks you a question:
 	</p>
-	<p class="q-quote">“{pendingQuestion.question}”</p>
+	<p class="q-quote"><Quote text={pendingQuestion.question} /></p>
 	<label class="form-label">
 		Your truthful answer:
 		<textarea rows={3} bind:value={drafts.answerText} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
@@ -77,7 +79,7 @@
 		text="Answering is the last step: Seek Answers resolves when you answer. A veto ends nothing." />
 	{#if pendingQuestion.vetoable}
 		<p class="choices-note muted">
-			You outrank {playerName(players, plan.preparer_id)} on knowledge, so you
+			You outrank <PlayerName {players} id={plan.preparer_id} /> on knowledge, so you
 			may veto this first question — they'll have to ask another.
 		</p>
 	{/if}

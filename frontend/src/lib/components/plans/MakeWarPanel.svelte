@@ -22,6 +22,8 @@
   page's (MainEventView), so there is exactly one.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
+	import Quote from '$lib/components/shared/Quote.svelte';
 	import './planPanel.css';
 	import { onMount } from 'svelte';
 	import { useWindowEvents } from '$lib/useWindowEvents';
@@ -161,13 +163,13 @@
 				{#if notes.length > LONG_NOTE}
 					<FinishedStep>
 						{#snippet mark()}<LogMark family="marginalia" />{/snippet}
-						{preparerName}: “{notes}”
-						{#snippet detail()}<p class="step-quote">“{notes}”</p>{/snippet}
+						<PlayerName {players} id={plan.preparer_id} />: <Quote text={notes} />
+						{#snippet detail()}<p class="step-quote"><Quote text={notes} /></p>{/snippet}
 					</FinishedStep>
 				{:else}
 					<FinishedStep>
 						{#snippet mark()}<LogMark family="marginalia" />{/snippet}
-						{preparerName}: “{notes}”
+						<PlayerName {players} id={plan.preparer_id} />: <Quote text={notes} />
 					</FinishedStep>
 				{/if}
 			</div>

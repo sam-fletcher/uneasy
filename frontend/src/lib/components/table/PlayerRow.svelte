@@ -20,12 +20,11 @@
   whose move it is, and the ranks are in the retinue.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/chip.css';
 	import { tick } from 'svelte';
 	import type { Player } from '$lib/api';
-	import { playerColor } from '$lib/playerColor';
 	import ClockMark from '$lib/components/shared/ClockMark.svelte';
-	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 
 	interface Props {
 		players: Player[];
@@ -88,13 +87,11 @@
 				type="button"
 				class="chip compact row-chip"
 				data-player-id={player.id}
-				style:color={playerColor(player)}
 				title={player.display_name}
 				aria-label={`View ${player.display_name}'s retinue${isMe ? ' (you)' : ''}${waiting ? (isMe ? ' — your move' : ' — their move') : ''}${atRisk ? ' — some assets need marginalia' : ''}`}
 				onclick={() => onSelect(player.id)}
 			>
-				<PlayerShape {player} />
-				<span class="name">{isMe ? 'You' : player.display_name}</span>
+				<PlayerName {player} name={isMe ? 'You' : player.display_name} label fixed />
 				{#if waiting}
 					<ClockMark tone={isMe ? 'you' : 'other'} />
 				{/if}
@@ -157,7 +154,8 @@
 		.players { justify-content: safe center; }
 	}
 
-	/* chip.css gives the shape of a chip; the player's colour is the text's. */
+	/* chip.css gives the shape of a chip; the name inside is a fixed
+	   <PlayerName>, so it keeps the player's colour inside the chip. */
 	.row-chip {
 		flex: none;
 		gap: var(--space-2);
@@ -165,14 +163,14 @@
 
 	/* Names shorten to a set width: a scrolled name is one gesture away, and the
 	   full name is on the chip's title and in the retinue it opens. */
-	.name {
+	.row-chip :global(.player-name-text) {
 		max-width: 12ch;
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
 	}
 	@media (min-width: 744px) {
-		.name { max-width: 20ch; }
+		.row-chip :global(.player-name-text) { max-width: 20ch; }
 	}
 
 	.risk {

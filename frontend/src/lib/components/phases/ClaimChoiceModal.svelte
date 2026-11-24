@@ -19,6 +19,7 @@
   Submits everything in a single choosePrologue call, unchanged.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/modalShell.css';
@@ -339,7 +340,7 @@
 							—
 							{#if preview && preview.ownerID === currentPlayerID}
 								{#if preview.assetName}
-									you already hold <em>{preview.assetName}</em>; nothing to take.
+									you already hold <AssetName name={preview.assetName} />; nothing to take.
 								{:else}
 									already yours; nothing to take.
 								{/if}
@@ -347,7 +348,7 @@
 								<!-- No "from {preview.ownerName}": the title now names the
 								     holder, so the summary is free to be only the
 								     transaction (Round 3, decision 7). -->
-								you take <em>{preview.assetName}</em>.
+								you take <AssetName name={preview.assetName} />.
 							{:else if preview}
 								<!-- The holder's linked asset didn't resolve (destroyed, or
 								     not found), so there's no name to promise — but the
@@ -545,7 +546,6 @@
 		color: var(--color-text-muted);
 		font-size: 0.85rem;
 	}
-	.step-summary :global(em) { font-style: italic; }
 	.step.take .step-summary { white-space: normal; }
 
 	.step-body { padding: 0 0.75rem 0.75rem; }

@@ -92,12 +92,14 @@ export function rumorScene(ctx: PlanContext, plan: Plan, srData: SpreadRumorsRes
 
 	// The player whose deeds these are: the preparer on make, the target-asset
 	// owner driving the counter-rumor on mar.
-	const actorName = mar && targetAssetOwnerID != null
-		? playerName(players, targetAssetOwnerID)
-		: playerName(players, resolutionActorID(plan, plans));
+	const actorID = mar && targetAssetOwnerID != null
+		? targetAssetOwnerID
+		: resolutionActorID(plan, plans);
+	const actorName = playerName(players, actorID);
 	// Whose assets shelter the secret: the preparer's on a make (whoever is acting),
 	// the counter-rumor's author on a mar.
-	const shelterName = mar ? actorName : playerName(players, plan.preparer_id);
+	const shelterID = mar ? actorID : plan.preparer_id;
+	const shelterName = playerName(players, shelterID);
 
 	// ── Break target ─────────────────────────────────────────────────────────
 	// Candidate assets for the break-target picker.
@@ -142,7 +144,7 @@ export function rumorScene(ctx: PlanContext, plan: Plan, srData: SpreadRumorsRes
 	return {
 		srData, mar, isPreparer, isActor,
 		targetAsset, targetAssetOwnerID, mcAsset, mcName,
-		actorName, shelterName,
+		actorID, actorName, shelterID, shelterName,
 		btMarginaliaAssets, btMarginaliaCap,
 		options, buffet,
 	};

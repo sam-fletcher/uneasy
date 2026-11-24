@@ -156,16 +156,20 @@ describe('a byline', () => {
 		expect(html).not.toContain('Unknown');
 	});
 
-	it('reads "Unknown" for a hidden source: faint italics, with no shape', () => {
+	it('reads "Unknown" for a hidden source: the unknown-player grey, upright, with no shape', () => {
 		const html = draw({ kind: 'rumors', rumors: [rumor(1, 1, { source_player_id: null })] });
 		const byline = html.match(/<div class="lr-bylines[\s\S]*?<\/div>/)?.[0] ?? '';
 		expect(byline).toContain('Spread by');
-		expect(byline).toMatch(/class="lr-unknown[^"]*">Unknown</);
+		expect(byline).toMatch(/class="player-name unknown"[^>]*>(<!--[^>]*-->)*Unknown</);
 		expect(byline).not.toContain('data-shape');
-		// The style is faint and italic, so a hidden source reads as an absence.
-		const decls = declarations(styleOf(SOURCE)).filter((d) => d.selector === '.lr-unknown');
-		expect(decls).toContainEqual({ selector: '.lr-unknown', prop: 'color', value: 'var(--color-text-faint)' });
-		expect(decls).toContainEqual({ selector: '.lr-unknown', prop: 'font-style', value: 'italic' });
+		// A player you can't see: no colour of its own, so the sheet's fallback (the
+		// unknown-player grey) paints it, upright. The panel adds no look of its own.
+		expect(byline).not.toContain('--player-name-color');
+		const sheet = declarations(readFileSync(join(__dirname, 'shared/inlineText.css'), 'utf8'))
+			.filter((d) => d.selector === '.player-name');
+		expect(sheet).toContainEqual({ selector: '.player-name', prop: 'color', value: 'var(--player-name-color, var(--player-unknown))' });
+		expect(sheet).toContainEqual({ selector: '.player-name', prop: 'font-style', value: 'normal' });
+		expect(declarations(styleOf(SOURCE)).some((d) => d.selector.includes('lr-unknown'))).toBe(false);
 	});
 });
 

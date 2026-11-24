@@ -8,6 +8,7 @@
   until satisfied, and the note here says what it will be.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { makeChoice, type Plan } from '$lib/api';
 	import Stepper from '../shared/Stepper.svelte';
 	import { playerName } from '../shared';
@@ -81,12 +82,12 @@
 		<p class="choices-note">
 			Pick options equal to {canPick ? 'your' : 'the'} dice result (repeatable){#if requiredPicks != null}: choose exactly {requiredPicks}{/if}.
 			{#if marPenalty && marPenalty.owed > 0}
-				{canPick && scene.isPreparer ? 'You' : playerName(players, plan.preparer_id)} must also describe a flaw in (break) {marPenalty.owed} of {canPick && scene.isPreparer ? 'your' : 'their'} own resource assets, after this step.
+				{#if canPick && scene.isPreparer}You{:else}<PlayerName {players} id={plan.preparer_id} />{/if} must also describe a flaw in (break) {marPenalty.owed} of {canPick && scene.isPreparer ? 'your' : 'their'} own resource assets, after this step.
 				{#if marPenalty.owed < marPenalty.shortfall}
 					{' '}The plan marred by {marPenalty.shortfall}, but only {marPenalty.owed} of {canPick && scene.isPreparer ? 'your' : 'their'} resources can still be flawed.
 				{/if}
 			{:else if marPenalty && marPenalty.shortfall > 0}
-				The plan marred by {marPenalty.shortfall}, but {canPick && scene.isPreparer ? 'you have' : `${playerName(players, plan.preparer_id)} has`} no resource left to flaw, so {canPick && scene.isPreparer ? 'you owe' : 'owes'} none.
+				The plan marred by {marPenalty.shortfall}, but {#if canPick && scene.isPreparer}you have{:else}<PlayerName {players} id={plan.preparer_id} /> has{/if} no resource left to flaw, so {canPick && scene.isPreparer ? 'you owe' : 'owes'} none.
 			{/if}
 		</p>
 		{#each OPTIONS as opt}

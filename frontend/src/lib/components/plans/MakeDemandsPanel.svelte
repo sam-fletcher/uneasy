@@ -14,6 +14,7 @@
   handles the demand plan's own resolution UI.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
@@ -387,7 +388,7 @@
 								{#snippet mark()}
 									<PlayerShape player={players.find(p => p.id === c.player_id)} size={16} />
 								{/snippet}
-								{playerName(players, c.player_id)}
+								<PlayerName {players} id={c.player_id} />
 								picked {(DEMAND_OPTIONS as string[]).includes(c.option)
 									? optionParts(c.option as DemandOption).title : c.option}
 							</FinishedStep>
@@ -454,7 +455,7 @@
 						{#each DEMAND_OPTIONS as opt}
 							<li>
 								{opt.replace(/_/g, ' ')}:
-								{playerName(players, winners[opt] ?? null)}
+								<PlayerName {players} id={winners[opt] ?? null} />
 							</li>
 						{/each}
 					</ul>
@@ -471,7 +472,7 @@
 				{:else if amCounterTarget}
 					<p class="choices-note">
 						The demand was marred. You may place a free counter-demand against
-						one of {playerName(players, plan.preparer_id)}'s plans, or defer it
+						one of <PlayerName {players} id={plan.preparer_id} />'s plans, or defer it
 						to whichever plan they prepare next.
 					</p>
 					<div class="option-list">

@@ -250,7 +250,9 @@ describe('RetinueView: status is words, not badges', () => {
 		const body = retinue([asset(1), asset(2)]);
 		expect(body).toContain('data-shape="triangle"');
 		expect(body.match(/data-shape=/g)).toHaveLength(1);
-		expect(text(body)).toContain("wren's Retinue");
+		// The owner's name is its own coloured element and the 's follows it.
+		expect(text(body).replace(/ '/g, "'")).toContain("wren's Retinue");
+		expect(body).toMatch(/class="player-name"[^>]*--player-name-color/);
 	});
 });
 

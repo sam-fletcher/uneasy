@@ -18,6 +18,7 @@
   a blocker stays open with its form.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
 	import { createExtraPeer, updateAsset, setClosingReady } from '$lib/api';
@@ -595,7 +596,7 @@
 					{#each myBlankAssets as a (a.id)}
 						<li class="blank-item">
 							<AssetTypeIcon type={a.asset_type} size={14} />
-							<span class="blank-name">{a.name}</span>
+							<span class="blank-name"><AssetName name={a.name} /></span>
 						</li>
 					{/each}
 				</ul>
@@ -892,7 +893,6 @@
 		font-size: 0.82rem;
 	}
 	.blank-name {
-		font-style: italic;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -904,7 +904,7 @@
 	   only by a fill. */
 	.ready-chip { font-size: 0.8rem; }
 	.ready-chip.done { color: var(--color-success); }
-	.ready-chip.pending { color: var(--color-text-faint); font-style: italic; }
+	.ready-chip.pending { color: var(--color-text-faint); }
 
 	.done-btn.active { background: var(--color-success); }
 
@@ -926,14 +926,13 @@
 	}
 
 	/* The claimed title's sheet description — the fiction the peer is written
-	   from. Quoted-source treatment (rule + italic), not a form hint. */
+	   from. Quoted-source treatment (a rule, upright: italic is for assets), not a form hint. */
 	.title-desc {
 		margin: 0;
 		padding-left: 0.6rem;
 		border-left: 2px solid var(--color-border-warm);
 		color: var(--color-text-secondary);
 		font-size: 0.85rem;
-		font-style: italic;
 		line-height: 1.4;
 	}
 	/* Fixed 3 columns, not wrapping pills. Twelve titles flowed 2-per-row at

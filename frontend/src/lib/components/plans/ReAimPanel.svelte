@@ -16,6 +16,7 @@
     · Make Demands       — another plan on the same row
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import './planPanel.css';
 	import '$lib/components/shared/actionButton.css';
@@ -42,7 +43,6 @@
 	let { plan, plans, players, assets, currentPlayerID, onPlansChanged, onRollCreated }: Props = $props();
 
 	const isPreparer = $derived(currentPlayerID != null && currentPlayerID === plan.preparer_id);
-	const preparerName = $derived(playerName(players, plan.preparer_id));
 	const planName = $derived(PLAN_SHORT[plan.plan_type] ?? plan.plan_type);
 	const reason = $derived(parseResolutionData(plan).reaim?.reason ?? '');
 
@@ -122,7 +122,7 @@
 
 		{#if !isPreparer}
 			<p class="choices-note">
-				Waiting for {preparerName} to choose a new target — a plan may change its
+				Waiting for <PlayerName {players} id={plan.preparer_id} /> to choose a new target — a plan may change its
 				target when the original no longer makes sense.
 			</p>
 		{:else if !loaded && !loadError}

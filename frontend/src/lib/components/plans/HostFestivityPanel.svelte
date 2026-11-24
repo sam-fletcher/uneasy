@@ -20,6 +20,7 @@
   subscription; children get slices + `onPlansChanged`.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import './planPanel.css';
 	import { useWindowEvents } from '$lib/useWindowEvents';
@@ -269,7 +270,7 @@
 					</p>
 					<ul class="choices-note">
 						{#each centeredNames as name, i (i)}
-							<li>{name}</li>
+							<li><AssetName {name} /></li>
 						{/each}
 					</ul>
 				</div>

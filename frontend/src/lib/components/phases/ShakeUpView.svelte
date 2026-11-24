@@ -23,6 +23,7 @@
   strip.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/marginaliaTile.css';
@@ -506,9 +507,7 @@
 			<section class="step spend-panel">
 				<h3>Open spend</h3>
 				<p class="spend-phrase">
-					<span class="spend-player" style:color={playerColorByID(openSpend.spend.player_id, players)}>
-						{playerName(openSpend.spend.player_id)}
-					</span>
+					<PlayerName {players} id={openSpend.spend.player_id} />
 					announced: {spendPhrase}
 				</p>
 				{#if spendTargetAsset}
@@ -530,7 +529,7 @@
 					<ul class="adjustment-history">
 						{#each openSpend.adjustments as a (a.id)}
 							<li>
-								<span style:color={playerColorByID(a.player_id, players)}>{playerName(a.player_id)}</span>
+								<PlayerName {players} id={a.player_id} />
 								{a.adjustment > 0 ? 'raised' : 'lowered'} the cost by 1
 							</li>
 						{/each}
@@ -717,7 +716,7 @@
 			</section>
 		{:else if myTokens > 0}
 			<p class="muted-text">
-				It's not your turn yet — waiting on {playerName(currentActor)} to spend.
+				It's not your turn yet — waiting on <PlayerName {players} id={currentActor} /> to spend.
 				Players take turns in reverse-rank order (lowest status first).
 			</p>
 		{:else}

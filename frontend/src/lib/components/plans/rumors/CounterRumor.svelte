@@ -7,6 +7,8 @@
   typed stays through a refetch; only the actor is shown the form.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { writeCounterRumor, type Plan } from '$lib/api';
 	import { playerName } from '../shared';
 	import type { PlanContext } from '../types';
@@ -45,8 +47,8 @@
 	<div class="plan-form">
 		<p class="choices-header">The rumor backfires</p>
 		<p class="choices-note">
-			Describe the rumor that spreads about <em>{scene.mcName}</em>,
-			{playerName(players, plan.preparer_id)}'s main character, instead.
+			Describe the rumor that spreads about <AssetName name={scene.mcName} />,
+			<PlayerName {players} id={plan.preparer_id} />'s main character, instead.
 		</p>
 		<label class="form-label">
 			<span class="form-label-text">The rumor that spreads instead</span>

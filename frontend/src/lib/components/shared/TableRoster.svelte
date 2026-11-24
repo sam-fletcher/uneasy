@@ -49,9 +49,8 @@
 	import '$lib/components/shared/tapRow.css';
 	import type { Snippet } from 'svelte';
 	import type { Player, PresenceMember } from '$lib/api';
-	import { playerColor } from '$lib/playerColor';
 	import ClockMark from './ClockMark.svelte';
-	import PlayerShape from './PlayerShape.svelte';
+	import PlayerName from './PlayerName.svelte';
 	import RowMark from './RowMark.svelte';
 
 	interface Props {
@@ -114,8 +113,7 @@
 </script>
 
 {#snippet seatBody(p: Player, waiting: boolean)}
-	<PlayerShape player={p} />
-	<span class="seat-name">{p.id === currentPlayerID ? 'You' : p.display_name}</span>
+	<PlayerName player={p} name={p.id === currentPlayerID ? 'You' : p.display_name} label />
 	{#if waiting}
 		<ClockMark tone={p.id === currentPlayerID ? 'you' : 'other'} />
 	{/if}
@@ -134,7 +132,6 @@
 					type="button"
 					class="seat tap-row"
 					class:mine={p.id === currentPlayerID}
-					style:--seat-color={playerColor(p)}
 					aria-label={seatLabel(p, online, waiting)}
 					onclick={() => onSelect(p.id)}
 				>
@@ -145,7 +142,6 @@
 				<div
 					class="seat"
 					class:mine={p.id === currentPlayerID}
-					style:--seat-color={playerColor(p)}
 				>
 					{@render seatBody(p, waiting)}
 					<span class="sr-state">{stateWords(p, online, waiting)}</span>
@@ -183,8 +179,9 @@
 		font: inherit;
 		text-align: left;
 	}
-	.seat-name {
-		color: var(--seat-color, var(--color-text));
+	/* The name is a labelled <PlayerName> (shape, then the name in their colour);
+	   a long one costs an ellipsis, not a row. */
+	.seat :global(.player-name-text) {
 		font-size: var(--text-small);
 		overflow: hidden;
 		white-space: nowrap;

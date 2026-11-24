@@ -5,6 +5,7 @@
   /guest-choice (the festivity then surfaces a ChallengeBanner).
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import Chip from '$lib/components/shared/Chip.svelte';
 	import Notice from '$lib/components/shared/Notice.svelte';
@@ -199,7 +200,7 @@
 		{#if actionError}<ErrorText message={actionError} variant="panel" />{/if}
 		{#if blockedByOtherRoll}
 			<p class="choices-note muted">
-				Waiting for {playerName(players, activeRollerID)} to finish their roll…
+				Waiting for <PlayerName {players} id={activeRollerID} /> to finish their roll…
 			</p>
 		{/if}
 		<div class="step-actions">

@@ -13,6 +13,7 @@
   pile) or spare the loser, all or nothing. The count is never negotiable.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import { makeChoice, type Asset, type DiceRoll, type DuelBout, type DuelStake, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
@@ -128,9 +129,9 @@
 	<p class="choices-header">The final roll</p>
 	<p class="choices-note">
 		Accumulated dice from the bouts feed into the plan's dice roll.
-		{playerName(players, plan.preparer_id)}'s {accumulated.prep.length}
+		<PlayerName {players} id={plan.preparer_id} />'s {accumulated.prep.length}
 		{accumulated.prep.length === 1 ? 'die' : 'dice'} form the actor pool;
-		{playerName(players, plan.target_player_id)}'s {accumulated.targ.length}
+		<PlayerName {players} id={plan.target_player_id} />'s {accumulated.targ.length}
 		{accumulated.targ.length === 1 ? 'die' : 'dice'} form interference.
 	</p>
 	{#if lostDice > 0}
@@ -157,15 +158,15 @@
 		</p>
 		<p class="choices-note">
 			{#if marMayBeSpared}
-				{playerName(players, winnerID)} may take {effectiveTake}
+				<PlayerName {players} id={winnerID} /> may take {effectiveTake}
 				{effectiveTake === 1 ? 'stake' : 'stakes'} from
-				{playerName(players, loserID)}, or spare them.
+				<PlayerName {players} id={loserID} />, or spare them.
 			{:else}
-				{playerName(players, winnerID)} takes {effectiveTake}
+				<PlayerName {players} id={winnerID} /> takes {effectiveTake}
 				{effectiveTake === 1 ? 'stake' : 'stakes'} from
-				{playerName(players, loserID)}.
+				<PlayerName {players} id={loserID} />.
 			{/if}
-			Afterwards, <em>every</em> staked asset on both sides is leveraged.
+			Afterwards, every staked asset on both sides is leveraged.
 		</p>
 		{#if !needsDecision}
 			<p class="choices-note muted">
@@ -181,13 +182,13 @@
 					{takeBusy ? '…' : `Take ${effectiveTake === 1 ? 'the stake' : `all ${effectiveTake} stakes`}`}
 				</button>
 				<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
-					Spare {playerName(players, loserID)}
+					Spare <PlayerName {players} id={loserID} />
 				</button>
 			</div>
 			<EndsNote text="Either choice is the last step: Propose Duel resolves when you submit." />
 		{:else if amWinner}
 			<p class="choices-note">
-				Choose {effectiveTake} of {playerName(players, loserID)}'s
+				Choose {effectiveTake} of <PlayerName {players} id={loserID} />'s
 				staked {effectiveTake === 1 ? 'asset' : 'assets'} to take:
 			</p>
 			<CardPicker
@@ -208,7 +209,7 @@
 				</button>
 				{#if marMayBeSpared}
 					<button class="action-btn secondary" onclick={submitSpare} disabled={takeBusy}>
-						Spare {playerName(players, loserID)} instead
+						Spare <PlayerName {players} id={loserID} /> instead
 					</button>
 				{/if}
 			</div>

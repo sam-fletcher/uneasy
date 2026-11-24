@@ -10,6 +10,7 @@
   target may accept (a nested Propose Duel, the host as challenger) or decline.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import Chip from '$lib/components/shared/Chip.svelte';
 	import { hostChoice, type Asset, type Plan, type Player } from '$lib/api';
@@ -138,7 +139,7 @@
 	</p>
 	{#if remaining > 0 && blockedByOtherRoll}
 		<p class="choices-note muted">
-			Waiting for {playerName(players, activeRollerID)} to finish their roll…
+			Waiting for <PlayerName {players} id={activeRollerID} /> to finish their roll…
 		</p>
 	{:else if remaining > 0}
 		<FormField label="Take a Make — pick one">

@@ -242,7 +242,6 @@
 		border-radius: var(--radius-control);
 		color: var(--color-text-secondary);
 		font-family: inherit;
-		font-style: italic;
 		cursor: pointer;
 		transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 	}

@@ -132,7 +132,7 @@ test("someone else's retinue says who can still shore the assets up", async ({ b
 		await expect(sheet).toContainText('4 assets have too few marginalia. ret_dan can still shore them up.');
 		// Nothing here is theirs to edit: no add slot, no rename, no controls.
 		await expect(sheet.locator('.m-tile.add')).toHaveCount(0);
-		await expect(sheet.locator('button.asset-name')).toHaveCount(0);
+		await expect(sheet.locator('button.tile-name')).toHaveCount(0);
 	} finally {
 		await ctx.close();
 	}

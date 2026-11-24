@@ -16,6 +16,7 @@
   where it sits, which the parent owns because only it knows the tile's node.
 -->
 <script module lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 	/** What a just-committed claim produced, for the confirmation line. `made`
 	 *  counts the assets the claim creates (the sheet's own asset, plus each
 	 *  card nobody held); `takes` names what it pulled off other players.
@@ -110,8 +111,7 @@
 
 	{#if justClaimed}
 		<!-- What the claim actually did, in the two verbs the rules use. The
-		     asset names are the player's own words, so they carry the italic
-		     the rest of the app gives an asset name. One line, clipped: see
+		     asset names are <AssetName>, italic like every asset name in the app. One line, clipped: see
 		     .turn-line.confirm — and the full story is in the chat log either
 		     way, which is where a player goes to re-read it. -->
 		<p class="turn-line confirm">
@@ -127,7 +127,7 @@
 			     asset. This branch is already the vague one (the name wouldn't
 			     resolve), and vague about the right noun beats precise about the
 			     wrong one. -->{#each justClaimed.takes as t, i (i)}<span
-				class="take-clause">· took {#if t.assetName}<em>{t.assetName}</em>{:else}an asset{/if} from {t.ownerName}</span>{/each}
+				class="take-clause">· took {#if t.assetName}<AssetName name={t.assetName} />{:else}an asset{/if} from {t.ownerName}</span>{/each}
 		</p>
 	{:else if isMyTurn}
 		<p class="turn-line">Claim one tile — from any category.</p>
@@ -199,7 +199,6 @@
 		text-overflow: ellipsis;
 	}
 	.take-clause { margin-left: 0.35em; }
-	.turn-line em { font-style: italic; color: var(--color-text); }
 
 	/* The discs themselves live in shared/choicePip.css — the category headers
 	   draw the identical object when one is spent, and the spend animation is

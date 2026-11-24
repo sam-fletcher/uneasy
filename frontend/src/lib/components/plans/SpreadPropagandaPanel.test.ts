@@ -66,6 +66,7 @@ describe('Spread Propaganda mar option labels', () => {
 
 const OTHER = 2;
 const BYSTANDER = 3;
+const plainText = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
 const textOf = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const peer = (id: number, owner: number, name: string) => ({
 	id, name, owner_id: owner, asset_type: 'peer', is_destroyed: false, is_main_character: false, is_leveraged: false,
@@ -235,7 +236,8 @@ describe('Spread Propaganda: a watcher sees the picks the preparer still owes', 
 		const body = renderSP({ seat: BYSTANDER, outcome: 'mar', ...owed('give_peer') });
 		expect(body).toMatch(MIRROR);
 		const t = textOf(body);
-		expect(t).toContain('A peer leaves ravi’s retinue'.replace('’', "'"));
+		// Joined, not spaced: the name is its own element and the 's follows it.
+		expect(plainText(body)).toContain('A peer leaves ravi’s retinue'.replace('’', "'"));
 		expect(t).toContain('Lord Ashe');
 		// Not the other player's peer: it is not the preparer's to give.
 		expect(t).not.toContain('Dame Orrin');

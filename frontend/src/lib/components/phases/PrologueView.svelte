@@ -12,6 +12,8 @@
                          auto-advances to the main event.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/trackCode.css';
@@ -372,11 +374,6 @@
 	function playerName(id: number | null): string {
 		if (id == null) return 'Dummy';
 		return players.find(p => p.id === id)?.display_name ?? '?';
-	}
-	/** Second-person for the viewer's own holdings — reading your own display
-	 *  name back at you in "now held by …" lines is jarring. */
-	function holderLabel(id: number | null): string {
-		return id != null && id === currentPlayerID ? 'you' : playerName(id);
 	}
 
 	// ── My hand ──────────────────────────────────────────────────────────────
@@ -1154,7 +1151,7 @@
 												     your hand — and "Both cards already yours" there reads as
 												     the *reason* the tile can't be picked, which is wrong: it
 												     can't be picked because it's taken. -->
-												<span class="choice-note">Claimed by {playerName(existingClaim.player_id)}</span>
+												<span class="choice-note">Claimed by <PlayerName {players} id={existingClaim.player_id} /></span>
 											{:else if ownedHere === 2}
 												<!-- Both cards are no-ops for this viewer, so the tile grants
 												     them the sheet asset and nothing else. Worth saying in
@@ -1178,7 +1175,7 @@
 													<p class="detail-desc">{expChoice.description}</p>
 												{/if}
 												{#if expClaim}
-													<p class="detail-claimed">Claimed by {playerName(expClaim.player_id)}.</p>
+													<p class="detail-claimed">Claimed by <PlayerName {players} id={expClaim.player_id} />.</p>
 												{/if}
 												<div class="detail-cards">
 													{#each expChoice.cards as c}
@@ -1202,27 +1199,27 @@
 																	     where the card sits now instead of previewing a take
 																	     that will never happen. -->
 																	{#if preview.assetName}
-																		<em>{preview.assetName}</em> — now held by
-																		<span style:color={playerColorByID(preview.ownerID, players)}>{holderLabel(preview.ownerID)}</span>
+																		<AssetName name={preview.assetName} /> — now held by
+																		{#if preview.ownerID === currentPlayerID}you{:else}<PlayerName {players} id={preview.ownerID} name={preview.ownerID == null ? 'Dummy' : undefined} />{/if}
 																	{:else}
 																		Now held by
-																		<span style:color={playerColorByID(preview.ownerID, players)}>{holderLabel(preview.ownerID)}</span>
+																		{#if preview.ownerID === currentPlayerID}you{:else}<PlayerName {players} id={preview.ownerID} name={preview.ownerID == null ? 'Dummy' : undefined} />{/if}
 																	{/if}
 																{:else if preview.ownerID === currentPlayerID}
 																	<!-- Card pairs repeat across tiles, so a card you already
 																	     hold turns up on tiles that are still open — and you
 																	     can't take from yourself (the claim is a no-op). -->
 																	{#if preview.assetName}
-																		You already hold <em>{preview.assetName}</em> — nothing to take
+																		You already hold <AssetName name={preview.assetName} /> — nothing to take
 																	{:else}
 																		Already yours — nothing to take
 																	{/if}
 																{:else if preview.assetName}
-																	Takes <em>{preview.assetName}</em> from
-																	<span style:color={playerColorByID(preview.ownerID, players)}>{preview.ownerName}</span>
+																	Takes <AssetName name={preview.assetName} /> from
+																	<PlayerName {players} id={preview.ownerID} name={preview.ownerName} />
 																{:else}
 																	Already held by
-																	<span style:color={playerColorByID(preview.ownerID, players)}>{preview.ownerName}</span>
+																	<PlayerName {players} id={preview.ownerID} name={preview.ownerName} />
 																{/if}
 															</span>
 															<WeightMeter value={c.value} />
@@ -1635,7 +1632,6 @@
 	.choice-note {
 		color: var(--color-text-muted);
 		font-size: 0.7rem;
-		font-style: italic;
 		line-height: 1.2;
 	}
 
@@ -1784,7 +1780,6 @@
 		line-height: 1.3;
 		color: var(--color-text);
 	}
-	.detail-card-text :global(em) { font-style: italic; }
 	/* The track word, quiet and small — the row's subject is the asset, and
 	   the track is the consequence. Uppercased to echo the tile's code chip
 	   without repeating the abbreviation the expansion exists to expand. */

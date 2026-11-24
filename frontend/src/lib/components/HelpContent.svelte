@@ -170,9 +170,9 @@
 			</div>
 
 			<p>Either pace works — the game will always wait for you.</p>
-			<p>The <em>chat</em> serves both styles: table conversation and a running log of everything the court has done,
+			<p>The chat serves both styles: table conversation and a running log of everything the court has done,
 				so it's the quickest way to catch up.</p>
-			<p><em>Profile → Notifications</em> sets how often the game reminds you it's your move.</p>
+			<p>Profile → Notifications sets how often the game reminds you it's your move.</p>
 		{/if}
 
 		{#if active === 'record'}
@@ -205,10 +205,10 @@
 					</svg>
 				</figure>
 				<div class="record-text">
-					<p>This timeline guides the game after the Prologue. It's the <em>Public Record</em>: its Events list is the timeline, and
+					<p>This timeline guides the game after the Prologue. It's the Public Record: its Events list is the timeline, and
 						beside it are the laws and rumors the court has made.</p>
-					<p>We'll step down it row by row — <em>setting a scene</em> on each, and <em>preparing plans</em> that land on later rows.</p>
-					<p><em>Rankings</em> will only change at 3 points: after rows 4, 8, and 12.</p>
+					<p>We'll step down it row by row — setting a scene on each, and preparing plans that land on later rows.</p>
+					<p>Rankings will only change at 3 points: after rows 4, 8, and 12.</p>
 					<p>The finale (the Shake-Up) occurs after row 13.</p>
 				</div>
 			</div>
@@ -242,7 +242,7 @@
 
 		{#if active === 'rankings'}
 			<p>After the prologue, everyone is ranked against each other in Power, Knowledge, and Esteem.</p>
-			<p>The relevant rank feeds into the dice rolls for <em>plans</em> (both when attempting them and when defending against them).</p>
+			<p>The relevant rank feeds into the dice rolls for plans (both when attempting them and when defending against them).</p>
 			<p>The ranks will change after rows 4, 8, and 12 based on each player's plans in the category.</p>
 
 			<figure class="diagram">
@@ -264,8 +264,8 @@
 				<figcaption>
 					The row under the title lists everyone at the table, each with their own colour and shape. Tap a name
 					to open that player's Retinue. A clock means the game is waiting on that player, and it is gold when
-					the player is you. A red warning triangle means one of their <em>assets</em> is one tear from destruction
-					but still has an empty <em>marginalia</em> slot.
+					the player is you. A red warning triangle means one of their assets is one tear from destruction
+					but still has an empty marginalia slot.
 				</figcaption>
 			</figure>
 
@@ -281,13 +281,13 @@
 						</div>
 					{/each}
 				</div>
-				<figcaption>At the top of each Retinue, every track shows your <em>Rank</em> (how hard your own actions are)
-					and <em>Status</em> (how hard others find you to target). Rank and Status always mirror each other.</figcaption>
+				<figcaption>At the top of each Retinue, every track shows your Rank (how hard your own actions are)
+					and Status (how hard others find you to target). Rank and Status always mirror each other.</figcaption>
 			</figure>
 		{/if}
 
 		{#if active === 'dice'}
-			<p>Sometimes your plans will require rolling dice — two to start, plus one for each asset you <em>leverage</em>.</p>
+			<p>Sometimes your plans will require rolling dice — two to start, plus one for each asset you leverage.</p>
 			<p>Other players can leverage their own assets to
 				<span class="w-aid">help</span> or <span class="w-int">interfere</span>.</p>
 			<p>The game will tell you how many unique dice faces you need to succeed (called a Make). Less means failure (a Mar).</p>
@@ -359,12 +359,12 @@
 				{/each}
 			</div>
 			<!-- <p class="type-note">
-				You'll meet the <em>glyph</em> on its own wherever space is tight — picker rows, prologue
-				cards — and the <em>badge</em> on the asset's card in a Retinue.
+				You'll meet the glyph on its own wherever space is tight — picker rows, prologue
+				cards — and the badge on the asset's card in a Retinue.
 			</p> -->
 
 			<p>
-				Each asset has up to four <em>marginalia</em> — descriptive words or phrases that flesh out the asset.
+				Each asset has up to four marginalia — descriptive words or phrases that flesh out the asset.
 				Writing marginalia is one of the best tools you have to set the stakes of the story.
 			</p>
 			<p>
@@ -398,27 +398,27 @@
 					<div class="ex-legend">
 						<span class="ex-leg-row">
 							<span class="ex-star" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" stroke="none"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg></span>
-							<span class="ex-leg-text">Your <em>main character</em> — a peer you play.</span>
+							<span class="ex-leg-text">Your main character — a peer you play.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-lev sm"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /></svg></span>
-							<span class="ex-leg-text">A <em>die</em> after the name means it's <em>leveraged</em> for a roll, until you refresh it.</span>
+							<span class="ex-leg-text">A die after the name means it's leveraged for a roll, until you refresh it.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-eye sm known"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></span>
-							<span class="ex-leg-text"><em>Secrets</em> held by the asset that are known to you.</span>
+							<span class="ex-leg-text">Secrets held by the asset that are known to you.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-eye sm hidden"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /><line x1="3" y1="21" x2="21" y2="3" /></svg></span>
-							<span class="ex-leg-text">Secrets hidden from you. To learn them, you must <em>take</em> or <em>break</em> the asset.</span>
+							<span class="ex-leg-text">Secrets hidden from you. To learn them, you must take or break the asset.</span>
 						</span>
 						<span class="ex-leg-row">
 							<CrownGlyph mark={{ role: 'successor', ordinal: 2 }} size={14} />
-							<span class="ex-leg-text">A <em>crown</em> on a peer's marginalia means they are in the line of succession for the throne.</span>
+							<span class="ex-leg-text">A crown on a peer's marginalia means they are in the line of succession for the throne.</span>
 						</span>
 						<span class="ex-leg-row">
 							<span class="ex-strike">torn</span>
-							<span class="ex-leg-text">A <em>torn</em> marginalia, caused by <em>breaking</em> the asset. Tear them all and the asset is destroyed.</span>
+							<span class="ex-leg-text">A torn marginalia, caused by breaking the asset. Tear them all and the asset is destroyed.</span>
 						</span>
 					</div>
 				</figcaption>
@@ -567,8 +567,8 @@
 
 	/* The two mechanics, marked in prose and caption with the same green/red the
 	   figure's labels and the live roll panel (aid vs interference) use. Colour
-	   here identifies WHICH mechanic, the same job the italics do for asset
-	   names — it isn't emphasis. */
+	   here identifies WHICH mechanic, a different job from the italics (italic
+	   means an asset, and in Help only the book's title) — it isn't emphasis. */
 	.w-aid { color: var(--color-success); }
 	.w-int { color: var(--color-danger); }
 

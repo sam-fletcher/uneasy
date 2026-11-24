@@ -6,6 +6,7 @@
   Back to the picker keeps the counts: they live in the panel's `picks`.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { requestTakeConsent, type Plan } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
 	import { playerName } from '../shared';
@@ -56,7 +57,7 @@
 <div class="choices-section">
 	<p class="choices-header">Choose {k} asset{k === 1 ? '' : 's'} to take</p>
 	<p class="choices-note">
-		From {playerName(players, victimID)}'s assets — they'll be asked to consent.
+		From <PlayerName {players} id={victimID} />'s assets — they'll be asked to consent.
 	</p>
 	<CardPicker
 		label="Assets to take"

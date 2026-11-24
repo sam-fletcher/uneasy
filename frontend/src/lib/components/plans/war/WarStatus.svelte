@@ -17,6 +17,7 @@
   picking a side starts a join as usual.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import { joinWar, type Plan, type Player, type WarStateResponse } from '$lib/api';
 	import Chip from '$lib/components/shared/Chip.svelte';
@@ -108,10 +109,7 @@
 				{:else}
 					{#each s.members as m (m.part.player_id)}
 						<div class="member">
-							<span class="member-name" style:color={m.player ? playerColor(m.player) : undefined}>
-								<PlayerShape player={m.player} size={12} />
-								<span>{playerName(players, m.part.player_id)}</span>
-							</span>
+							<span class="member-name"><PlayerName {players} id={m.part.player_id} label /></span>
 							{#if m.part.surrendered_at_row != null}
 								<span class="member-note">surrendered, row {m.part.surrendered_at_row}</span>
 							{:else if !m.part.entry_payment_complete}
@@ -164,8 +162,8 @@
 			</p>
 			{#each othersClaims as c (c.id)}
 				<p class="ended-line">
-					{playerName(players, c.claimant_id)} is choosing one of
-					{playerName(players, c.surrendered_id)}'s assets to take.
+					<PlayerName {players} id={c.claimant_id} /> is choosing one of
+					<PlayerName {players} id={c.surrendered_id} />'s assets to take.
 				</p>
 			{/each}
 		</div>

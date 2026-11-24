@@ -8,6 +8,8 @@
   leverage any partner asset.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { shareChoice, type Asset, type Plan } from '$lib/api';
 	import { destructionWarning } from '$lib/assetRisk';
 	import { hiddenCount } from '$lib/secretCounts';
@@ -165,13 +167,13 @@
 		Pick one option. Picks are revealed once both players have submitted.
 	</p>
 	{#if seats.amLockedOut}
-		<p class="choices-note">{seats.holderName} is making your pick for you.</p>
+		<p class="choices-note"><PlayerName {players} id={seats.preparerSeatHolder} /> is making your pick for you.</p>
 	{:else if seats.iShared}
 		<p class="choices-note">You've submitted. Waiting for your partner…</p>
 	{:else}
 		{#if seats.actingForPreparerSeat}
 			<p class="ft-prompt">
-				You hold {playerName(players, plan.preparer_id)}'s side of this meeting —
+				You hold <PlayerName {players} id={plan.preparer_id} />'s side of this meeting —
 				choose for them, from their partner's assets.
 			</p>
 		{/if}
@@ -208,7 +210,7 @@
 			{:else}
 				<p class="ft-prompt">
 					{isUpdate ? 'Update' : 'Break'}
-					<em>{partnerMeetingPeer?.name}</em> —
+					<AssetName name={partnerMeetingPeer?.name} /> —
 					choose which marginalia to {isUpdate ? 'rewrite' : 'tear'}:
 				</p>
 				{#if meetingPeerBreakableMarginalia.length === 0}

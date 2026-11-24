@@ -12,6 +12,7 @@
   picker area; only the actor works the pickers.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import {
 		completePlan, breakTarget, hideSource, forfeitSpreadRumorsStep,
 		type Plan,
@@ -189,21 +190,21 @@
 			</p>
 			<p class="choices-note muted">
 				{#if standingIn}
-					As the Make Demands winner you choose which of {scene.shelterName}'s assets hides
-					the Secret that {scene.shelterName} spread the rumor.
+					As the Make Demands winner you choose which of <PlayerName {players} id={scene.shelterID} />'s assets hides
+					the Secret that <PlayerName {players} id={scene.shelterID} /> spread the rumor.
 				{:else if isActor}
 					An asset of your choice will hide the Secret that you spread the rumor.
 				{:else if scene.shelterName !== scene.actorName}
-					{scene.actorName}, the Make Demands winner, chooses which of {scene.shelterName}'s assets
-					hides the Secret that {scene.shelterName} spread the rumor — their character stays
+					<PlayerName {players} id={scene.actorID} />, the Make Demands winner, chooses which of <PlayerName {players} id={scene.shelterID} />'s assets
+					hides the Secret that <PlayerName {players} id={scene.shelterID} /> spread the rumor — their character stays
 					unnamed at court, but the table sees it.
 				{:else}
-					An asset of {scene.actorName}'s choice will hide the Secret that they spread
+					An asset of <PlayerName {players} id={scene.actorID} />'s choice will hide the Secret that they spread
 					the rumor — their character stays unnamed at court, but the table sees it.
 				{/if}
 			</p>
 			<CardPicker
-				label={isActor && !standingIn ? 'Hide on one of your assets' : `Hide on one of ${scene.shelterName}'s assets`}
+				label={isActor && !standingIn ? 'Hide on one of your assets' : `Hide on one of $<PlayerName {players} id={scene.shelterID} />'s assets`}
 				items={hsAssetOptions}
 				{players}
 				readOnly={!isActor}
@@ -212,7 +213,7 @@
 			/>
 			{#if isActor}
 				{#if hsAssetOptions.length === 0}
-					<p class="choices-note muted">{standingIn ? `${scene.shelterName} has` : 'You have'} no asset to hide the source under — this pick has no valid target.</p>
+					<p class="choices-note muted">{standingIn ? `$<PlayerName {players} id={scene.shelterID} /> has` : 'You have'} no asset to hide the source under — this pick has no valid target.</p>
 					<button class="action-btn primary"
 						onclick={() => forfeitStep(plan, 'hide_source')} disabled={forfeitBusy}>
 						{forfeitBusy ? '…' : 'Skip — no valid targets'}

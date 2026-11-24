@@ -3,6 +3,7 @@
   rows until the next liaison; revealing the last one resolves the plan.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import SimultaneousRevealInput from '../SimultaneousRevealInput.svelte';
 	import EndsNote from '../shared/EndsNote.svelte';
 	import type { Plan } from '$lib/api';
@@ -16,6 +17,7 @@
 	} = $props();
 
 	const currentPlayerID = $derived(ctx.currentPlayerID);
+	const players = $derived(ctx.players);
 	const clState = $derived(clStateOf(plan));
 </script>
 
@@ -25,7 +27,7 @@
 		If either of you picks 0, no follow-up is scheduled.
 	</p>
 	{#if seats.amLockedOut}
-		<p class="choices-note">{seats.holderName} is revealing a face for you.</p>
+		<p class="choices-note"><PlayerName {players} id={seats.preparerSeatHolder} /> is revealing a face for you.</p>
 	{:else if clState.redelayRevealID != null && currentPlayerID != null}
 		<!-- actingAs: the reveal's entries are keyed by seat, so a stand-in
 		     for the preparer (or one player holding both seats) submits

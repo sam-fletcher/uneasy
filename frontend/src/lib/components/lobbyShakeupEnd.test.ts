@@ -88,7 +88,10 @@ describe('EndedView', () => {
 
 	it('lists each track best rank first, and leaves a dummy slot out', () => {
 		const tracks = body.split('<div class="track').slice(1);
-		const names = tracks.map((t) => [...t.matchAll(/class="name[^"]*"[^>]*>([^<]*)</g)].map((m) => m[1]));
+		const names = tracks.map((t) =>
+			[...t.matchAll(/class="player-name[^"]*"[^>]*>([\s\S]*?)<\/span>/g)]
+				.map((m) => m[1].replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').trim())
+				.filter(Boolean));
 		expect(names).toEqual([['alice', 'carol'], ['alice', 'bob'], ['bob']]);
 	});
 

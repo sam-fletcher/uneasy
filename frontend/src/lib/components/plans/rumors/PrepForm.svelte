@@ -7,6 +7,8 @@
   can be ticked after the words are. A watcher's mirror says what is going on instead.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { onDestroy } from 'svelte';
 	import { preparePlan } from '$lib/api';
 	import { spreadRumorsPrepDraft } from '$lib/plans/prepDraft';
@@ -172,9 +174,9 @@
 			     would read as a rumor not yet written, so say what is going on instead. -->
 			<p class="form-hint">
 				{#if mirrorKeptSecret}
-					Kept secret for now. Only {playerName(players, ctx.focusPlayerID)} can read it.
+					Kept secret for now. Only <PlayerName {players} id={ctx.focusPlayerID} /> can read it.
 				{:else}
-					{playerName(players, ctx.focusPlayerID)} is writing the rumor.
+					<PlayerName {players} id={ctx.focusPlayerID} /> is writing the rumor.
 				{/if}
 			</p>
 		{:else}
@@ -197,7 +199,7 @@
 		{#if prepKeepSecret}
 			{#if readOnly}
 				<p class="plan-notes">
-					Hidden under: <em>{secretHolderName || '—'}</em>
+					Hidden under: <AssetName name={secretHolderName || '—'} />
 				</p>
 			{:else}
 				<CardPicker

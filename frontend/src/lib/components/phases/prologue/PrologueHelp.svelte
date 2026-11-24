@@ -219,7 +219,7 @@
 	.legend tbody td { color: var(--color-text); }
 	/* A wild ranks nothing until you assign it, so the cell reads as a note
 	   rather than a track name. */
-	.wild-note { color: var(--color-text-secondary); font-style: italic; }
+	.wild-note { color: var(--color-text-secondary); }
 	/* The weight meter's one appearance outside a tile expansion: a static
 	   sample, so the meter has been seen before it turns up on a row. */
 	.legend-note {
