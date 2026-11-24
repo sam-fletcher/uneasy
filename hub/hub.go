@@ -35,7 +35,25 @@ const (
 	// pingTimeout is how long we wait for the pong before declaring the
 	// connection dead and tearing it down.
 	pingTimeout = 10 * time.Second
+
+	// heartbeatInterval is how often the hub sends every connected client an
+	// app-level heartbeat event. The protocol ping above is answered by the
+	// browser itself and never reaches the page, so a page whose connection died
+	// silently (a network switch leaves the socket "open" but dead) cannot tell
+	// from it. The heartbeat is a message the page can see: if the page hears
+	// nothing for well over this interval, it closes the socket and reconnects.
+	// The page's limit (HEARTBEAT_SILENCE_MS in lib/ws.ts) must stay comfortably
+	// above this.
+	//
+	// It is memory only, sent to the sockets the hub already holds. Nothing here
+	// may touch the database: the free-tier database bills for the time it is
+	// awake, and a periodic query would keep it awake.
+	heartbeatInterval = 30 * time.Second
 )
+
+// heartbeatMsg is the whole heartbeat frame, built once. It is deliberately not
+// a model.WSMessage: that would add a "payload":null to every frame for nothing.
+var heartbeatMsg = []byte(`{"type":"` + model.EventHeartbeat + `"}`)
 
 // ── Manager ───────────────────────────────────────────────────────────────────
 
@@ -136,6 +154,9 @@ type Hub struct {
 	unregister chan *Client
 	broadcast  chan []byte
 	done       chan struct{}
+	// heartbeatEvery is how often run() sends the heartbeat. A field, not the
+	// constant, so a test can shorten it without touching shared state.
+	heartbeatEvery time.Duration
 }
 
 func newHub(tableID int64, m *Manager) *Hub {
@@ -147,14 +168,22 @@ func newHub(tableID int64, m *Manager) *Hub {
 		unregister: make(chan *Client),
 		broadcast:  make(chan []byte, messageBufferSize),
 		done:       make(chan struct{}),
+
+		heartbeatEvery: heartbeatInterval,
 	}
 }
 
 // run is the hub's event loop. It must be called in its own goroutine.
 // It returns — ending the hub's life — once the last client is gone.
 func (h *Hub) run() {
+	heartbeat := time.NewTicker(h.heartbeatEvery)
+	defer heartbeat.Stop()
+
 	for {
 		select {
+		case <-heartbeat.C:
+			h.pushHeartbeat()
+
 		case client := <-h.register:
 			h.clients[client] = struct{}{}
 			h.manager.presenceInc(client.player.AccountID)
@@ -249,6 +278,22 @@ func (h *Hub) Unregister(c *Client) {
 	select {
 	case h.unregister <- c:
 	case <-h.done:
+	}
+}
+
+// pushHeartbeat sends the heartbeat to every connected client. Must only be
+// called from within run().
+//
+// A client whose send buffer is full is skipped, not dropped: the broadcast
+// path already drops a client that falls that far behind, and a heartbeat is
+// worth nothing to a client that is not reading. The hub runs only while it has
+// clients, so an empty table costs no heartbeat at all.
+func (h *Hub) pushHeartbeat() {
+	for c := range h.clients {
+		select {
+		case c.send <- heartbeatMsg:
+		default:
+		}
 	}
 }
 
