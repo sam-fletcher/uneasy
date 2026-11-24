@@ -3,6 +3,8 @@ import {
 	createConnection,
 	DISCONNECT_NOTICE_DELAY_MS,
 	FOREGROUND_MIN_GAP_MS,
+	HEARTBEAT_CHECK_MS,
+	HEARTBEAT_SILENCE_MS,
 	type ConnectionStatus,
 } from './ws';
 
@@ -81,6 +83,16 @@ async function openAndSync() {
 }
 
 let resyncCalls = 0;
+
+/** Advance time the way a healthy server does: the newest socket hears a
+ *  heartbeat every 30s, so the silence watch has no reason to close it. Tests
+ *  that wait a long while on a socket that is meant to stay up use this. */
+async function advanceWithHeartbeats(ms: number) {
+	for (let left = ms; left > 0; left -= 30_000) {
+		await vi.advanceTimersByTimeAsync(Math.min(left, 30_000));
+		latestSocket().onmessage?.({ data: '{"type":"heartbeat"}' });
+	}
+}
 
 beforeEach(() => {
 	FakeWebSocket.instances = [];
@@ -259,7 +271,7 @@ describe('createConnection status: the notice threshold', () => {
 	it('says nothing while the connection is healthy', async () => {
 		const { conn, statuses } = watched();
 		await openAndSettle();
-		await vi.advanceTimersByTimeAsync(60_000);
+		await advanceWithHeartbeats(60_000);
 		expect(statuses).toEqual([]);
 		conn.disconnect();
 	});
@@ -710,7 +722,7 @@ describe('createConnection: a socket that has been replaced', () => {
 		const live = socketCount();
 
 		old.onclose?.(); // the old socket's close event finally arrives
-		await vi.advanceTimersByTimeAsync(60_000);
+		await advanceWithHeartbeats(60_000);
 		expect(socketCount(), 'no second retry, no second live socket').toBe(live);
 		expect(statuses, 'and the live table is not marked down').toEqual([]);
 		conn.disconnect();
@@ -933,6 +945,162 @@ describe('createConnection: the page returns to the foreground', () => {
 		await openAndSettle();
 		expect(() => fireVisibility('visible')).not.toThrow();
 		expect(() => pressFocus()).not.toThrow();
+		conn.disconnect();
+	});
+});
+
+// ── The silence watch ────────────────────────────────────────────────────────
+// A socket the browser still calls open but that has gone dead never fires
+// `close`. The server sends a heartbeat every 30s; the page closes a socket it
+// has heard nothing on for HEARTBEAT_SILENCE_MS, and the ordinary close
+// handling takes over. The fake socket's `close()` fires `close` at once.
+
+function hear(sock: FakeWebSocket, type = 'row_state.changed') {
+	sock.onmessage?.({ data: JSON.stringify({ type, payload: {} }) });
+}
+
+describe('createConnection: a silent socket', () => {
+	it('is closed after the silence limit and then reconnects', async () => {
+		const { conn, statuses } = watched();
+		await openAndSettle();
+		const first = latestSocket();
+
+		// Just short of the limit: nothing happens.
+		await vi.advanceTimersByTimeAsync(HEARTBEAT_SILENCE_MS - 1_000);
+		expect(first.readyState).toBe(1);
+
+		// The check runs every HEARTBEAT_CHECK_MS, so one more interval is enough.
+		await vi.advanceTimersByTimeAsync(1_000 + HEARTBEAT_CHECK_MS);
+		expect(first.readyState).toBe(3);
+
+		// The ordinary drop follows: a retry, and the notice after its delay.
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(socketCount()).toBe(2);
+		await vi.advanceTimersByTimeAsync(DISCONNECT_NOTICE_DELAY_MS);
+		expect(statuses).toEqual(['down']);
+		conn.disconnect();
+	});
+
+	it('is kept open by a message, which restarts the count', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		const sock = latestSocket();
+
+		await vi.advanceTimersByTimeAsync(40_000);
+		hear(sock);
+		await vi.advanceTimersByTimeAsync(40_000);
+		expect(sock.readyState).toBe(1);
+
+		// Silence counted from that message, not from the open.
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(sock.readyState).toBe(3);
+		conn.disconnect();
+	});
+
+	it('counts the heartbeat as a message, without passing it on', async () => {
+		const seen: string[] = [];
+		const conn = createConnection(7, (m) => seen.push(m.type), async () => true);
+		await openAndSettle();
+		const sock = latestSocket();
+
+		// A heartbeat every 30s, as the server sends: the socket lives on.
+		for (let i = 0; i < 6; i++) {
+			await vi.advanceTimersByTimeAsync(30_000);
+			hear(sock, 'heartbeat');
+		}
+		expect(sock.readyState).toBe(1);
+		expect(seen).toEqual([]);
+
+		// Other events still reach the page.
+		hear(sock, 'row_state.changed');
+		expect(seen).toEqual(['row_state.changed']);
+		conn.disconnect();
+	});
+
+	it('does not buffer a heartbeat that arrives during a resync', async () => {
+		const seen: string[] = [];
+		let finishResync!: (landed: boolean) => void;
+		const conn = createConnection(
+			7,
+			(m) => seen.push(m.type),
+			() => new Promise<boolean>((resolve) => { finishResync = resolve; }),
+		);
+		latestSocket().open();
+		hear(latestSocket(), 'heartbeat');
+		hear(latestSocket(), 'row_state.changed');
+		finishResync(true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(seen).toEqual(['row_state.changed']);
+		conn.disconnect();
+	});
+
+	it('is not checked while the tab is hidden', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		const sock = latestSocket();
+
+		fireVisibility('hidden');
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		expect(sock.readyState).toBe(1);
+		expect(socketCount()).toBe(1);
+		conn.disconnect();
+	});
+
+	it('is checked the moment the tab is visible again, and reconnects at once', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		const sock = latestSocket();
+
+		fireVisibility('hidden');
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		fireVisibility('visible');
+
+		// No waiting for the next check, and no backoff wait for the retry.
+		expect(sock.readyState).toBe(3);
+		expect(socketCount()).toBe(2);
+		conn.disconnect();
+	});
+
+	it('is left alone on return if something was heard while hidden', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		const sock = latestSocket();
+
+		fireVisibility('hidden');
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		hear(sock, 'heartbeat');
+		fireVisibility('visible');
+
+		expect(sock.readyState).toBe(1);
+		expect(socketCount()).toBe(1);
+		conn.disconnect();
+	});
+
+	it('is not watched after disconnect()', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		conn.disconnect();
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		expect(socketCount()).toBe(1);
+	});
+
+	it('survives a close event that arrives late, once the watch has dropped it', async () => {
+		const { conn } = watched();
+		await openAndSettle();
+		const first = latestSocket();
+		// A half-open socket that closes slowly: make close() do nothing, so only
+		// the watch's own handling moves things along.
+		first.close = () => {};
+
+		await vi.advanceTimersByTimeAsync(HEARTBEAT_SILENCE_MS + HEARTBEAT_CHECK_MS);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(socketCount()).toBe(2);
+
+		// The browser finally reports the old socket closed: it must not schedule a
+		// second retry beside the new socket.
+		first.fail();
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(socketCount()).toBe(2);
 		conn.disconnect();
 	});
 });

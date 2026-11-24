@@ -21,6 +21,10 @@ export const EventTypes = {
 	TypingUpdate: 'typing.update',
 	PlayerJoined: 'player.joined',
 
+	// App-level "still here" from the server's timer. Handled inside
+	// createConnection (it feeds the silence watch) and never passed on.
+	Heartbeat: 'heartbeat',
+
 	// Phase transitions
 	PhaseChanged: 'phase.changed',
 
@@ -235,8 +239,23 @@ export const DEMAND_EVENTS = [
 // from before the drop. So when the notice goes away the board is current, and
 // a player who sees no notice can trust what they see. (A hole this doesn't
 // close: a socket the browser still thinks is open after the network has
-// silently gone, with no close event, is never marked down. See
-// docs/work/next/ws-heartbeat.md.)
+// silently gone, with no close event, is not marked down by that alone: the
+// silence watch below closes it, so the close handling takes over.)
+//
+// ── Noticing a socket that died without saying so ────────────────────────
+// After a network switch (wifi to cellular, a VPN toggling) the browser can go
+// on reporting a socket as open for a long time while nothing arrives, and
+// `close` never fires. The server's protocol ping can't help the page: the
+// browser answers it by itself and never tells us it came. So the server also
+// sends an app-level `heartbeat` message every 30s (hub.heartbeatInterval),
+// which the page can see. We note when we last heard *anything* on the socket
+// (any message counts, not only the heartbeat); if HEARTBEAT_SILENCE_MS pass
+// with nothing, the socket is dead for our purposes, and we close it ourselves.
+// From there it is the ordinary drop: the retry loop, and the notice.
+//
+// The watch only runs while the tab is visible: a hidden tab's timers are
+// throttled, and nobody is looking at it. When the tab becomes visible again it
+// checks at once.
 export type ConnectionStatus = 'live' | 'down';
 
 export interface ConnectionOptions {
@@ -281,6 +300,18 @@ export const FOREGROUND_MIN_GAP_MS = 2_000;
  *  next to what it guards against, a board that has been wrong for hours. */
 export const DISCONNECT_NOTICE_DELAY_MS = 5_000;
 
+/** How long a connection may be silent before the page gives up on it. The
+ *  server sends a heartbeat every 30s (hub.heartbeatInterval), so a healthy
+ *  socket is never silent this long: 45s is one heartbeat plus a 50% margin for
+ *  a slow network or a busy server. Keep it comfortably above the server's
+ *  interval. */
+export const HEARTBEAT_SILENCE_MS = 45_000;
+
+/** How often the visible page checks for silence. Detection therefore takes
+ *  between HEARTBEAT_SILENCE_MS and that plus this. A local timer check: it
+ *  sends nothing. */
+export const HEARTBEAT_CHECK_MS = 5_000;
+
 export function createConnection(
 	gameID: string | number,
 	onMessage: MessageHandler,
@@ -288,6 +319,11 @@ export function createConnection(
 	options: ConnectionOptions = {},
 ): { disconnect: () => void; ready: Promise<void>; retryNow: () => Promise<void> } {
 	let ws: WebSocket | null = null;
+	// Closes the current socket and runs its close handling at once, for the
+	// silence watch. Set by connect(); null until the first socket exists.
+	let dropCurrent: (() => void) | null = null;
+	// When anything was last heard on the current socket (or it opened).
+	let lastHeardAt = Date.now();
 	let stopped = false;
 	let retryDelay = 1000; // ms; doubles on each failed attempt, capped at 30s
 	// Pending reconnect timer, so a returning player can pre-empt it (see
@@ -388,6 +424,10 @@ export function createConnection(
 	// worth making; spending it every 5s into a sleeping tab is not.
 	function onVisibility() {
 		if (stopped || document.visibilityState !== 'visible') return;
+		// First, because it may close a dead socket: the pending-retry check just
+		// below then sees the retry that closing scheduled and reconnects at once,
+		// which is what a player returning to a stale table wants.
+		checkSilence();
 		retryDelay = 1000;
 		// Only when a retry is actually pending: if the socket is OPEN
 		// there's nothing to do, and if it's CONNECTING an attempt is
@@ -404,6 +444,18 @@ export function createConnection(
 		notifyForeground();
 	}
 	document.addEventListener('visibilitychange', onVisibility);
+
+	// The silence watch (see the note above createConnection). Only a socket that
+	// claims to be open can be silently dead; one that is connecting, closing or
+	// closed is already being dealt with by the retry loop.
+	function checkSilence() {
+		if (stopped || document.visibilityState !== 'visible') return;
+		if (ws?.readyState !== WebSocket.OPEN) return;
+		if (Date.now() - lastHeardAt < HEARTBEAT_SILENCE_MS) return;
+		console.log('[ws] nothing heard for a long while — closing the socket');
+		dropCurrent?.();
+	}
+	const silenceTimer = setInterval(checkSilence, HEARTBEAT_CHECK_MS);
 
 	// A window that was already visible and gains focus (two windows side by
 	// side, a second monitor) raises `focus` and not `visibilitychange`, and is
@@ -481,6 +533,28 @@ export function createConnection(
 		const url = `${protocol}//${location.host}/api/tables/${gameID}/ws`;
 		const sock = new WebSocket(url);
 		ws = sock;
+		lastHeardAt = Date.now();
+		// Close handling must run once per socket, however it is reached: the
+		// browser's `close` event, or dropCurrent below. A socket that is half
+		// open may not fire `close` for a very long time (its closing handshake
+		// has no peer to answer it), so the silence watch can't wait for it.
+		let closeHandled = false;
+		function handleClose() {
+			if (closeHandled) return;
+			closeHandled = true;
+			if (stopped || sock !== ws) return;
+			markNotLive();
+			console.log(`[ws] disconnected — retrying in ${retryDelay}ms`);
+			retryTimer = setTimeout(() => {
+				retryTimer = null;
+				retryDelay = Math.min(retryDelay * 2, 30_000);
+				connect();
+			}, retryDelay);
+		}
+		dropCurrent = () => {
+			sock.close();
+			handleClose();
+		};
 
 		// Every handler below ignores a socket that is no longer `ws`. connect()
 		// replaces `ws` while the old socket may still have events coming: a socket
@@ -550,12 +624,19 @@ export function createConnection(
 
 		sock.onmessage = (event) => {
 			if (sock !== ws) return;
+			// Anything at all proves the connection is alive, so this comes before
+			// the parse and the buffer.
+			lastHeardAt = Date.now();
 			let msg: WSMessage;
 			try {
 				msg = JSON.parse(event.data as string) as WSMessage;
 			} catch {
 				return;
 			}
+			// The heartbeat has done its job (the line above). It is not game
+			// state: it must not be buffered during a resync or reach the page's
+			// handler, where an event it doesn't know could only cause trouble.
+			if (msg.type === EventTypes.Heartbeat) return;
 			if (syncing) {
 				buffer.push(msg);
 			} else {
@@ -563,16 +644,7 @@ export function createConnection(
 			}
 		};
 
-		sock.onclose = () => {
-			if (stopped || sock !== ws) return;
-			markNotLive();
-			console.log(`[ws] disconnected — retrying in ${retryDelay}ms`);
-			retryTimer = setTimeout(() => {
-				retryTimer = null;
-				retryDelay = Math.min(retryDelay * 2, 30_000);
-				connect();
-			}, retryDelay);
-		};
+		sock.onclose = handleClose;
 
 		sock.onerror = () => {
 			// onerror is always followed by onclose, which handles reconnect.
@@ -596,6 +668,7 @@ export function createConnection(
 				downTimer = null;
 			}
 			settleAttempts();
+			clearInterval(silenceTimer);
 			window.removeEventListener('uneasy:typing', onTyping);
 			window.removeEventListener('uneasy:scene_setup_draft', onSceneSetupDraft);
 			window.removeEventListener('uneasy:prepare_plan_draft', onPreparePlanDraft);
