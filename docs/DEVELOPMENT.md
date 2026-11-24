@@ -424,6 +424,29 @@ repository secrets are configured — set these at deploy time:
 
 Restore instructions are in a comment at the top of the workflow file.
 
+The workflow's last step records its finish time in the production database
+(`ops_backup_status`, one row, written with the same `PROD_DATABASE_URL`). A
+disabled workflow can't report itself, so the server reads that row once a day
+and posts to Discord if the last backup is over 8 days old.
+
+### Alerts
+
+Two server-health messages go to the Discord webhook (`DISCORD_WEBHOOK_URL`, the
+one feedback uses); the runbook ([OPERATIONS.md](OPERATIONS.md#alerts-what-reaches-discord-and-what-to-do))
+says what to do about each:
+
+- **Database failing / recovered** (`ops/dbfailure.go`, `ops/tracer.go`): a tracer on
+  the pgx pool sees every query and connection attempt, so failures are noticed
+  without any query of the monitor's own. One message at the first failure, at most
+  one an hour while it continues, one on recovery.
+- **Backup overdue** (`ops/backupwatch.go`): checked once a day from the notify
+  ticker, so it adds no database wake-ups.
+
+Neither runs a query to find out whether the database is up: anything that did
+would keep Neon awake. In dev, `DISCORD_WEBHOOK_URL` is unset and the messages
+are logged instead. Tests use a fake clock and a fake poster, so none sends a real
+message.
+
 ## Dev testing workflow
 
 Manual UI testing usually means juggling several "players" at once. With
