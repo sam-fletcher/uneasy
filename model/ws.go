@@ -16,6 +16,12 @@ const (
 	EventPresenceSnapshot = "presence.snapshot"
 	EventTypingUpdate     = "typing.update"
 
+	// EventHeartbeat is the app-level "still here" message the hub sends every
+	// connected client on a timer. It has no payload and touches nothing: the
+	// page uses it only to tell a quiet table from a dead connection (see
+	// hub.heartbeatInterval and frontend/src/lib/ws.ts).
+	EventHeartbeat = "heartbeat"
+
 	// Lobby
 	EventPlayerJoined = "player.joined"
 

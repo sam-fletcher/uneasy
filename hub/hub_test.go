@@ -198,3 +198,56 @@ func drain(ch chan []byte) [][]byte {
 		}
 	}
 }
+
+// The heartbeat is what lets a page tell a quiet table from a dead connection,
+// so every connected client must get it on the timer, and it must carry nothing.
+func TestHubSendsHeartbeatToEveryClient(t *testing.T) {
+	m := NewManager()
+	h := newHub(7, m)
+	h.heartbeatEvery = 5 * time.Millisecond
+	go h.run()
+	c1, c2 := testClient(h, 1), testClient(h, 2)
+	h.Register(c1)
+	h.Register(c2)
+
+	// Three beats each: one would not prove a timer.
+	for _, c := range []*Client{c1, c2} {
+		beats := 0
+		waitFor(t, func() bool {
+			for _, msg := range drain(c.send) {
+				if string(msg) == `{"type":"heartbeat"}` {
+					beats++
+				}
+			}
+			return beats >= 3
+		}, "a connected client did not receive repeated heartbeats")
+	}
+
+	h.Unregister(c1)
+	h.Unregister(c2)
+}
+
+// A client that is not reading must not be dropped for a heartbeat: only real
+// broadcasts decide that, and the heartbeat is skipped for it instead.
+func TestHeartbeatSkipsAFullClientWithoutDroppingIt(t *testing.T) {
+	m := NewManager()
+	h := newHub(7, m)
+	h.heartbeatEvery = time.Millisecond
+	go h.run()
+	c := testClient(h, 1)
+	h.Register(c)
+
+	// Fill the buffer, then let many beats go by.
+	for len(c.send) < cap(c.send) {
+		select {
+		case c.send <- []byte("m"):
+		default:
+		}
+	}
+	time.Sleep(30 * time.Millisecond)
+
+	if closed(c.send) {
+		t.Fatal("a full client was dropped by the heartbeat")
+	}
+	h.Unregister(c)
+}
