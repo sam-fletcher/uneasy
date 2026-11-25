@@ -9,8 +9,8 @@
   last) so the record doesn't reshuffle as the evening unfolds.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { type Plan, type Player } from '$lib/api';
-	import { playerColorByID } from '$lib/playerColor';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import { playerName } from '../shared';
 	import { MAKE_PHRASE, MAR_PHRASE, earnedHostMakes, type FestRes } from './options';
@@ -75,10 +75,8 @@
 				{@const e = entryFor(gid)}
 				<li>
 					<div class="who">
-						<PlayerShape player={players.find(p => p.id === gid)} size={12} />
-						<span>
-							<span style:color={playerColorByID(gid, players)}>{playerName(players, gid)}</span>{#if gid === currentPlayerID}{' '}<span class="who-role">(you)</span>{/if}{#if gid === plan.preparer_id}{' '}<span class="who-role">(host)</span>{/if}
-						</span>
+						<PlayerName {players} id={gid} label />
+						{#if gid === currentPlayerID}<span class="who-role">(you)</span>{/if}{#if gid === plan.preparer_id}<span class="who-role">(host)</span>{/if}
 					</div>
 					<div class="say">
 						<span class="verdict"

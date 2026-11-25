@@ -24,6 +24,9 @@
   make the resource asset is created at that same enactment step.
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import PlayerNames from '$lib/components/shared/PlayerNames.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
@@ -432,7 +435,7 @@
 			<p class="choices-header">
 				Council ({pdState.council.length})
 				{#if pdState.signatoryID != null}
-					· Signatory: {playerName(players, pdState.signatoryID)}
+					· Signatory: <PlayerName {players} id={pdState.signatoryID} />
 				{/if}
 			</p>
 			{#if pdState.council.length === 0}
@@ -441,7 +444,7 @@
 				<ul class="council-list">
 					{#each pdState.council as pid}
 						<li>
-							{playerName(players, pid)}
+							<PlayerName {players} id={pid} />
 							{#if pid === pdState.signatoryID}(signatory){/if}
 							{#if pid === plan.preparer_id}<span class="muted"> (preparer)</span>{/if}
 						</li>
@@ -450,7 +453,7 @@
 			{/if}
 			{#if pdState.declined.length > 0}
 				<p class="choices-note muted">
-					Declined: {pdState.declined.map(id => playerName(players, id)).join(', ')}
+					Declined: <PlayerNames {players} ids={pdState.declined} />
 				</p>
 			{/if}
 		</div>
@@ -479,7 +482,7 @@
 					</div>
 				{:else}
 					<p class="choices-note muted">
-						{playerName(players, plan.preparer_id)} is finalizing the decree…
+						<PlayerName {players} id={plan.preparer_id} /> is finalizing the decree…
 					</p>
 				{/if}
 			{:else}
@@ -488,7 +491,7 @@
 					<p class="choices-header">
 						Proposed decree being debated:
 					</p>
-					<p class="ft-prompt">“{pdState.lawText}”</p>
+					<p class="ft-prompt"><Quote text={pdState.lawText} /></p>
 				</div>
 			{/if}
 
@@ -577,7 +580,7 @@
 				<div class="plan-form">
 					{#if pendingDeciderIDs.length > 0}
 						<p class="choices-note muted">
-							Waiting on {pendingDeciderIDs.map(id => playerName(players, id)).join(', ')}
+							Waiting on <PlayerNames {players} ids={pendingDeciderIDs} />
 							to decide if they want to join the council.
 						</p>
 					{:else}
@@ -657,7 +660,7 @@
 					{:else}
 						<p class="choices-note muted">
 							The council is amending the law ({amendmentsRemaining} to go).
-							{#if nextAmender != null}Next: {playerName(players, nextAmender)}.{/if}
+							{#if nextAmender != null}Next: <PlayerName {players} id={nextAmender} />.{/if}
 						</p>
 					{/if}
 				{/if}

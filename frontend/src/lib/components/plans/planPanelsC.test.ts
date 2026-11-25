@@ -22,6 +22,7 @@ import type { PlanContext } from './types';
  */
 
 const PLANS = join(__dirname);
+const plain = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
 const read = (rel: string) => readFileSync(join(PLANS, rel), 'utf8');
 
 /** Every .svelte file of the three plans (not their tests). */
@@ -171,13 +172,13 @@ describe('the duel tracker', () => {
 			targ: [stake(102, BOB, 12), stake(104, BOB, 14)], mine: [
 				stake(101, ALICE, 11, { hidden_die: 4 }), stake(103, ALICE, 13, { hidden_die: 2 })] });
 		expect(html).not.toContain('stake-line pick');
-		expect(html).toContain('Waiting for bob to respond');
+		expect(plain(html)).toContain('bob to respond');
 	});
 
 	it('states the public call as an information notice, with the stake it was made on', () => {
 		const html = bouts(openCall);
 		expect(html).toMatch(/<p class="notice[^"]*" data-tone="info"/);
-		expect(html).toContain('opens with <em>Lady Merrow</em>, calling higher.');
+		expect(html).toContain('opens with <em class="asset-name">Lady Merrow</em>, calling higher.');
 		expect(html).toContain('called higher');
 	});
 
@@ -282,10 +283,10 @@ describe('the duel\'s setup: who duels', () => {
 
 	it('marks the duellists\' names as assets, as every other line that names one does', () => {
 		const body = setup(ALICE, [merrow, vell, spare]);
-		expect(body).toContain('<em>Lady Merrow</em> fights for themselves');
-		expect(body).toContain('Facing <em>Captain Vell</em>');
+		expect(body).toContain('<em class="asset-name">Lady Merrow</em> fights for themselves');
+		expect(body).toContain('Facing <em class="asset-name">Captain Vell</em>');
 		// The bystander's matchup line names both.
-		expect(setup(CAROL, [merrow, vell])).toContain('<em>Lady Merrow</em> vs <em>Captain Vell</em>');
+		expect(setup(CAROL, [merrow, vell])).toContain('<em class="asset-name">Lady Merrow</em> vs <em class="asset-name">Captain Vell</em>');
 	});
 
 	it('offers "Send someone else" when there is someone else to send', () => {
@@ -299,7 +300,7 @@ describe('the duel\'s setup: who duels', () => {
 		expect(body).not.toContain('Send someone else');
 		expect(body).toContain('You have no other peer to send in your stead.');
 		// The main character is still shown as duelling for them.
-		expect(body).toContain('<em>Lady Merrow</em> fights for themselves');
+		expect(body).toContain('<em class="asset-name">Lady Merrow</em> fights for themselves');
 	});
 
 	it('never says a player fights in person: the duellist is always a peer', () => {
@@ -447,7 +448,7 @@ describe('the host\'s extra Makes', () => {
 		expect(body).not.toContain('Take this Make');
 		// The host still sees what they have earned, and why they must wait.
 		expect(body).toContain('Your extra Makes');
-		expect(body).toContain('Waiting for carol to finish their roll');
+		expect(plain(body)).toContain('Waiting for carol to finish their roll');
 	});
 
 	it('holds it back while a duel challenge waits for its target', () => {
@@ -491,8 +492,8 @@ describe('the host\'s pending Mar', () => {
 
 	it('holds the picker back while a guest is mid-roll: the mar stays named, and the card waits as the Make picker does', () => {
 		const body = pendingMar();
-		expect(body).toContain('bob insists you take a Mar');
-		expect(body).toContain('Waiting for carol to finish their roll');
+		expect(plain(body)).toContain('bob insists you take a Mar');
+		expect(plain(body)).toContain('Waiting for carol to finish their roll');
 		expect(body).not.toContain('You choose which one');
 		expect(body).not.toContain('You must accept all duels');
 		expect(body).not.toContain('Take this Mar');
@@ -569,12 +570,12 @@ describe('the Make Demands draft', () => {
 		const body = draft(BOB);
 		// The pick is a finished step of its own (not just text under a .done-steps
 		// wrapper), with its picker's shape drawn in front of the words.
-		const line = body.split('class="done-step"').find((chunk) => chunk.includes('alice picked'));
+		const line = body.split('class="done-step"').find((chunk) => plain(chunk).includes('alice picked'));
 		expect(line, 'a finished step holding the pick').toBeDefined();
 		expect(line).toContain('class="player-shape');
 		// One line, the short name of the option: the long description is on the cards.
-		expect(body).toContain('alice picked Control leverage');
-		expect(body).not.toContain('picked Control leverage —');
+		expect(plain(body)).toContain('alice picked Control leverage');
+		expect(plain(body)).not.toContain('picked Control leverage —');
 	});
 
 	const card = (body: string, title: string) =>

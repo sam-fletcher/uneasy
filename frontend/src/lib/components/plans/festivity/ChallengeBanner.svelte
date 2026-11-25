@@ -4,6 +4,7 @@
   `accept_duels` cannot decline.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import { respondChallenge, type Player } from '$lib/api';
 	import { playerName } from '../shared';
@@ -39,8 +40,8 @@
 <div class="choices-section">
 	<p class="choices-header">
 		Duel challenge:
-		{playerName(players, challenge.challenger_id)}
-		→ {playerName(players, challenge.target_id)}
+		<PlayerName {players} id={challenge.challenger_id} />
+		→ <PlayerName {players} id={challenge.target_id} />
 	</p>
 	{#if challenge.notes}
 		<p class="plan-notes">"{challenge.notes}"</p>

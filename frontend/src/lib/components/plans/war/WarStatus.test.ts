@@ -44,8 +44,9 @@ const props = (currentPlayerID: number | null, war = ended, over: Record<string,
 describe('WarStatus after a surrender', () => {
 	it('tells a bystander who is choosing what to take', () => {
 		const { body } = render(WarStatus, { props: props(3) });
-		expect(body).toContain('Ana is choosing one of');
-		expect(body).toContain("Ben's assets to take");
+		const said = body.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+		expect(said).toContain('Ana is choosing one of');
+		expect(said).toContain("Ben's assets to take");
 	});
 
 	it('does not repeat the note to the claimant, who has the form', () => {

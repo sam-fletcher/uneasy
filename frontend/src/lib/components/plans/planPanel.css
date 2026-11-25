@@ -240,7 +240,6 @@
 	font-size: var(--text-small);
 }
 .resolved-so-far-list li { margin: var(--space-1) 0; }
-.resolved-so-far-list em { font-style: italic; }
 /* The chronicler's / actor's own words, quoted inside a resolved line. */
 .resolved-so-far-list .resolved-note {
 	color: var(--color-text-secondary);

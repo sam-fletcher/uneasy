@@ -16,6 +16,8 @@
   gone; the lines say it in words.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
+	import Quote from '$lib/components/shared/Quote.svelte';
 	import './planPanel.css';
 	import { untrack, type Snippet } from 'svelte';
 	import type { Plan, Player } from '$lib/api';
@@ -60,7 +62,6 @@
 		return untrack(() => slot?.claim());
 	});
 
-	const preparer = $derived(playerName(players, plan.preparer_id));
 	const notes = $derived(showNotes ? (plan.preparation_notes ?? '').trim() : '');
 	// A note that is probably longer than one line gets the whole text a tap away.
 	const LONG_NOTE = 40;
@@ -70,20 +71,20 @@
 	<div class="done-steps">
 		<FinishedStep>
 			{#snippet mark()}<LogMark family="plan" />{/snippet}
-			{preparer} prepared {PLAN_SHORT[plan.plan_type] ?? plan.plan_type}
+			<PlayerName {players} id={plan.preparer_id} /> prepared {PLAN_SHORT[plan.plan_type] ?? plan.plan_type}
 		</FinishedStep>
 
 		{#if notes}
 			{#if notes.length > LONG_NOTE}
 				<FinishedStep>
 					{#snippet mark()}<LogMark family="marginalia" />{/snippet}
-					{preparer}: “{notes}”
-					{#snippet detail()}<p class="step-quote">“{notes}”</p>{/snippet}
+					<PlayerName {players} id={plan.preparer_id} />: <Quote text={notes} />
+					{#snippet detail()}<p class="step-quote"><Quote text={notes} /></p>{/snippet}
 				</FinishedStep>
 			{:else}
 				<FinishedStep>
 					{#snippet mark()}<LogMark family="marginalia" />{/snippet}
-					{preparer}: “{notes}”
+					<PlayerName {players} id={plan.preparer_id} />: <Quote text={notes} />
 				</FinishedStep>
 			{/if}
 		{/if}

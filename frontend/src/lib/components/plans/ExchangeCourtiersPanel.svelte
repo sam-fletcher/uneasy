@@ -4,6 +4,8 @@
   (when required) → complete.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
@@ -388,8 +390,8 @@
 	     its actor can press is left out, not shown dead): they are told what each leads to. -->
 	{#snippet answersNote()}
 		<p class="ft-prompt muted">
-			If {playerName(players, plan.preparer_id)} accepts, {acceptClause} Exchange Courtiers
-			resolves with no roll. If {playerName(players, plan.preparer_id)} declines, it goes on to the dice.
+			If <PlayerName {players} id={plan.preparer_id} /> accepts, {acceptClause} Exchange Courtiers
+			resolves with no roll. If <PlayerName {players} id={plan.preparer_id} /> declines, it goes on to the dice.
 		</p>
 	{/snippet}
 
@@ -410,8 +412,8 @@
 				{#if isTarget}
 					<div class="ft-section">
 						<p class="ft-prompt">
-							{playerName(players, plan.preparer_id)} wants
-							<em>{assetName(assets, plan.target_asset_id)}</em>. You may name
+							<PlayerName {players} id={plan.preparer_id} /> wants
+							<AssetName {assets} id={plan.target_asset_id} />. You may name
 							one of their peers to receive in exchange — a fair trade.
 						</p>
 						<CardPicker
@@ -432,7 +434,7 @@
 						<!-- The target can't name one of the preparer's peers if there are
 						     none; let the preparer proceed straight to the roll. -->
 						<p class="ft-prompt">
-							You have no peers for {playerName(players, plan.target_player_id)} to
+							You have no peers for <PlayerName {players} id={plan.target_player_id} /> to
 							request in trade.
 						</p>
 						<button class="action-btn primary" onclick={() => onFTDecline(plan)} disabled={ftDecideBusy}>
@@ -440,19 +442,19 @@
 						</button>
 					{:else}
 						<p class="ft-prompt">
-							Waiting for {playerName(players, plan.target_player_id)} to propose a fair trade for their peer,
-							<em>{assetName(assets, plan.target_asset_id)}</em>.
+							Waiting for <PlayerName {players} id={plan.target_player_id} /> to propose a fair trade for their peer,
+							<AssetName {assets} id={plan.target_asset_id} />.
 						</p>
 						{@render tradeMirror()}
 					{/if}
 				{:else}
 					<p class="ft-prompt muted">
 						{#if preparerIntactPeers.length === 0}
-							Waiting for {playerName(players, plan.preparer_id)} to proceed to the dice roll — they
-							have no peers to trade for <em>{assetName(assets, plan.target_asset_id)}</em>.
+							Waiting for <PlayerName {players} id={plan.preparer_id} /> to proceed to the dice roll — they
+							have no peers to trade for <AssetName {assets} id={plan.target_asset_id} />.
 						{:else}
-							Waiting for {playerName(players, plan.target_player_id)} to propose a fair trade for
-							<em>{assetName(assets, plan.target_asset_id)}</em>.
+							Waiting for <PlayerName {players} id={plan.target_player_id} /> to propose a fair trade for
+							<AssetName {assets} id={plan.target_asset_id} />.
 						{/if}
 					</p>
 					{#if preparerIntactPeers.length > 0}{@render tradeMirror()}{/if}
@@ -462,9 +464,9 @@
 				{#if isPreparer}
 					<div class="ft-section">
 						<p class="ft-prompt">
-							{playerName(players, plan.target_player_id)} will hand over
-							<em>{assetName(assets, plan.target_asset_id)}</em> if you give them
-							<em>{assetName(assets, ftAssetID)}</em>.
+							<PlayerName {players} id={plan.target_player_id} /> will hand over
+							<AssetName {assets} id={plan.target_asset_id} /> if you give them
+							<AssetName {assets} id={ftAssetID} />.
 						</p>
 						<div class="ft-actions">
 							<button class="action-btn primary" onclick={() => onFTAccept(plan)} disabled={ftDecideBusy}>
@@ -478,14 +480,14 @@
 					</div>
 				{:else if isTarget}
 					<p class="ft-prompt">
-						You asked for <em>{assetName(assets, ftAssetID)}</em> in exchange.
-						Waiting for {playerName(players, plan.preparer_id)}'s decision…
+						You asked for <AssetName {assets} id={ftAssetID} /> in exchange.
+						Waiting for <PlayerName {players} id={plan.preparer_id} />'s decision…
 					</p>
 					{@render answersNote()}
 				{:else}
 					<p class="ft-prompt muted">
-						{playerName(players, plan.target_player_id)} asked for <em>{assetName(assets, ftAssetID)}</em>
-						in exchange. Waiting for {playerName(players, plan.preparer_id)}'s decision…
+						<PlayerName {players} id={plan.target_player_id} /> asked for <AssetName {assets} id={ftAssetID} />
+						in exchange. Waiting for <PlayerName {players} id={plan.preparer_id} />'s decision…
 					</p>
 					{@render answersNote()}
 				{/if}
@@ -494,11 +496,11 @@
 		{:else if rollActive && !choicesDone}
 			<ul class="ec-stakes-list">
 				<li>
-					On a make: {playerName(players, plan.preparer_id)} takes <em>{assetName(assets, plan.target_asset_id)}</em>.
+					On a make: <PlayerName {players} id={plan.preparer_id} /> takes <AssetName {assets} id={plan.target_asset_id} />.
 				</li>
 				{#if ftAssetID != null}
 					<li>
-						On a mar: {playerName(players, plan.target_player_id)} takes <em>{assetName(assets, ftAssetID)}</em>.
+						On a mar: <PlayerName {players} id={plan.target_player_id} /> takes <AssetName {assets} id={ftAssetID} />.
 					</li>
 				{/if}
 			</ul>
@@ -525,12 +527,12 @@
 				{#snippet header()}
 					{#if rollOutcome === 'make'}
 						<p class="choices-note">
-							{#if choiceActor}You{:else}{playerName(players, plan.preparer_id)}{/if} beat the difficulty{#if choiceMargin != null}{' '}by {choiceMargin}{/if} — the targeted peer
-							({assetName(assets, plan.target_asset_id)}) will be transferred to {#if peerGoesTo === currentPlayerID}you{:else}{playerName(players, peerGoesTo)}{/if}.
+							{#if choiceActor}You{:else}<PlayerName {players} id={plan.preparer_id} />{/if} beat the difficulty{#if choiceMargin != null}{' '}by {choiceMargin}{/if} — the targeted peer
+							(<AssetName {assets} id={plan.target_asset_id} />) will be transferred to {#if peerGoesTo === currentPlayerID}you{:else}<PlayerName {players} id={peerGoesTo} />{/if}.
 						</p>
 					{:else}
 						<p class="choices-note">
-							{playerName(players, plan.preparer_id)}'s plan was marred{#if choiceMargin != null}{' '}by {choiceMargin}{/if}{#if choiceActor}{' '}— choose how you respond.{:else}.{/if}
+							<PlayerName {players} id={plan.preparer_id} />'s plan was marred{#if choiceMargin != null}{' '}by {choiceMargin}{/if}{#if choiceActor}{' '}— choose how you respond.{:else}.{/if}
 						</p>
 					{/if}
 				{/snippet}
@@ -556,7 +558,7 @@
 					<div class="messy-break-section">
 						<p class="ft-prompt">
 							The exchange was messy. You may break one of
-							{playerName(players, plan.preparer_id)}'s marginalia
+							<PlayerName {players} id={plan.preparer_id} />'s marginalia
 							before this plan completes.
 						</p>
 						{#if messyError}<ErrorText message={messyError} variant="panel" />{/if}
@@ -601,11 +603,11 @@
 					<div class="messy-break-section">
 						<p class="ft-prompt">
 							{#if isPreparer}
-								Riposte: {playerName(players, plan.target_player_id)} takes
-								your <em>{requestedPeerName}</em>.{#if canBreakFirst}{' '}You may break it first, or surrender it intact.{/if}
+								Riposte: <PlayerName {players} id={plan.target_player_id} /> takes
+								your <AssetName name={requestedPeerName} />.{#if canBreakFirst}{' '}You may break it first, or surrender it intact.{/if}
 							{:else}
-								Riposte: {playerName(players, plan.target_player_id)} takes
-								{playerName(players, plan.preparer_id)}'s <em>{requestedPeerName}</em>.{#if canBreakFirst}{' '}As the
+								Riposte: <PlayerName {players} id={plan.target_player_id} /> takes
+								<PlayerName {players} id={plan.preparer_id} />'s <AssetName name={requestedPeerName} />.{#if canBreakFirst}{' '}As the
 								Make Demands winner you decide whether to break it first or surrender it intact.{:else}{' '}As the
 								Make Demands winner you surrender it.{/if}
 							{/if}
@@ -624,7 +626,7 @@
 							<!-- Not a picker with nothing in it: tearing the last note would destroy
 							     the peer, and a destroyed peer can't be surrendered. -->
 							<p class="choices-note muted">
-								<em>{requestedPeerName}</em> {requestedPeerNotes === 0
+								<AssetName name={requestedPeerName} /> {requestedPeerNotes === 0
 									? 'has no marginalia to tear'
 									: 'has one marginalia left, and tearing it would destroy the peer'},
 								so it can only be surrendered intact.
@@ -646,8 +648,8 @@
 					</div>
 				{:else}
 					<p class="ft-prompt muted">
-						Riposte — waiting for {playerName(players, resolutionActorID(plan, plans))} to break or
-						surrender <em>{requestedPeerName}</em>…
+						Riposte — waiting for <PlayerName {players} id={resolutionActorID(plan, plans)} /> to break or
+						surrender <AssetName name={requestedPeerName} />…
 					</p>
 					<!-- The notes they could tear first, greyed out and inert. Nothing to mirror
 					     when the peer could not survive a break: the line is all there is. -->

@@ -11,6 +11,9 @@
   (clandestinely_liaise_secret_text.spec.ts pins it).
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import PlayerNames from '$lib/components/shared/PlayerNames.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { keepSecret, type Plan } from '$lib/api';
 	import { liaiseSecretHeader } from '$lib/plans/liaiseSecret';
 	import EndsNote from '../shared/EndsNote.svelte';
@@ -123,19 +126,19 @@
 		     offering a form the server would refuse. -->
 		<!-- Distinct names: one player can hold both seats (the demander who is
 		     also the partner), and "Waiting for X, X" reads as a bug. -->
-		{@const pendingNames = [...new Set(seats.participants
+		{@const pendingIDs = [...new Set(seats.participants
 			.filter(p => !seats.keepSecretSubmittedIDs.has(p.player_id))
-			.map(p => p.display_name))]}
+			.map(p => p.player_id))]}
 		<p class="choices-note">
-			{seats.holderName} is nominating on your behalf.
-			{#if pendingNames.length > 0}Waiting for {pendingNames.join(', ')}…{/if}
+			<PlayerName {players} id={seats.preparerSeatHolder} /> is nominating on your behalf.
+			{#if pendingIDs.length > 0}Waiting for <PlayerNames {players} ids={pendingIDs} />…{/if}
 		</p>
 	{:else if seats.iKeptSecret}
 		{@const waitingFor = seats.participants.filter(p => !seats.keepSecretSubmittedIDs.has(p.player_id))}
 		{#if waitingFor.length > 0}
 			<p class="choices-note">
 				You've committed your secret. Waiting for
-				{waitingFor.map(p => p.display_name).join(', ')}…
+				<PlayerNames {players} ids={waitingFor.map(p => p.player_id)} />…
 			</p>
 		{:else}
 			<p class="choices-note">Both secrets are committed.</p>
@@ -143,8 +146,8 @@
 	{:else}
 		{#if seats.actingForPreparerSeat}
 			<p class="ft-prompt">
-				You hold {playerName(players, plan.preparer_id)}'s side of this meeting —
-				pick one of {playerName(players, plan.preparer_id)}'s assets.
+				You hold <PlayerName {players} id={plan.preparer_id} />'s side of this meeting —
+				pick one of <PlayerName {players} id={plan.preparer_id} />'s assets.
 			</p>
 		{/if}
 		<CardPicker
@@ -161,7 +164,7 @@
 			{#if activeKeepSeat === plan.preparer_id && plan.preparation_notes}
 				<p class="choices-note muted">
 					{seats.actingForPreparerSeat ? `${playerName(players, plan.preparer_id)}'s` : 'Your'}
-					preparation note: “{plan.preparation_notes}”
+					preparation note: <Quote text={plan.preparation_notes} />
 				</p>
 			{/if}
 			<label class="form-label">

@@ -29,15 +29,14 @@
   arrow is drawn beneath the overlay, so a tap on it opens the table too.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/tapRow.css';
 	import type { MyTable } from '$lib/api';
-	import { playerColor } from '$lib/playerColor';
 	import { tableTitle } from '$lib/tableTitle';
 	import { tableBell } from '$lib/tableBell';
 	import BellGlyph from '$lib/components/BellGlyph.svelte';
 	import ClockMark from '$lib/components/shared/ClockMark.svelte';
 	import NewDot from '$lib/components/shared/NewDot.svelte';
-	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import RowMark from '$lib/components/shared/RowMark.svelte';
 
 	interface Props {
@@ -81,9 +80,8 @@
 		<span class="players">
 			{#each t.players as p (p.id)}
 				{@const waited = !ended && t.waiting_on_player_ids.includes(p.id)}
-				<span class="player" style:--player-color={playerColor(p)}>
-					<PlayerShape player={p} />
-					<span class="player-name">{p.display_name}</span>
+				<span class="player">
+					<PlayerName player={p} label />
 					{#if waited}
 						<ClockMark tone={p.id === t.player_id ? 'you' : 'other'} />
 					{/if}
@@ -202,12 +200,11 @@
 		align-items: center;
 		gap: var(--space-1);
 		font-size: var(--text-small);
-		color: var(--player-color);
 		min-width: 0;
 	}
 	/* A long name costs an ellipsis, not a row: 26ch is the backstop the header
 	   chips use for a pathological run of wide glyphs. */
-	.player-name {
+	.player :global(.player-name-text) {
 		max-width: 26ch;
 		overflow: hidden;
 		white-space: nowrap;

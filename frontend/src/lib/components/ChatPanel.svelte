@@ -25,6 +25,7 @@
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/jumpPulse.css';
+	import '$lib/components/shared/inlineText.css';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import {
 		createPlayerPost,
@@ -1331,23 +1332,15 @@
 	}
 	.log.important .log-mark { color: var(--color-accent); }
 
-	/* Player-name marks (hierarchy-plan S4). A log body that names a player
-	   paints the name in that player's own colour — the identity channel the
-	   message bylines already teach, so "who did this" reads the same whether
-	   the line is speech or bookkeeping. Vivid, not the muted `color-mix` cast
-	   the in-character bylines wear: that muting means "a character's voice,
-	   not the player's own", and a log body naming a player is the player as
-	   themselves. Colour is the whole treatment — no weight, no italics; those
-	   channels are spent elsewhere (importance, asset names).
-
-	   Reached through `.feed` because `renderLogBody` output is injected with
-	   {@html} and so carries no scoping class (same pattern as HelpContent's
-	   `.body :global(p)`). `--mark-player-color` is set per-span by the
-	   renderer, and only ever to a validated hex; anything else leaves it
-	   unset and this fallback carries the name at normal body colour. */
-	.feed :global(.player-mark) {
-		color: var(--mark-player-color, var(--color-text-secondary));
-	}
+	/* Player-name and asset-name marks (hierarchy-plan S4). A log body that
+	   names a player paints the name in that player's own colour, and one that
+	   names an asset sets it in italics. Both come out of renderLogBody as the
+	   same classes <PlayerName> and <AssetName> use, and their look is the one
+	   shared sheet (shared/inlineText.css, imported above), so there is nothing
+	   to style here: this is the log's half of "one definition". Vivid, not the
+	   muted `color-mix` cast the in-character bylines wear: that muting means "a
+	   character's voice", and a log body naming a player is the player as
+	   themselves. Colour is the whole treatment of a name: no weight, no italics. */
 	.log-time { font-size: var(--text-label); color: var(--color-text-faint); white-space: nowrap; }
 
 	/* Timestamp diet (hierarchy-plan S1): per-line times are metadata, not
@@ -1451,7 +1444,6 @@
 
 	.scene-prompt {
 		margin: 0;
-		font-style: italic;
 		color: var(--color-text-secondary);
 		font-size: var(--text-small);
 	}

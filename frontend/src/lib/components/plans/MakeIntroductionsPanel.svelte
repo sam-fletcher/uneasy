@@ -13,6 +13,8 @@
       preparer's to write.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { onDestroy, untrack } from 'svelte';
 	import './planPanel.css';
 	import {
@@ -460,7 +462,7 @@
 			{#if arrivingDraft && isActor}
 				<div class="plan-form">
 					<p class="ft-prompt">
-						<em>{arrivingDraft.name}</em> has finally reached court. Describe them
+						<AssetName name={arrivingDraft.name} /> has finally reached court. Describe them
 						as they arrive.
 					</p>
 					<AssetCreationForm
@@ -530,7 +532,7 @@
 			{#if choicesDone && arrivingDraft && isActor}
 				<div class="plan-form">
 					<p class="ft-prompt">
-						<em>{arrivingDraft.name}</em> arrives at court. Describe them —
+						<AssetName name={arrivingDraft.name} /> arrives at court. Describe them —
 						every newcomer needs a marginalia.
 						{#if arrivalsOwed > 1}<span class="muted">({arrivalsOwed} left)</span>{/if}
 						{#if arrivalsOwed === 1}<span class="muted">The last arrival ends the plan.</span>{/if}
@@ -569,10 +571,10 @@
 						<div class="plan-form">
 							<p class="ft-prompt">
 								{#if o?.outcome === 'other_retinue'}
-									<em>{d.name}</em> is joining your retinue. Write the marginalia
+									<AssetName name={d.name} /> is joining your retinue. Write the marginalia
 									that defines them.
 								{:else}
-									<em>{d.name}</em> arrives, but isn't who {playerName(players, plan.preparer_id)}
+									<AssetName name={d.name} /> arrives, but isn't who <PlayerName {players} id={plan.preparer_id} />
 									thought they were. Write the marginalia that says who they really are.
 								{/if}
 							</p>
@@ -591,7 +593,7 @@
 						{@const d = unresolvedDrafts[0]}
 						<div class="plan-form">
 							<p class="ft-prompt">
-								Resolve <em>{d.name}</em>
+								Resolve <AssetName name={d.name} />
 								({unresolvedDrafts.length} remaining):
 							</p>
 							<div class="chip-row">
@@ -654,7 +656,7 @@
 						<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
 							<div class="plan-form">
 								<p class="ft-prompt">
-									Resolving <em>{d.name}</em>
+									Resolving <AssetName name={d.name} />
 									({unresolvedDrafts.length} remaining):
 								</p>
 								<div class="chip-row">

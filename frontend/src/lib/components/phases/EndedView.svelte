@@ -10,6 +10,7 @@
   of a name, and the names are the point of this screen.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import type { Player, Ranking, RankingCategory } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
@@ -42,8 +43,7 @@
 							<li>
 								<span class="rank">{s.rank}.</span>
 								{#if s.player}
-									<PlayerShape player={s.player} />
-									<span class="name" style:color={playerColor(s.player)}>{s.player.display_name}</span>
+									<PlayerName player={s.player} label />
 								{:else}
 									<span class="name unknown">?</span>
 								{/if}

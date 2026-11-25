@@ -10,6 +10,8 @@
   stake they can pick) and the tray, the duel's one object that holds dice.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
@@ -179,8 +181,7 @@
 	{@const ownerName = playerName(players, sidePlayerID)}
 	<section class="duel-side" class:is-mine={mine}>
 		<p class="side-name">
-			<PlayerShape player={players.find(p => p.id === sidePlayerID)} size={12} />
-			<span style:color={color}>{ownerName}</span>
+			<PlayerName {players} id={sidePlayerID} label />
 			{#if role}<span class="side-role">{role}</span>{/if}
 		</p>
 		<div class="stake-list">
@@ -237,7 +238,7 @@
 <div class="choices-section">
 	<p class="choices-header">
 		Bout {duelRes.currentBout + (boutInProgress ? 0 : 1)} of {totalBouts}
-		· {playerName(players, currentActorID)}
+		· <PlayerName {players} id={currentActorID} />
 		{#if boutInProgress}to respond{:else}to declare{/if}
 	</p>
 
@@ -267,13 +268,13 @@
 		<!-- The public call: what the responder must read before choosing. Information,
 		     so an info notice. -->
 		<Notice tone="info">
-			{playerName(players, openCall.declarerID)}
-			opens with <em>{openCallAssetName}</em>, calling
+			<PlayerName {players} id={openCall.declarerID} />
+			opens with <AssetName name={openCallAssetName} />, calling
 			{callWord(openCall.declaration)}.
 			{#if currentPlayerID === openCall.responderID}
 				Pick one of your stakes to answer — you can see your own die, not theirs.
 			{:else}
-				{playerName(players, openCall.responderID)} must answer.
+				<PlayerName {players} id={openCall.responderID} /> must answer.
 			{/if}
 		</Notice>
 	{/if}
@@ -298,7 +299,7 @@
 		</div>
 	{:else if amParticipant}
 		<p class="choices-note muted">
-			Waiting for {playerName(players, currentActorID)} to
+			Waiting for <PlayerName {players} id={currentActorID} /> to
 			{boutInProgress ? 'respond' : 'declare'}…
 		</p>
 	{/if}

@@ -6,6 +6,8 @@
   the page, so it is not repeated here.
 -->
 <script lang="ts">
+	import PlayerNames from '$lib/components/shared/PlayerNames.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import {
 		payBattleCost, payWarEntry, proposePeace,
 		type Asset, type Player, type WarStateResponse, type WarParticipantInfo,
@@ -165,7 +167,7 @@
 				You joined this war late. Pay one cost of battle against each
 				existing opposing opponent before you count as a full
 				participant. Outstanding:
-				{entryOpponentsOutstanding.map(id => playerName(players, id)).join(', ')}
+				<PlayerNames {players} ids={entryOpponentsOutstanding} />
 			</p>
 			<BattleCostForm
 				mode="entry"
@@ -185,11 +187,7 @@
 <!-- A player as the table knows them everywhere: their shape, then their name
      in their colour. -->
 {#snippet person(id: number)}
-	{@const p = players.find(pl => pl.id === id) ?? null}
-	<span class="person" style:color={p ? playerColor(p) : undefined}>
-		<PlayerShape player={p} size={12} />
-		<span>{playerName(players, id)}</span>
-	</span>
+	<span class="person"><PlayerName {players} {id} label /></span>
 {/snippet}
 
 <style>
@@ -226,9 +224,5 @@
 		font-size: var(--text-small);
 	}
 	.owed-to { color: var(--color-text-secondary); }
-	.person {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-	}
+	.person { display: inline-flex; }
 </style>

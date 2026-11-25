@@ -25,6 +25,8 @@
   the error line.
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 	import './planPanel.css';
 	import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
 	import ResolvingCard from './ResolvingCard.svelte';
@@ -119,29 +121,29 @@
 			     though it were the rumor. After it, the STATED rumor is. -->
 			{#if preRollDone && srData.rumor_text}
 				<p class="rumor-label">{scene.mar ? 'The rumor that backfired' : 'The rumor, as stated'}</p>
-				<p class="rumor-quote">“{srData.rumor_text}”</p>
+				<p class="rumor-quote"><Quote text={srData.rumor_text} /></p>
 				{#if srData.how_spread}
 					<p class="rumor-target">How it's spreading: {srData.how_spread}</p>
 				{/if}
 			{:else if !preRollDone && srData.is_secret}
 				<p class="rumor-label">A secret rumor</p>
 				<p class="rumor-target">
-					Kept under <em>{srData.secret_asset_id != null ? assetName(assets, srData.secret_asset_id) : 'an asset'}</em>
+					Kept under {#if srData.secret_asset_id != null}<AssetName {assets} id={srData.secret_asset_id} />{:else}an asset{/if}
 					until it is stated before the roll.
 				</p>
 			{:else if plan.preparation_notes && (preRollDone || !scene.isPreparer)}
 				<!-- (The preparer's own draft is not repeated here: it is already in the
 				     field below, where they are about to restate it.) -->
 				<p class="rumor-label">{preRollDone ? 'Rumor' : 'As prepared — a draft, restated before the roll'}</p>
-				<p class="rumor-quote">“{plan.preparation_notes}”</p>
+				<p class="rumor-quote"><Quote text={plan.preparation_notes} /></p>
 			{/if}
 			{#if srData.counter_rumor_text}
 				<p class="rumor-label">The rumor that spreads instead</p>
-				<p class="rumor-quote">“{srData.counter_rumor_text}”</p>
+				<p class="rumor-quote"><Quote text={srData.counter_rumor_text} /></p>
 			{/if}
 			{#if plan.target_asset_id && !scene.mar}
 				<p class="rumor-target">
-					Targeting: <em>{assetName(assets, plan.target_asset_id)}</em>
+					Targeting: <AssetName {assets} id={plan.target_asset_id} />
 				</p>
 			{/if}
 		</div>

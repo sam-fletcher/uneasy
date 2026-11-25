@@ -284,7 +284,7 @@ describe('Propose Decree', () => {
 
 	it('the law under debate is step text, and the council is a plain list', () => {
 		const body = decree({ outcome: '' }, OTHER, null);
-		expect(body).toMatch(/<p class="ft-prompt[^"]*">“No private armies\.”<\/p>/);
+		expect(body).toMatch(/<p class="ft-prompt[^"]*">(<!--[^>]*-->)*<span class="quote">“No private armies\.”<\/span>(<!--[^>]*-->)*<\/p>/);
 		expect(body).toContain('council-list');
 		expect(body).not.toMatch(/style="[^"]*margin/);
 	});

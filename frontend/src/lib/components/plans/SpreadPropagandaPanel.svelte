@@ -5,6 +5,7 @@
   undergoes (book p.58) — one step, no extra gate.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
 	import {
@@ -342,7 +343,7 @@
 	// PREPARER's, so copy that says "your" has to say whose when they aren't.
 	const whose = $derived(isPreparer || !plan ? 'your' : `${playerName(players, plan.preparer_id)}'s`);
 	// Who is choosing, for the lines a watcher reads about them.
-	const actorName = $derived(plan ? playerName(players, resolutionActorID(plan, plans)) : '');
+	const actorID = $derived(plan ? resolutionActorID(plan, plans) : null);
 	const whoHas = $derived(isPreparer || !plan ? 'You have' : `${playerName(players, plan.preparer_id)} has`);
 
 	// give_peer: pick one of the preparer's peers and a recipient player.
@@ -507,11 +508,11 @@
 				</p>
 				<!-- The player choosing is told what to do; everyone else, what the actor is doing. -->
 				<p class="choices-note">
-					{#if amChoiceActor}Pick options{:else}{actorName} picks options{/if} equal to (difficulty − result) (repeatable){#if marPicksNeeded != null}: {amChoiceActor ? 'choose exactly' : 'exactly'} {marPicksNeeded}{/if}.
+					{#if amChoiceActor}Pick options{:else}<PlayerName {players} id={actorID} /> picks options{/if} equal to (difficulty − result) (repeatable){#if marPicksNeeded != null}: {amChoiceActor ? 'choose exactly' : 'exactly'} {marPicksNeeded}{/if}.
 				</p>
 				{#if marRequiredPicks != null && marPicksNeeded != null && marPicksNeeded < marRequiredPicks}
 					<p class="choices-note muted">
-						Only {marPicksNeeded} of the {marRequiredPicks} picks have a valid target, so {#if amChoiceActor}take every one you can{:else}{actorName} takes every one that can be{/if}.
+						Only {marPicksNeeded} of the {marRequiredPicks} picks have a valid target, so {#if amChoiceActor}take every one you can{:else}<PlayerName {players} id={actorID} /> takes every one that can be{/if}.
 					</p>
 				{/if}
 				{#each MAR_OPTIONS.spread_propaganda ?? [] as opt}
@@ -585,9 +586,9 @@
 							<div class="plan-form">
 								<p class="choices-header">
 									{#if amChoiceActor}
-										A peer leaves {whose} retinue — hand it to another player
+										A peer leaves {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} retinue — hand it to another player
 									{:else}
-										A peer leaves {whose} retinue, to be handed to another player
+										A peer leaves {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} retinue, to be handed to another player
 									{/if}
 									{#if givePeerPicked > 1}({givePeerPicked - givePeerDone} of {givePeerPicked} remaining){/if}
 								</p>
@@ -631,9 +632,9 @@
 							<div class="plan-form">
 								<p class="choices-header">
 									{#if amChoiceActor}
-										Break yourself — break one of {whose} assets
+										Break yourself — break one of {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} assets
 									{:else}
-										{playerName(players, plan.preparer_id)} breaks one of their own assets
+										<PlayerName {players} id={plan.preparer_id} /> breaks one of their own assets
 									{/if}
 									{#if breakSelfPicked > 1}({breakSelfPicked - breakSelfDone} of {breakSelfPicked} remaining){/if}
 								</p>

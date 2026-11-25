@@ -10,6 +10,8 @@
   resolution_data and never shown here.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 	import type { Plan } from '$lib/api';
 	import { parseResolutionData, assetName } from '../shared';
 	import type { PlanContext } from '../types';
@@ -22,6 +24,7 @@
 	} = $props();
 
 	const assets = $derived(ctx.assets);
+	const players = $derived(ctx.players);
 
 	const srData = $derived(scene.srData);
 	const brokenAssetIDs = $derived(srData.broken_asset_ids ?? []);
@@ -44,25 +47,25 @@
 		<p class="resolved-so-far-label">Resolved so far:</p>
 		<ul class="resolved-so-far-list">
 			{#each brokenAssetIDs as id}
-				<li>Broke <em>{assetName(assets, id)}</em></li>
+				<li>Broke <AssetName {assets} id={id} /></li>
 			{/each}
 			{#if leveragedCount > 0}
 				<li>
-					Leveraged <em>{assetName(assets, (scene.mar ? scene.mcAsset?.id : plan.target_asset_id) ?? 0)}</em>
+					Leveraged <AssetName {assets} id={(scene.mar ? scene.mcAsset?.id : plan.target_asset_id) ?? 0} />
 					{#if leveragedCount > 1}(×{leveragedCount}){/if}
 				</li>
 			{/if}
 			{#each takenAssetIDs as id}
-				<li>Took <em>{assetName(assets, id)}</em></li>
+				<li>Took <AssetName {assets} id={id} /></li>
 			{/each}
 			{#each hideSourceAssetIDs as id}
 				<li>
 					Hid as the source — the secret is discoverable from
-					<em>{assetName(assets, id)}</em>
+					<AssetName {assets} id={id} />
 				</li>
 			{/each}
 			{#if revealedSource}
-				<li>{scene.actorName} relished the rumor's glory</li>
+				<li><PlayerName {players} id={scene.actorID} /> relished the rumor's glory</li>
 			{/if}
 		</ul>
 	</div>

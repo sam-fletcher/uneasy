@@ -34,7 +34,7 @@
 	import AssetCardSelectable from './AssetCardSelectable.svelte';
 	import LogMark from './LogMark.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
-	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 
 	interface Props {
 		gameID: string | number;
@@ -192,10 +192,7 @@
 		{/if}
 		<p class="focus-line">
 			Focus:
-			<PlayerShape player={focusPlayer} />
-			<span class="focus-name" style:color={colorFor(scene.focus_player_id)}>
-				{focusPlayer?.display_name ?? 'Unknown'}
-			</span>
+			<PlayerName player={focusPlayer ?? null} name={focusPlayer?.display_name ?? 'Unknown'} label />
 		</p>
 	</header>
 

@@ -4,6 +4,9 @@
   proposing replaces paying cost that row.
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import PlayerNames from '$lib/components/shared/PlayerNames.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import { votePeace, type Player, type WarStateResponse } from '$lib/api';
@@ -45,21 +48,20 @@
 
 <div class="choices-section">
 	<p class="choices-header">
-		Peace proposal from {playerName(players, proposal.proposer_id)}
+		Peace proposal from <PlayerName {players} id={proposal.proposer_id} />
 	</p>
-	<p class="plan-notes">"{proposal.terms}"</p>
+	<p class="plan-notes"><Quote text={proposal.terms} /></p>
 	<p class="choices-note">
 		Accepted by:
 		{#if proposal.votes.filter(v => v.accepted).length === 0}
 			nobody yet
 		{:else}
-			{proposal.votes.filter(v => v.accepted)
-				.map(v => playerName(players, v.player_id)).join(', ')}
+			<PlayerNames {players} ids={proposal.votes.filter(v => v.accepted).map(v => v.player_id)} />
 		{/if}
 	</p>
 	{#if proposal.awaiting.length > 0}
 		<p class="choices-note muted">
-			Waiting on: {proposal.awaiting.map(id => playerName(players, id)).join(', ')}
+			Waiting on: <PlayerNames {players} ids={proposal.awaiting} />
 		</p>
 	{/if}
 	{#if canVoteProposal}

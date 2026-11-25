@@ -11,6 +11,8 @@
   the consent wait, when this picker is not on screen.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { makeChoice, type Plan } from '$lib/api';
 	import EndsNote from '../shared/EndsNote.svelte';
 	import Stepper from '../shared/Stepper.svelte';
@@ -96,8 +98,8 @@
 	<p class="choices-note">
 		{#if rollOutcome === 'mar'}
 			Pick options equal to (difficulty − result) (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
-			They land on <em>{scene.mcName}</em>, {playerName(players, plan.preparer_id)}'s main character —
-			the subject of {isActor ? 'your' : `${scene.actorName}'s`} counter-rumor.
+			They land on <AssetName name={scene.mcName} />, <PlayerName {players} id={plan.preparer_id} />'s main character —
+			the subject of {#if isActor}your{:else}<PlayerName {players} id={scene.actorID} />'s{/if} counter-rumor.
 		{:else}
 			Pick options equal to {isActor ? 'your' : 'the'} dice result (repeatable){#if requiredPicks != null}: choose <strong>{requiredPicks}</strong>{/if}.
 		{/if}
@@ -112,7 +114,7 @@
 		{@const atBreakCap = opt.key === 'break_target' && (picks.counts.break_target ?? 0) >= scene.btMarginaliaCap}
 		<Stepper label={optionText(opt)} count={picks.counts[opt.key] ?? 0} onstep={(d) => bump(opt.key, d)} dimmed={optDisabled}
 			incDisabled={optDisabled || atBreakCap || (requiredPicks != null && picks.total >= requiredPicks)}>
-			{optionText(opt)}{#if optDisabled}{' '}<em>(declined)</em>{:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}
+			{optionText(opt)}{#if optDisabled}{' '}(declined){:else if atBreakCap}<span class="choices-note muted"> — no marginalia left</span>{/if}
 		</Stepper>
 	{/each}
 	<p class="choices-note">

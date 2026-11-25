@@ -15,6 +15,7 @@
   winners from the demand's resolution_data — no extra fetches.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import LogMark from '../../LogMark.svelte';
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
@@ -273,7 +274,7 @@
 				<span class="demand-mark" aria-hidden="true"><LogMark family="demand" /></span>
 				<span>
 					Demand in effect from
-					{playerName(players, demand.preparer_id)}
+					<PlayerName {players} id={demand.preparer_id} />
 				</span>
 			</p>
 			<ul class="demand-winners">
@@ -281,29 +282,29 @@
 					<li>
 						{#if amPerformStepsWinner}
 							You will submit this plan's make/mar choices
-							in {playerName(players, plan.preparer_id)}'s place.
+							in <PlayerName {players} id={plan.preparer_id} />'s place.
 						{:else}
-							{playerName(players, winners.perform_steps)}
+							<PlayerName {players} id={winners.perform_steps} />
 							will submit this plan's make/mar choices in
-							{playerName(players, plan.preparer_id)}'s place.
+							<PlayerName {players} id={plan.preparer_id} />'s place.
 						{/if}
 					</li>
 				{/if}
 				{#if keepAssetsLive && winners.keep_assets != null && winners.keep_assets !== plan.preparer_id}
 					<li>
 						Any assets this plan would have given
-						{playerName(players, plan.preparer_id)}
-						go to {playerName(players, winners.keep_assets)} instead.
+						<PlayerName {players} id={plan.preparer_id} />
+						go to <PlayerName {players} id={winners.keep_assets} /> instead.
 					</li>
 				{/if}
 				{#if winners.control_leverage != null && winners.control_leverage !== plan.preparer_id}
 					<li>
 						{#if targetRolls}
-							{playerName(players, winners.control_leverage)}
-							controls leverage of {playerName(players, plan.preparer_id)}'s
+							<PlayerName {players} id={winners.control_leverage} />
+							controls leverage of <PlayerName {players} id={plan.preparer_id} />'s
 							assets on this plan's roll.
 						{:else}
-							{playerName(players, winners.control_leverage)}
+							<PlayerName {players} id={winners.control_leverage} />
 							drew leverage control, but {PLAN_SHORT[plan.plan_type]} has no roll
 							of its own — that option had no effect here.
 						{/if}
@@ -312,12 +313,12 @@
 				{#if winners.keep_or_change_target != null && winners.keep_or_change_target !== plan.preparer_id}
 					<li>
 						{#if !retargetable}
-							{playerName(players, winners.keep_or_change_target)}
+							<PlayerName {players} id={winners.keep_or_change_target} />
 							drew the choice to keep or change a plan's target, but
 							{PLAN_SHORT[plan.plan_type]} isn't aimed at anything a demand could
 							redirect — that option had no effect here.
 						{:else}
-							{playerName(players, winners.keep_or_change_target)}
+							<PlayerName {players} id={winners.keep_or_change_target} />
 							decides whether this plan keeps or changes its target{retargetHoldsRoll
 								&& !retargetFinalized && !rollClosed
 								? ', and the roll waits until they say'
@@ -409,7 +410,7 @@
 		{#if showLeverageForm}
 			<div class="demand-form">
 				<p class="choices-header">
-					Leverage {playerName(players, plan.preparer_id)}'s assets onto the roll
+					Leverage <PlayerName {players} id={plan.preparer_id} />'s assets onto the roll
 				</p>
 				{#if !targetRolls}
 					<!-- D7: nothing of the preparer's to leverage into. The rules expect
@@ -417,7 +418,7 @@
 					     offering a picker the server would refuse. -->
 					<p class="choices-note">
 						{PLAN_SHORT[plan.plan_type]} resolves without a roll of
-						{playerName(players, plan.preparer_id)}'s own, so there is nothing
+						<PlayerName {players} id={plan.preparer_id} />'s own, so there is nothing
 						here to leverage. This option drew a dud.
 					</p>
 				{:else}

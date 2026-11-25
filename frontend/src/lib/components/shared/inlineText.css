@@ -1,0 +1,57 @@
+/* The look of the three kinds of inline text. Each has ONE component that
+   owns it (PlayerName, AssetName, Quote), and this sheet is where the look
+   lives, so the log's server-written marks (logMarkup.ts) can use the same
+   classes as the components. Import for the side effect; each component does.
+   The exceptions table is in docs/STYLE_GUIDE.md ("Inline text").
+
+   PLAYER NAME. The name is in the player's colour everywhere in text. The
+   colour arrives as a custom property rather than as `color`, so a control can
+   take it back with a plain class rule (below) instead of fighting an inline
+   style. A name nobody can find (--player-name-color unset) falls back to the
+   unknown-player grey.
+
+   ASSET NAME. Italic, taking the colour of the text around it, never its
+   owner's: the owner's coloured name beside it says whose it is. Italic means
+   an asset and nothing else.
+
+   QUOTE. A player's own words: upright, never italic, never parsed for names. */
+
+.player-name {
+	color: var(--player-name-color, var(--player-unknown));
+	font-style: normal;
+}
+/* A player nobody can see or find: explicitly grey, so it can't pick up an
+   enclosing name's --player-name-color (custom properties inherit). */
+.player-name.unknown { color: var(--player-unknown); }
+/* A name that stands alone as a label (a byline, the who-line, a chip): the
+   shape first, then the name. */
+.player-name.labelled {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	min-width: 0;
+}
+/* The words of a labelled name still wrap like text when the room is short. */
+.player-name.labelled > .player-name-text { min-width: 0; overflow-wrap: anywhere; }
+
+/* INSIDE A CONTROL THE CONTROL'S TEXT COLOUR WINS. A player colour fails
+   contrast on the gold main button, and on a choice chip the whole label
+   follows the chip's states. Inheriting from the control means no caller
+   passes anything down. A player chip (.fixed) is the exception: it IS the
+   player, so its name keeps the colour.
+
+   A chip that genuinely can't be picked is greyed out, and a greyed-out
+   control is faint throughout, name AND shape. That is the .unavailable class
+   (PlayerChips sets it from `isDisabled`), deliberately not the bare :disabled:
+   a read-only mirror disables its chips too (and so does a disabled fieldset
+   around a whole mirror), and a mirror is shown as it is, not faded. */
+.action-btn .player-name,
+.chip .player-name:not(.fixed),
+.chip.unavailable .player-name {
+	color: inherit;
+}
+.chip.unavailable .player-shape path { fill: currentColor; }
+
+.asset-name { font-style: italic; }
+
+.quote { font-style: normal; }

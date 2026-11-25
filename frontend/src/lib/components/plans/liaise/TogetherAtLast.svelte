@@ -3,6 +3,7 @@
   whoever holds the preparer's seat moves the meeting on.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { advanceLiaise, type Plan } from '$lib/api';
 	import EndsNote from '../shared/EndsNote.svelte';
 	import Buffet from '../shared/Buffet.svelte';
@@ -39,8 +40,8 @@
 
 <div class="choices-section">
 	<p class="ft-prompt">
-		{playerName(players, plan.preparer_id)} and
-		{playerName(players, clState.partnerID)} — set the scene of your
+		<PlayerName {players} id={plan.preparer_id} /> and
+		<PlayerName {players} id={clState.partnerID} /> — set the scene of your
 		meeting together in the chat. Where are you? What are you doing?
 		Are you sharing a meal, meeting under a bridge under the cover
 		of night, or perhaps something more intimate?
@@ -49,8 +50,8 @@
 		<p class="choices-note muted">
 			{#if seats.standingIn}
 				As the Make Demands winner, moving the meeting on is yours.
-				When {playerName(players, plan.preparer_id)} and
-				{playerName(players, clState.partnerID)} are ready, advance the liaison.
+				When <PlayerName {players} id={plan.preparer_id} /> and
+				<PlayerName {players} id={clState.partnerID} /> are ready, advance the liaison.
 			{:else}
 				When you're both ready, advance the liaison.
 			{/if}
@@ -62,7 +63,7 @@
 		<EndsNote text="Advancing ends the meeting scene. Secrets We Keep begins." />
 	{:else}
 		<p class="choices-note muted">
-			Once you're both ready, {seats.holderName}{#if seats.preparerSeatHolder !== plan.preparer_id}, the Make Demands winner,{/if} will advance the liaison.
+			Once you're both ready, <PlayerName {players} id={seats.preparerSeatHolder} />{#if seats.preparerSeatHolder !== plan.preparer_id}, the Make Demands winner,{/if} will advance the liaison.
 		</p>
 	{/if}
 </div>

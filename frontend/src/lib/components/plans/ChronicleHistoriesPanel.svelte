@@ -24,6 +24,9 @@
   which the server flips true inside the cast-roll route.
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import { onDestroy } from 'svelte';
 	import './planPanel.css';
@@ -383,7 +386,7 @@
 				<p class="choices-header">Invoked artifacts ({invokedArtifacts.length})</p>
 				<ul class="plan-notes chp-list">
 					{#each invokedArtifacts as a}
-						<li>{a.name} <span class="muted">({playerName(players, a.owner_id)})</span></li>
+						<li>{a.name} <span class="muted">(<PlayerName {players} id={a.owner_id} />)</span></li>
 					{/each}
 				</ul>
 			</div>
@@ -513,12 +516,12 @@
 								{@const verb = stepVerb(s.option)}
 								<li>
 									{#if verb}
-										{verb} <em>{stepAssetName(s.asset_id)}</em>
+										{verb} <AssetName name={stepAssetName(s.asset_id)} />
 									{:else}
 										{optionLabel(s.option)}
 									{/if}
 									{#if s.narration}
-										<span class="resolved-note"> — “{s.narration}”</span>
+										<span class="resolved-note"> — <Quote text={s.narration} /></span>
 									{/if}
 								</li>
 							{/each}
@@ -540,7 +543,7 @@
 					{:else}
 						<p class="ft-prompt muted">
 							All choices are made. The scene stays open until
-							{playerName(players, resolutionActorID(plan, plans))} wraps it.
+							<PlayerName {players} id={resolutionActorID(plan, plans)} /> wraps it.
 						</p>
 					{/if}
 				{/if}
@@ -625,9 +628,9 @@
 						{#each steps.filter(s => s.player_id != null) as s}
 							{@const verb = stepVerb(s.option)}
 							<li>
-								{playerName(players, s.player_id!)}:
+								<PlayerName {players} id={s.player_id!} />:
 								{#if verb}
-									{verb.toLowerCase()} <em>{stepAssetName(s.asset_id)}</em>
+									{verb.toLowerCase()} <AssetName name={stepAssetName(s.asset_id)} />
 								{:else}
 									{optionLabel(s.option)}
 								{/if}
@@ -637,7 +640,7 @@
 				{:else}
 					<ul class="plan-notes chp-list">
 						{#each marEntries as e}
-							<li>{playerName(players, e.playerID)}: {optionLabel(e.choice)}</li>
+							<li><PlayerName {players} id={e.playerID} />: {optionLabel(e.choice)}</li>
 						{/each}
 					</ul>
 				{/if}
@@ -659,7 +662,7 @@
 				{:else if allMarSubmitted}
 					<p class="ft-prompt muted">
 						Every player has chosen. The scene stays open until
-						{playerName(players, resolutionActorID(plan, plans))} wraps it.
+						<PlayerName {players} id={resolutionActorID(plan, plans)} /> wraps it.
 					</p>
 				{/if}
 			</div>

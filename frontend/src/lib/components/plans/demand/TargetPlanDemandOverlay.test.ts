@@ -159,7 +159,7 @@ describe('TargetPlanDemandOverlay forms', () => {
 
 describe('TargetPlanDemandOverlay keep_assets banner', () => {
 	it('promises spoils from a plan that awards assets', () => {
-		expect(overlay({ viewer: 3 })).toContain('go to bob instead');
+		expect(overlay({ viewer: 3 }).replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ')).toContain('go to bob instead');
 	});
 
 	it.each(['seek_answers', 'chronicle_histories'])('does not on %s, which awards none', (t) => {

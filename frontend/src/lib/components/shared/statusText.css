@@ -5,7 +5,7 @@
 
    Named "-text" rather than the bare .muted/.error you'll see inside
    lib/components/plans/ — that tree already has its own global .muted rule
-   (plans/planPanel.css) with a different look (italic, faint), loaded the
+   (plans/planPanel.css) with a different look (faint), loaded the
    same unscoped way. Reusing the bare name here would race it for the same
    class on any page where both stylesheets end up loaded (see the workaround
    in WaitingOnBar.svelte). Keep the two namespaces distinct instead of

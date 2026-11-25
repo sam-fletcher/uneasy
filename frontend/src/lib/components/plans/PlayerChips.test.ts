@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { declarations } from '$lib/components/shared/cssTestKit';
 import type { Player } from '$lib/api';
 import { playerColor } from '$lib/playerColor';
 import PlayerChips from './PlayerChips.svelte';
@@ -56,12 +59,36 @@ describe('PlayerChips', () => {
 		expect(shape, 'a shape').toBeGreaterThan(-1);
 		expect(name, 'the name').toBeGreaterThan(shape);
 		// The colour is the name's own: it is the span around the text.
-		expect(a).toContain(`<span style="color: ${playerColor(alice)};">alice</span>`);
+		expect(a).toContain(`class="player-name labelled fixed" style="--player-name-color: ${playerColor(alice)};"`);
 		// The button carries no inline colour (a choice wears no player colour).
 		expect(a.match(/<button[^>]*>/)?.[0]).not.toMatch(/style=/);
 		// Two players, two colours: the chips tell players apart by colour and shape.
 		expect(playerColor(alice)).not.toBe(playerColor(bob));
-		expect(chips(draw())[1]).toContain(`color: ${playerColor(bob)}`);
+		expect(chips(draw())[1]).toContain(`--player-name-color: ${playerColor(bob)}`);
+	});
+
+	it('a read-only mirror is disabled but not faded; only a chip that cannot be picked is', () => {
+		// The faint rule (inlineText.css) is `.chip.unavailable …`, never bare :disabled,
+		// because a mirror's chips are `disabled` too and a mirror is shown as it is.
+		// So what separates the two cases is the class, and this pins it.
+		for (const c of chips(draw({ readOnly: true }))) {
+			expect(c).toMatch(/<button[^>]*\sdisabled/); // inert for the browser…
+			expect(c).not.toMatch(/<button[^>]*class="[^"]*\bunavailable\b/); // …but not greyed out
+			expect(c).toContain('player-name labelled fixed'); // keeps the colour
+		}
+		const [a = '', b = ''] = chips(draw({ isDisabled: (p: Player) => p.id === bob.id }));
+		expect(a).not.toMatch(/\bunavailable\b/);
+		expect(b).toMatch(/<button[^>]*class="[^"]*\bunavailable\b/);
+		// Both still carry `fixed`: the chip is the player. It is `.unavailable` that fades it.
+		expect(b).toContain('player-name labelled fixed');
+		// The rule that fades a name or a shape can't match a read-only chip, which is
+		// `disabled` but not `.unavailable`.
+		const sheet = declarations(readFileSync(join(__dirname, '..', 'shared', 'inlineText.css'), 'utf8'));
+		const fading = sheet.filter((d) => /player-name|player-shape/.test(d.selector) && /chip/.test(d.selector));
+		for (const d of fading.filter((x) => /unavailable/.test(x.selector))) {
+			expect(d.selector).toContain('.chip.unavailable');
+		}
+		expect(fading.some((d) => /:disabled|aria-disabled/.test(d.selector))).toBe(false);
 	});
 
 	it('locks every chip when read-only, and only the named ones otherwise', () => {

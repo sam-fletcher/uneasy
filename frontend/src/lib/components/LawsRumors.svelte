@@ -11,8 +11,9 @@
   glance, and every name in one comes with its player's shape:
     - Law:   "Proposed by" the origin plan's preparer, "Signed by" the
              signatory (often a different, higher-power player).
-    - Rumor: "Spread by" the source player, or "Unknown" (faint italics, no
-             shape) when the spreader hid themselves (Spread Rumors, hide-source).
+    - Rumor: "Spread by" the source player, or "Unknown" (the unknown-player
+             grey, upright, no shape: a player you can't see) when the spreader
+             hid themselves (Spread Rumors, hide-source).
              An "About" line above it names the asset the rumor is about, with
              the shape of whoever owns that asset.
 
@@ -33,12 +34,13 @@
 		updateLaw, updateRumor,
 		type Asset, type Law, type Rumor, type Plan, type Player,
 	} from '$lib/api';
-	import { playerColor } from '$lib/playerColor';
 	import { isNewEntry } from '$lib/lawsRumorsSeen';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import NewDot from '$lib/components/shared/NewDot.svelte';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 
 	interface Props {
 		/** Which list the pane is showing. */
@@ -180,16 +182,17 @@
 	const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 </script>
 
-<!-- A name in a byline: the player's shape and then the name in their colour.
-     A hidden source has neither: "Unknown" in faint italics. -->
+<!-- A name in a byline: the player's shape and then the name in their colour
+     (<PlayerName label>). A hidden source has neither: "Unknown" in the
+     unknown-player grey, upright, which is how the component draws a player it
+     can't resolve (a player you can't see, or can't find). -->
 {#snippet byline(label: string, who: Player | null, name: string, hidden = false)}
 	<span class="lr-byline">
 		<span class="lr-byline-label">{label}</span>
 		{#if hidden}
-			<span class="lr-unknown">Unknown</span>
+			<PlayerName player={null} name="Unknown" />
 		{:else}
-			<PlayerShape player={who} />
-			<span class="lr-byline-name" style:color={playerColor(who)}>{name}</span>
+			<PlayerName player={who} {name} label />
 		{/if}
 	</span>
 {/snippet}
@@ -271,7 +274,7 @@
 										{#if about.owner}
 											<PlayerShape player={about.owner} label="{playerName(about.owner.id)}’s" />
 										{/if}
-										<span class="lr-about-name">{about.name}</span>
+										<span class="lr-about-name"><AssetName name={about.name} /></span>
 									</div>
 								{/if}
 								<div class="lr-body">
@@ -307,7 +310,7 @@
 		   it to the same 16px the Events list keeps. */
 		padding: 0 var(--space-2);
 	}
-	.lr-empty { font-style: italic; padding: var(--space-3) 0; }
+	.lr-empty { padding: var(--space-3) 0; }
 
 	/* The list's own total ("2 laws"). Totals live here, never on a tab. */
 	.lr-count {
@@ -366,7 +369,6 @@
 		margin: 0;
 		font-family: var(--font-serif);
 		font-size: var(--text-small);
-		font-style: italic;
 		line-height: 1.5;
 		color: var(--color-text-secondary);
 	}
@@ -388,9 +390,6 @@
 		white-space: nowrap;
 	}
 	.lr-byline-label { color: var(--color-text-faint); }
-	/* A hidden source is a deliberate absence, so it carries no shape and no
-	   colour: faint, italic. */
-	.lr-unknown { color: var(--color-text-faint); font-style: italic; }
 
 	/* A bordered 44px button (the house secondary), pushed to the end. It is a
 	   little smaller in type than the body so it doesn't outweigh the byline. */

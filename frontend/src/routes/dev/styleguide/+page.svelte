@@ -39,6 +39,9 @@
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import OptionCard from '$lib/components/shared/OptionCard.svelte';
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import Quote from '$lib/components/shared/Quote.svelte';
 	import RowMark from '$lib/components/shared/RowMark.svelte';
 	import StarMark from '$lib/components/shared/StarMark.svelte';
 	import StepHeading from '$lib/components/shared/StepHeading.svelte';
@@ -80,6 +83,7 @@
 		['gold', 'Gold'],
 		['meaning', 'Meaning'],
 		['players', 'Players'],
+		['inline-text', 'Inline text'],
 		['marks', 'Marks'],
 		['buttons', 'Buttons'],
 		['chips', 'Chips'],
@@ -455,9 +459,8 @@
 						<span>Seat {i + 1}</span>
 						<span class="value">{playerRatios[String(i + 1)] ?? ''} on the page</span>
 					</div>
-					<span class="player-sample" style:color={playerColor({ token_color: null, seat_order: i + 1 })}>
-						<PlayerShape seat={i + 1} size={24} />
-						<span>{shape.colorName}</span>
+					<span class="player-sample">
+						<PlayerName player={{ id: i + 1, display_name: shape.colorName, token_color: null, seat_order: i + 1 }} label size={24} />
 					</span>
 					<span class="job">
 						{shape.name} · <code>{playerColor({ token_color: null, seat_order: i + 1 })}</code>
@@ -470,12 +473,12 @@
 					<span class="unknown-dot"></span>
 					<span>Unknown</span>
 				</span>
-				<span class="job">a fallback for a player that can't be resolved. Never "a quieter player"</span>
+				<span class="job">a player you can't see or can't find (a hidden source). Never "a quieter player"</span>
 			</li>
 		</ul>
 		<Cell label="Shapes at 12, 16 and 24px (the smallest is 12)">
 			{#each PLAYER_SHAPES as _shape, i (i)}
-				<span class="size-run" style:color={playerColor({ token_color: null, seat_order: i + 1 })}>
+				<span class="size-run">
 					<PlayerShape seat={i + 1} size={12} />
 					<PlayerShape seat={i + 1} size={16} />
 					<PlayerShape seat={i + 1} size={24} />
@@ -486,14 +489,59 @@
 			<div class="chip-row">
 				{#each players as p (p.id)}
 					<Chip compact aria-label={p.display_name}>
-						<PlayerShape player={p} />
-						<span style:color={playerColor(p)}>{p.id === 1 ? 'You' : p.display_name}</span>
+						<PlayerName player={p} name={p.id === 1 ? 'You' : p.display_name} label fixed />
 						{#if waiting.has(p.id)}
 							<ClockMark tone={p.id === 1 ? 'you' : 'other'} />
 						{/if}
 					</Chip>
 				{/each}
 			</div>
+		</Cell>
+	</Section>
+
+	<!-- ── Inline text ─────────────────────────────────────────────────── -->
+
+	<Section
+		id="inline-text"
+		title="Inline text"
+		blurb="Three kinds of inline text, each drawn by one component. A player's name is in their colour wherever it is; an asset's name is italic in the colour around it; a player's own words are quoted and upright. Inside a control, the control's text colour wins. The exceptions table is in the style guide."
+	>
+		<Cell label="PlayerName in a sentence: colour, no shape. 'You' stays plain">
+			<p class="inline-demo">
+				<PlayerName player={players[1]} /> asked <PlayerName player={players[2]} />'s peer to leave. You told <PlayerName player={players[0]} /> no.
+			</p>
+		</Cell>
+		<Cell label="PlayerName as a label: the shape comes first">
+			<p class="inline-demo"><PlayerName player={players[1]} label /></p>
+		</Cell>
+		<Cell label="AssetName: italic, the surrounding colour, never the owner's">
+			<p class="inline-demo">
+				<PlayerName player={players[1]} /> takes <AssetName name="the Old Keep" /> from <PlayerName player={players[2]} />.
+			</p>
+			<p class="inline-demo muted-text">In faint text: <PlayerName player={players[2]} /> holds <AssetName name="Lady Merrow" />.</p>
+		</Cell>
+		<Cell label="Quote: curly marks, upright, never parsed">
+			<p class="inline-demo"><Quote text="Whoever holds **the Keep** holds the river." /></p>
+		</Cell>
+		<Cell label="The filled main button: names take its dark ink">
+			<button class="action-btn primary" type="button">Give <AssetName name="the Old Keep" /> to <PlayerName player={players[1]} /></button>
+		</Cell>
+		<Cell label="A choice chip: the whole label follows the chip. Selected, then plain">
+			<div class="chip-row">
+				<Chip selected><span>Break <AssetName name="Lady Merrow" /> for <PlayerName player={players[1]} /></span></Chip>
+				<Chip><span>Break <AssetName name="Lady Merrow" /> for <PlayerName player={players[1]} /></span></Chip>
+			</div>
+		</Cell>
+		<Cell label="A player chip keeps the player's colour; a disabled chip is faint throughout">
+			<div class="chip-row">
+				<PlayerChips {players} isActive={(p) => p.id === 2} onSelect={() => {}} isDisabled={(p) => p.id === 3} />
+			</div>
+		</Cell>
+		<Cell label="A warning: the names keep their colour">
+			<Notice tone="warning"><PlayerName player={players[1]} /> is one tear from losing <AssetName name="the Old Keep" />.</Notice>
+		</Cell>
+		<Cell label="A hidden source: the unknown-player grey, upright, no shape">
+			<p class="inline-demo">Spread by <PlayerName player={null} name="Unknown" /></p>
 		</Cell>
 	</Section>
 
@@ -1300,6 +1348,7 @@
 		gap: var(--space-2);
 		font-size: var(--text-body);
 	}
+	.inline-demo { margin: 0; font-size: var(--text-body); }
 	.player-sample {
 		display: inline-flex;
 		align-items: center;

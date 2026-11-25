@@ -111,6 +111,7 @@ describe('DieTile', () => {
 });
 
 describe('ResolvingCard', () => {
+	const plain = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
 	const card = (props: Record<string, unknown>, context?: Map<symbol, () => StepFrame>) =>
 		strip(render(ResolvingCard, {
 			props: { plan: plan(), players, children: snippet('<p id="body">THE BODY</p>'), ...props },
@@ -119,14 +120,14 @@ describe('ResolvingCard', () => {
 
 	it('says who prepared the plan, as a finished line, and carries no badge', () => {
 		const html = card({});
-		expect(html).toContain('alice prepared Seek Answers');
+		expect(plain(html)).toContain('alice prepared Seek Answers');
 		expect(html).not.toContain('resolving-badge');
 		expect(html).not.toContain('plan-badge');
 	});
 
 	it('quotes the preparer\'s note as a second finished line', () => {
 		const html = card({ plan: plan({ preparation_notes: 'Who holds the holdfast?' }) });
-		expect(html).toContain('alice: “Who holds the holdfast?”');
+		expect(plain(html)).toContain('alice: “Who holds the holdfast?”');
 	});
 
 	it('gives a long note a tap to open the whole of it', () => {
@@ -143,7 +144,7 @@ describe('ResolvingCard', () => {
 			plan: plan({ plan_type: 'spread_rumors', preparation_notes: 'SECRET-RUMOR-TEXT-THAT-MUST-NOT-LEAK' }),
 			showNotes: false,
 		});
-		expect(html).toContain('alice prepared Spread Rumors');
+		expect(plain(html)).toContain('alice prepared Spread Rumors');
 		expect(html).not.toContain('SECRET-RUMOR-TEXT-THAT-MUST-NOT-LEAK');
 	});
 
@@ -155,8 +156,9 @@ describe('ResolvingCard', () => {
 				heading: { text: 'Your move — the next step', yours: true },
 			}),
 		);
+		const said = plain(html);
 		const at = (s: string) => {
-			const i = html.indexOf(s);
+			const i = said.indexOf(s);
 			expect(i, `${s} is on the page`).toBeGreaterThanOrEqual(0);
 			return i;
 		};

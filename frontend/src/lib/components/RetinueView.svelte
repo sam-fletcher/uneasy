@@ -20,6 +20,7 @@
   sheet has the same owner.
 -->
 <script lang="ts">
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/rankStrip.css';
 	import '$lib/components/shared/cornerBadge.css';
@@ -417,7 +418,7 @@
 				<!-- Whose retinue: their shape, in their colour. The name is right
 				     beside it, so the shape is decoration. -->
 				<PlayerShape {player} size={16} />
-				<span class="title-text">{isSelf ? 'Your Retinue' : `${player.display_name}'s Retinue`}</span>
+				<span class="title-text">{#if isSelf}Your Retinue{:else}<PlayerName {player} />'s Retinue{/if}</span>
 			</h2>
 			<p class="presence">
 				<span class="dot" class:online={presence?.online}></span>
@@ -520,11 +521,11 @@
 									use:focusOnMount
 								/>
 							{:else if canEdit}
-								<button type="button" class="asset-name editable" onclick={() => startRename(asset)} aria-label={`Rename ${asset.name}`}>
+								<button type="button" class="tile-name editable" onclick={() => startRename(asset)} aria-label={`Rename ${asset.name}`}>
 									{asset.name}
 								</button>
 							{:else}
-								<span class="asset-name">
+								<span class="tile-name">
 									{asset.name}
 								</span>
 							{/if}
@@ -856,16 +857,15 @@
 		color: var(--color-leveraged);
 	}
 
-	/* Italic prose placeholders ("No assets yet."). Named -note, not .empty:
+	/* Prose placeholders ("No assets yet."), upright and faint. Named -note, not .empty:
 	   as .empty it collided with `.m-tile.empty`, and the marginalia tiles were
-	   silently inheriting `font-style: italic` — which slanted the "+" in every
-	   empty slot. Same class of leak as the `.muted` one the July 2026 UI audit
+	   silently inheriting its styling — which slanted the "+" in every
+	   empty slot back when the placeholder was italic. Same class of leak as the `.muted` one the July 2026 UI audit
 	   caught; keep placeholder-prose classes off single-word names that a state
 	   modifier might also want. */
 	.empty-note {
 		color: var(--color-text-faint);
 		font-size: var(--text-small);
-		font-style: italic;
 		margin: 0;
 	}
 
@@ -903,7 +903,7 @@
 		color: var(--color-text-faint);
 		pointer-events: none;
 	}
-	.asset-tile.destroyed .asset-name { color: var(--color-text-faint); }
+	.asset-tile.destroyed .tile-name { color: var(--color-text-faint); }
 	.asset-tile.destroyed .m-tile { border-color: var(--color-border); }
 	/* The main character is distinguished by the filled star in its tile head, so
 	   the warm border is shared by every asset tile. Leveraged tiles carry the
@@ -917,7 +917,7 @@
 	}
 	/* A head that holds a control is as tall as the control (the 44px touch
 	   minimum); a read-only head is only as tall as the name. */
-	.tile-head:has(.ctl, button.asset-name, .rename-input) { min-height: var(--size-tap); }
+	.tile-head:has(.ctl, button.tile-name, .rename-input) { min-height: var(--size-tap); }
 
 	/* The controls and secret indicators, kept together and pushed to the right
 	   edge. */
@@ -928,7 +928,7 @@
 		flex-shrink: 0;
 	}
 
-	.asset-name {
+	.tile-name {
 		font-size: var(--text-body);
 		color: var(--color-text);
 		display: inline-flex;
@@ -943,7 +943,7 @@
 	/* The name is a button for its owner (tap to rename). It has no box at rest,
 	   so it reads as the title it is; the border appears on hover and the ring on
 	   focus. 44px tall like every pressable thing. */
-	button.asset-name.editable {
+	button.tile-name.editable {
 		background: none;
 		border: 1px solid transparent;
 		padding: 0 var(--space-2);
@@ -955,8 +955,8 @@
 		cursor: pointer;
 		max-width: 100%;
 	}
-	button.asset-name.editable:hover { border-color: var(--color-border-control-hover); background: var(--color-surface-hover); }
-	button.asset-name.editable:focus-visible { outline: 2px solid var(--color-you); outline-offset: 2px; }
+	button.tile-name.editable:hover { border-color: var(--color-border-control-hover); background: var(--color-surface-hover); }
+	button.tile-name.editable:focus-visible { outline: 2px solid var(--color-you); outline-offset: 2px; }
 
 	/* The type, "Leveraged" and "Destroyed", as words under the name. */
 	.tile-status {

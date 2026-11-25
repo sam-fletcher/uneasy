@@ -6,6 +6,9 @@
   reveal has no plan card to draw it in).
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import SimultaneousRevealInput from '../SimultaneousRevealInput.svelte';
 	import DelayThresholdNote from '../shared/DelayThresholdNote.svelte';
 	import { playerName, finaleSlotSpent } from '../shared';
@@ -37,15 +40,15 @@
 
 <div class="plan-panel pending">
 	{#if plan.preparation_notes}
-		<p class="plan-notes">“{plan.preparation_notes}”</p>
+		<p class="plan-notes"><Quote text={plan.preparation_notes} /></p>
 	{/if}
 	{#if preparerMeetingPeer || partnerMeetingPeerAsset}
 		<p class="ft-prompt cl-meeting-peers">
-			{playerName(players, plan.preparer_id)}'s
-			<em>{preparerMeetingPeer?.name ?? '?'}</em>
+			<PlayerName {players} id={plan.preparer_id} />'s
+			<AssetName name={preparerMeetingPeer?.name ?? '?'} />
 			meets
-			{playerName(players, clState.partnerID)}'s
-			<em>{partnerMeetingPeerAsset?.name ?? '?'}</em>
+			<PlayerName {players} id={clState.partnerID} />'s
+			<AssetName name={partnerMeetingPeerAsset?.name ?? '?'} />
 		</p>
 	{/if}
 	<!-- Everyone sees the line, participant or not: the faces are chosen rather
@@ -66,8 +69,8 @@
 		/>
 	{:else}
 		<p class="choices-note muted">
-			{playerName(players, plan.preparer_id)} and
-			{playerName(players, clState.partnerID)} are settling on a time…
+			<PlayerName {players} id={plan.preparer_id} /> and
+			<PlayerName {players} id={clState.partnerID} /> are settling on a time…
 		</p>
 	{/if}
 </div>

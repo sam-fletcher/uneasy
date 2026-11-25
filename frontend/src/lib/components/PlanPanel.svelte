@@ -476,7 +476,7 @@
 			</div>
 			{#if ineligibleNotice}
 				<p class="ineligible-reason" role="status">
-					<em>{PLAN_SHORT[ineligibleNotice.type]}</em> — {ineligibleNotice.reason}.
+					{PLAN_SHORT[ineligibleNotice.type]} — {ineligibleNotice.reason}.
 				</p>
 			{/if}
 		{/if}
@@ -487,7 +487,7 @@
 				     before anything is committed. -->
 				<Notice tone="warning" live>
 					<span class="finale-warning-head">This will be your one Explosive Finale plan.</span>
-					<em>{PLAN_SHORT[displaySelectedPlanType]}</em> would normally land on row {bonusNaturalRow},
+					{PLAN_SHORT[displaySelectedPlanType]} would normally land on row {bonusNaturalRow},
 					past the end of the record, but it will be placed on row 13 instead.
 					Each player only gets this benefit once.
 				</Notice>

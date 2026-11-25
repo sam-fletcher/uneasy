@@ -4,6 +4,9 @@
   outside the greyed picker fieldset, like Propose Decree's live law text.
 -->
 <script lang="ts">
+	import Quote from '$lib/components/shared/Quote.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { playerName } from '../shared';
 	import type { PlanContext } from '../types';
 	import type { SeekScene } from './shared';
@@ -22,22 +25,22 @@
 		<p class="resolved-so-far-label">Resolved so far:</p>
 		<ul class="resolved-so-far-list">
 			{#each scene.makeBrokenIDs as id}
-				<li>Broke <em>{assetName(id)}</em></li>
+				<li>Broke <AssetName name={assetName(id)} /></li>
 			{/each}
 			{#each scene.revealedAssetIDs as id}
-				<li>Learned the secrets of <em>{assetName(id)}</em></li>
+				<li>Learned the secrets of <AssetName name={assetName(id)} /></li>
 			{/each}
 			{#each scene.declaredTruths as t}
-				<li>Declared true: “{t}”</li>
+				<li>Declared true: <Quote text={t} /></li>
 			{/each}
 			{#each scene.answeredQuestions as q}
 				<li>
-					Asked {playerName(players, q.target_id)}: “{q.question}” —
-					answered “{q.answer}”
+					Asked <PlayerName {players} id={q.target_id} />: <Quote text={q.question} /> —
+					answered <Quote text={q.answer} />
 				</li>
 			{/each}
 			{#each scene.penaltyBrokenIDs as id}
-				<li>Broke own resource, <em>{assetName(id)}</em></li>
+				<li>Broke own resource, <AssetName name={assetName(id)} /></li>
 			{/each}
 		</ul>
 	</div>

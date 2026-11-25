@@ -7,6 +7,8 @@
   and gates nothing; the phase advances on the stake-count reveal alone.
 -->
 <script lang="ts">
+	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import EndsNote from '../shared/EndsNote.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import Notice from '$lib/components/shared/Notice.svelte';
@@ -51,7 +53,7 @@
 	const myDuelerID = $derived(myChampionID ?? myMC?.id ?? null);
 
 	// Whoever duels for a side: the elected champion, else their main character. It
-	// is an asset, so its name is marked as one (the <em> every plan panel uses).
+	// is an asset, so its name is marked as one (<AssetName>, the one piece every panel uses).
 	// Only a player with no peer at all falls back to their own name.
 	function dueler(playerID: number | null, champID: number | null): Asset | null {
 		return champID != null
@@ -154,7 +156,7 @@
 
 {#snippet duelerName(playerID: number | null, champID: number | null)}
 	{@const who = dueler(playerID, champID)}
-	{#if who}<em>{who.name}</em>{:else}{playerName(players, playerID)}{/if}
+	{#if who}<AssetName name={who.name} />{:else}<PlayerName {players} id={playerID} />{/if}
 {/snippet}
 
 <div class="step-groups">
