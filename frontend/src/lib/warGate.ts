@@ -42,7 +42,7 @@ export const SETTLE_WARS_LABEL = 'settle the costs of war';
  *
  * A war under an open peace proposal waits on its voters, not its payers, but the
  * row state is still `await_battle_cost`, and the label is read off the kind alone,
- * so without this a voter's heading says "Your move — pay the cost of battle".
+ * so without this a voter's heading says "Your move", "Pay the cost of battle".
  *
  * Two wars can owe on the same row. The row state names only one of them, and not
  * a stable one, while `acting_player_ids` covers all of them. So this reads every war

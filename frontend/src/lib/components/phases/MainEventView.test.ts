@@ -39,7 +39,9 @@ function view(rowState: RowState | null, currentPlayerID: number | null = 2, pla
 	});
 	return body.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ');
 }
-const headings = (html: string) => [...html.matchAll(/<h2 class="step-heading[^"]*"[^>]*>([^<]*)<\/h2>/g)].map(m => m[1]);
+// The heading as it reads: tags stripped, "Waiting on alice. The next step".
+const headings = (html: string) => [...html.matchAll(/<h2 class="step-heading[^"]*"[^>]*>(.*?)<\/h2>/g)]
+	.map(m => m[1].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').replace(/ ([.,])/g, '$1').trim());
 const state = (kind: RowStateKind, acting = [1]): RowState => ({ kind, acting_player_ids: acting });
 
 describe('the open step always has a heading', () => {
@@ -47,13 +49,13 @@ describe('the open step always has a heading', () => {
 	// a scene before the scene has loaded (so no scene panel yet), a war's cost with
 	// no war plan to show, and a plan whose panel has not loaded (no plans fetched).
 	const cases: Array<[string, RowState, string]> = [
-		['a plan pending before kick-off', state('plan_pending'), 'Waiting on alice — the next step'],
-		['a plan resolving whose panel has not loaded', state('plan_resolving'), 'Waiting on alice — the next step'],
-		['an active scene before the scene has loaded', state('scene_active'), 'Waiting on alice — the scene'],
-		['a cost of battle with no war on screen', state('await_battle_cost'), 'Waiting on alice — pay the cost of battle'],
-		['a surrender claim with no war on screen', state('await_surrender_claim'), 'Waiting on alice — surrender-asset claims'],
-		['an open roll before it has loaded', state('await_dice_roll'), 'Waiting on alice — the roll'],
-		['Make War resolving, which draws its own panel', { ...state('plan_resolving'), plan_id: 9 }, 'Waiting on alice — the next step'],
+		['a plan pending before kick-off', state('plan_pending'), 'Waiting on alice. The next step'],
+		['a plan resolving whose panel has not loaded', state('plan_resolving'), 'Waiting on alice. The next step'],
+		['an active scene before the scene has loaded', state('scene_active'), 'Waiting on alice. The scene'],
+		['a cost of battle with no war on screen', state('await_battle_cost'), 'Waiting on alice. Pay the cost of battle'],
+		['a surrender claim with no war on screen', state('await_surrender_claim'), 'Waiting on alice. Surrender-asset claims'],
+		['an open roll before it has loaded', state('await_dice_roll'), 'Waiting on alice. The roll'],
+		['Make War resolving, which draws its own panel', { ...state('plan_resolving'), plan_id: 9 }, 'Waiting on alice. The next step'],
 	];
 	it.each(cases)('%s', (_name, rowState, text) => {
 		expect(headings(view(rowState))).toEqual([text]);
@@ -63,11 +65,11 @@ describe('the open step always has a heading', () => {
 	// Make War is the case a "the card draws the heading" design would leave bare.
 	it('a resolving Make War plan, whose panel draws no card, is headed too', () => {
 		const war = { id: 9, plan_type: 'make_war', status: 'resolving', preparer_id: 1, row_number: 5 } as Plan;
-		expect(headings(view({ ...state('plan_resolving'), plan_id: 9 }, 2, [war]))).toEqual(['Waiting on alice — the next step']);
+		expect(headings(view({ ...state('plan_resolving'), plan_id: 9 }, 2, [war]))).toEqual(['Waiting on alice. The next step']);
 	});
 
 	it('is the viewer\'s own when it is their move', () => {
-		expect(headings(view(state('plan_pending', [2])))).toEqual(['Your move — the next step']);
+		expect(headings(view(state('plan_pending', [2])))).toEqual(['Your move. The next step']);
 	});
 
 	it('draws exactly one, never two', () => {

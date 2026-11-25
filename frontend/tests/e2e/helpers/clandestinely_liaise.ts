@@ -243,7 +243,7 @@ export async function openAll(
 /**
  * A liaison phase's own panel section. The phases used to carry the book's name as
  * a title ("Things We Share"); the open step's heading says it now, word for word
- * ("Your move — things we share"), so the section is found by the sentence the phase
+ * (the heading "Things we share"), so the section is found by the sentence the phase
  * opens with. `header` is still the phase's name, as the specs say it.
  */
 const PHASE_SENTENCE: Record<string, string> = {
@@ -259,7 +259,7 @@ export function section(page: Page, header: string) {
 }
 
 /** The box a player writes the meeting in, in Secrets We Keep. */
-export const meetingBox = (sec: ReturnType<typeof section>) => sec.getByRole('textbox', { name: 'The meeting:' });
+export const meetingBox = (sec: ReturnType<typeof section>) => sec.getByRole('textbox', { name: 'The meeting' });
 
 /**
  * A player's whole Secrets We Keep turn in the panel: tick the asset, write the

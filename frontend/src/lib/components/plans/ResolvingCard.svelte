@@ -1,10 +1,14 @@
 <!-- ResolvingCard.svelte
   The frame of a resolving plan: its steps, in order.
 
-      ⚑ otto prepared Seek Answers          ← finished steps, one line each
+      ⚑ otto prepared Make Demands against bob's Seek Answers (row 5)
+                                            ← finished steps, one line each; the
+                                              preparation line also carries the facts
+                                              fixed at preparation (`against`)
       ✎ otto: “the harbour ledgers”
       ⚄ The roll: Make …                    ← the roll, from PlanPanel's frame
-      Your move — pick make options         ← the open step's heading
+      Your move · also ◆ bob                ← the open step's who-line
+      Pick make options                     ← and its heading
       …the plan's own body…                 ← the open step
 
   Each of the twelve plan panels wraps its body in this card, so the order is
@@ -21,7 +25,7 @@
 	import './planPanel.css';
 	import { untrack, type Snippet } from 'svelte';
 	import type { Plan, Player } from '$lib/api';
-	import { PLAN_SHORT, playerName } from './shared';
+	import { PLAN_SHORT, playerName, parseResolutionData } from './shared';
 	import { useStepFrame } from './shared/stepFrame';
 	import { useHeadingSlot } from './shared/headingSlot';
 	import FinishedStep from './shared/FinishedStep.svelte';
@@ -33,13 +37,17 @@
 		plan: Plan;
 		players: Player[];
 		error?: string;
+		/** What the plan was prepared against (when `moved`, what it is aimed at now), said in the preparation line ("against
+		    alice's Seek Answers (row 5)"). Facts fixed at preparation live here, not as
+		    a lead line in the open step, so a resolving plan carries its own facts. */
+		against?: Snippet;
 		/** Set false to suppress the generic preparation-notes line and render
 		    a custom version in the body (e.g. Spread Rumors' quoted rumor, which
 		    must not show a secret rumor's draft as though it were stated). */
 		showNotes?: boolean;
 		children: Snippet;
 	}
-	let { plan, players, error = '', showNotes = true, children }: Props = $props();
+	let { plan, players, error = '', showNotes = true, against, children }: Props = $props();
 
 	const frame = useStepFrame();
 	const f = $derived(frame?.() ?? null);
@@ -62,6 +70,15 @@
 		return untrack(() => slot?.claim());
 	});
 
+	// A plan's aim can move after preparation: its preparer re-aims it (a lost mark), or a Make
+	// Demands winner settles where it points, and a kept target can't be told from a changed
+	// one. The data holds only the current aim, so the line then says "now against …" rather
+	// than claiming what was prepared.
+	const aimMoved = $derived.by(() => {
+		const rd = parseResolutionData(plan);
+		return rd.reaim != null || rd.demand_retarget_finalized === true;
+	});
+
 	const notes = $derived(showNotes ? (plan.preparation_notes ?? '').trim() : '');
 	// A note that is probably longer than one line gets the whole text a tap away.
 	const LONG_NOTE = 40;
@@ -69,9 +86,9 @@
 
 <div class="plan-panel resolving">
 	<div class="done-steps">
-		<FinishedStep>
+		<FinishedStep wrap={!!against}>
 			{#snippet mark()}<LogMark family="plan" />{/snippet}
-			<PlayerName {players} id={plan.preparer_id} /> prepared {PLAN_SHORT[plan.plan_type] ?? plan.plan_type}
+			<PlayerName {players} id={plan.preparer_id} /> prepared {PLAN_SHORT[plan.plan_type] ?? plan.plan_type}{#if against}{#if aimMoved},{' '}now{/if}{' '}{@render against()}{/if}
 		</FinishedStep>
 
 		{#if notes}

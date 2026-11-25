@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest';
 import type { Player } from '$lib/api';
 import type { WaitingOnState } from './waitingOn';
 import { stepHeading } from './stepHeading';
+import { readHeading } from './stepHeadingTestKit';
 
-// The heading is the one place the game says, in words, what it asks of whom.
-// "Your move — …" when the viewer is among the people it waits on, "Waiting on
-// otto — …" when it is someone else. It reads the same derivation as the clocks
-// on the player row (lib/waitingOn.ts), so these tests pin the grammar only.
+// The heading is the one place the game says, in words, what it asks of whom: a
+// who-line ("Your move · also alice", "Waiting on otto and Wren") over the step alone
+// ("Aid or interfere"). It reads the same derivation as the clocks on the player row
+// (lib/waitingOn.ts), so these tests pin the grammar only.
 
 const players = [
 	{ id: 1, display_name: 'Ash' },
@@ -20,39 +21,62 @@ const on = (ids: number[], stepLabel?: string): WaitingOnState => ({
 	waitees: ids.map(playerID => ({ kind: 'player' as const, playerID })),
 	stepLabel,
 });
+const named = (h: ReturnType<typeof stepHeading>) =>
+	h?.who.map(w => ('player' in w ? w.player.display_name : w.text));
 
 describe('stepHeading', () => {
-	it('is the viewer’s own when the game waits on them', () => {
+	it('is the viewer’s own when the game waits on them, and the step stands alone', () => {
 		const h = stepHeading(on([1], 'aid or interfere'), 1, players);
-		expect(h).toEqual({ yours: true, text: 'Your move — aid or interfere' });
+		expect(h).toMatchObject({ yours: true, label: 'Aid or interfere', who: [], more: false });
+		expect(readHeading(h)).toBe('Your move. Aid or interfere');
 	});
 
 	it('names the one other player the game waits on', () => {
 		const h = stepHeading(on([2], 'the roll'), 1, players);
-		expect(h).toEqual({ yours: false, text: 'Waiting on otto — the roll' });
+		expect(h).toMatchObject({ yours: false, label: 'The roll', more: false });
+		expect(named(h)).toEqual(['otto']);
+		expect(readHeading(h)).toBe('Waiting on otto. The roll');
 	});
 
-	it('lists two or three others, with "and" before the last', () => {
-		expect(stepHeading(on([2, 3], 'difficulty vote'), 1, players)?.text)
-			.toBe('Waiting on otto and Wren — difficulty vote');
-		expect(stepHeading(on([2, 3, 4], 'everyone chooses'), 1, players)?.text)
-			.toBe('Waiting on otto, Wren and Mira — everyone chooses');
+	it('names two others, with "and" before the last', () => {
+		const h = stepHeading(on([2, 3], 'difficulty vote'), 1, players);
+		expect(named(h)).toEqual(['otto', 'Wren']);
+		expect(readHeading(h)).toBe('Waiting on otto and Wren. Difficulty vote');
 	});
 
-	it('counts instead of listing past three, so the heading stays a line or two', () => {
+	it('names two and then "and others" at exactly three owed, so the line stays short', () => {
+		const h = stepHeading(on([2, 3, 4], 'how will the game end?'), 1, players);
+		expect(named(h)).toEqual(['otto', 'Wren']);
+		expect(h?.more).toBe(true);
+		expect(readHeading(h)).toBe('Waiting on otto, Wren and others. How will the game end?');
+	});
+
+	it('does the same past three', () => {
 		const h = stepHeading(on([2, 3, 4, 5], 'how will the game end?'), 1, players);
-		expect(h?.text).toBe('Waiting on 4 players — how will the game end?');
+		expect(named(h)).toEqual(['otto', 'Wren']);
+		expect(readHeading(h)).toBe('Waiting on otto, Wren and others. How will the game end?');
 	});
 
-	it('is the viewer’s and names no one else when others are owed too', () => {
-		// The clocks on the other chips say who else is being waited on.
-		const h = stepHeading(on([2, 1, 3], 'how will the game end?'), 1, players);
-		expect(h).toEqual({ yours: true, text: 'Your move — how will the game end?' });
+	it('is the viewer’s and names the others owed beside them', () => {
+		const h = stepHeading(on([2, 1], 'the delay reveal'), 1, players);
+		expect(h).toMatchObject({ yours: true, more: false });
+		expect(named(h)).toEqual(['otto']);
+		expect(readHeading(h)).toBe('Your move · also otto. The delay reveal');
+	});
+
+	it('never names the viewer on their own line, and caps the others at two', () => {
+		const three = stepHeading(on([2, 1, 3, 4], 'how will the game end?'), 1, players);
+		expect(named(three)).toEqual(['otto', 'Wren']);
+		expect(three).toMatchObject({ yours: true, more: true });
+		expect(readHeading(three)).toBe('Your move · also otto, Wren and others. How will the game end?');
+		// Exactly two others stay named in full.
+		expect(readHeading(stepHeading(on([2, 1, 3], 'the roll'), 1, players))).toBe('Your move · also otto and Wren. The roll');
 	});
 
 	it('treats "everyone" as including the viewer', () => {
 		const h = stepHeading({ waitees: [{ kind: 'everyone' }], stepLabel: 'vote' }, 1, players);
 		expect(h?.yours).toBe(true);
+		expect(h?.who).toEqual([]);
 	});
 
 	it('says a label waitee as it is written (the lobby’s "1 more player to join")', () => {
@@ -61,28 +85,24 @@ describe('stepHeading', () => {
 			1,
 			players,
 		);
-		expect(h?.text).toBe('Waiting on 1 more player to join — gathering players');
+		expect(readHeading(h)).toBe('Waiting on 1 more player to join. Gathering players');
 	});
 
-	// A label waitee is free text, not a player: it is never counted toward the
-	// three-name cap, or two of them would read "2 players".
+	// A label waitee is free text, not a player: it is never counted toward the cap, or
+	// a lobby's waiting players would read "and others" for a count that is not players.
 	it('does not count a label waitee as a player', () => {
-		const three = [
-			{ kind: 'player' as const, playerID: 2 },
-			{ kind: 'player' as const, playerID: 3 },
-			{ kind: 'player' as const, playerID: 4 },
-		];
 		const h = stepHeading(
-			{ waitees: [...three, { kind: 'label', text: '1 more player to join' }], stepLabel: 'gathering players' },
+			{ waitees: [...on([2, 3]).waitees, { kind: 'label', text: '1 more player to join' }], stepLabel: 'gathering players' },
 			1,
 			players,
 		);
-		expect(h?.text).toBe('Waiting on otto, Wren, Mira and 1 more player to join — gathering players');
+		expect(h).toMatchObject({ more: false });
+		expect(readHeading(h)).toBe('Waiting on otto, Wren and 1 more player to join. Gathering players');
 	});
 
-	it('drops the dash when there is no step label', () => {
-		expect(stepHeading(on([1]), 1, players)?.text).toBe('Your move');
-		expect(stepHeading(on([2]), 1, players)?.text).toBe('Waiting on otto');
+	it('is only the who-line when there is no step label', () => {
+		expect(readHeading(stepHeading(on([1]), 1, players))).toBe('Your move');
+		expect(readHeading(stepHeading(on([2]), 1, players))).toBe('Waiting on otto');
 	});
 
 	it('is nothing when the game waits on no one', () => {
@@ -94,7 +114,7 @@ describe('stepHeading', () => {
 	});
 
 	it('says "someone" for a player it can’t find, rather than a blank', () => {
-		expect(stepHeading(on([99], 'the roll'), 1, players)?.text).toBe('Waiting on someone — the roll');
+		expect(readHeading(stepHeading(on([99], 'the roll'), 1, players))).toBe('Waiting on someone. The roll');
 	});
 });
 
@@ -153,8 +173,8 @@ describe('every row state the bar covered has a heading', () => {
 			const h = stepHeading(state, 1, players);
 			if (headed) {
 				expect(h, `${kind} has no heading`).not.toBeNull();
-				// "Waiting on otto — <a step>": a lead and a phrase, never a bare lead.
-				expect(h!.text).toMatch(/^Waiting on otto — \S/);
+				// "Waiting on otto. <A step>": a who-line and a step, never a bare who-line.
+				expect(readHeading(h)).toMatch(/^Waiting on otto\. \S/);
 			} else {
 				expect(h).toBeNull();
 			}

@@ -12,7 +12,7 @@
 
 	Drawn as the redesign's play steps are: no box and no tint, just small
 	headings and the scene's own words, with the step gap between groups. The
-	step's heading ("Your move — the scene", "Waiting on otto — the scene") is
+	step's heading ("Your move", "The scene", "Waiting on otto", "The scene") is
 	drawn by the page above this panel, so none is drawn here. The only boxes
 	are the game pieces (the cards) and the buttons.
 -->

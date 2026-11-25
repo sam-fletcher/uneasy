@@ -239,10 +239,10 @@ below it.
 
 | token | px | for |
 |---|---|---|
-| `--text-label` | 12 | timestamps, uppercase labels |
-| `--text-small` | 14 | secondary lines, log lines, chip names, tab labels, finished steps |
+| `--text-label` | 12 | timestamps, uppercase labels, **a sub-heading inside a step** (deep gold, uppercase, letter-spaced) |
+| `--text-small` | 14 | secondary lines, log lines, chip names, tab labels, finished steps, **a field's prompt**, the who-line above a step heading |
 | `--text-body` | 16 | chat, step text, **every input** |
-| `--text-heading` | 18 | the open step's heading, sheet titles, the title bar |
+| `--text-heading` | 18 | the open step's heading, sheet titles, the title bar, and the peers of a set piece |
 | `--text-title` | 22 | page titles |
 | `--text-display` | fluid | the landing page's cover title only, in `--font-display`: the one documented exception |
 
@@ -508,6 +508,7 @@ The log is the same table: `renderLogBody` emits the components' classes (`.play
 | Inside a greyed-out control (a disabled button, or a chip that can't be picked: `.unavailable`) | Faint, with everything else in it, a player chip's shape included | Faint |
 | Read-only mirror of someone else's step (its chips are `disabled` for the browser, but not `.unavailable`) | As above for where it sits: a mirror is shown as it is, not faded, so a player chip's name and shape keep their colour | As above |
 | Your own name | In your colour like anyone's. "You" and "your" stay plain words (except the bright-gold "Your move") | n/a |
+| A set piece's peers (`<AssetName setPiece>`) | n/a | Italic, deep gold, 18px: the one place an asset takes a colour of its own, because the game is staging the moment two named pieces meet |
 | An asset's own card or sheet title | n/a | Upright: the card is the thing, not a mention of it |
 | An `<input>` value or `<option>` text | Plain: phone browsers don't reliably style them | Plain |
 | A player's own words (quote, law, rumor, decree, scene text, chat) | Never parsed: stays plain | Never parsed: stays plain, nothing italic |
@@ -523,9 +524,10 @@ a pick is the control's own bright gold, never a player's colour.
 **Your own words.** In-character chat keeps its muted mask-cast (see "Player colours"). Quoted text
 keeps its curly marks and is never italic.
 
-**Not decided here.** The size of each tier of text, the step heading's who-line, the set piece's
-deep-gold peers and centred quotes are the next redesign piece's; this one only fixes how each kind
-of inline text looks wherever it sits.
+**Round 6 builds on this.** The step heading's who-line colours names, the set piece's peers take
+their deep gold and a quote's label sits over centred text: see "Play steps". Names that are built
+into strings (a prop's `label`, an `aria-label`) are still plain; the tracker's
+`inline-text-names-in-strings` lists them.
 
 ## Layout widths
 
@@ -803,8 +805,9 @@ all on `/dev/styleguide` under "Play steps":
 
 | piece | what it is |
 |---|---|
-| `shared/StepHeading.svelte` | the open step's heading: **"Your move — …"** when the game waits on you, **"Waiting on otto — …"** when it waits on someone else. Deep gold at heading size. The one place the ask is stated in words |
+| `shared/StepHeading.svelte` | the open step's heading, in two lines: the **step alone**, capitalised, in deep gold at heading size, under a **who-line** at 14px. The one place the ask is stated in words |
 | `lib/stepHeading.ts` | the wording, pure and tested. It reads the same derivation as the clocks on the player row (`lib/waitingOn.ts`), so the two can't disagree |
+| `plans/shared/SetPiece.svelte`, `plans/shared/QuotedText.svelte` | the two centred pieces of an open step: the set piece (two named pieces face to face) and the player-written text the step is about. Both are described below |
 | `lib/plans/stepLabel.ts`, `lib/plans/stepLabels/*` | what each plan calls the step it is on: one pure function per plan, registered in `plans/registry.ts` and read by `waitingOn.ts` through the row state's `plan_id`. The server knows only that a plan is resolving; the plan's own data says which step. A plan that can't tell says "the next step" |
 | `plans/shared/FinishedStep.svelte` | a step that is over, as one line with its mark. With a `detail` it is a tappable row with a caret that opens in place |
 | `plans/shared/DieTile.svelte` | one die: a 44px game piece whose edge is its owner's colour. The die mark before it is rolled, its face after; cancelled and repeated dice are dashed, never faded |
@@ -818,21 +821,59 @@ they wrote, the roll (open it is the open step and carries the heading; resolved
 it is one finished line that opens to show the dice), then the heading, then the
 panel's own body. A panel never draws its own heading, box or "Resolving" badge.
 
-**Wording.** A step's label (`stepLabel` in `waitingOn.ts`; a plan's own steps come from
-its function in `lib/plans/stepLabels/`) is a lower-case phrase that finishes both
-"Your move — …" and "Waiting on otto — …". So it names the step and never speaks to the
-reader ("what have you learned?" fails for a watcher), and never names the plan: the
-title bar and the first finished line already do. When several things are owed at once
-and no one of them is the step, it names what they share ("carry out the picks"). When
-it is your move the heading names no one else; the clocks on the other chips say who
-else is owed.
+**The step heading is two lines** (Round 6). The line above is the **who-line**, at 14px: **"Your move"**
+in bright gold when the game waits on you (the nudge, so it takes the colour that means you;
+the heading itself stays deep gold), or faint **"Waiting on"** followed by each owed player's
+shape and name in their colour. At most two names, then "and others". When you are one of
+several owed it names the rest too: **"Your move · also ◆ alice"**. Under it, the heading is
+the step label alone: **"Aid or interfere"**. It reads aloud as "Waiting on alice and bob.
+The delay reveal." A heading has to be readable at a glance, and a long "Waiting on alice, bob
+and 2 others — aid or interfere" wrapped to two lines.
 
-**Say it once.** The heading says who the game is waiting on and what for, and the roll
-is a step with its own heading, so a panel prints no "otto is resolving…", "Dice roll in
-progress…" or "Waiting for otto to …" under it, and a sub-step's title that is the
-heading's own words ("Enact the law", "Things We Share") is left out. A line that says
-more than the heading does ("Waiting for sol to agree to give up Dame Orr…" names the
-asset) stays. `plans/headingSaysIt.test.ts` holds the first two.
+**A step's label** (`stepLabel` in `waitingOn.ts`; a plan's own steps come from its function in
+`lib/plans/stepLabels/`) is a lower-case phrase that names the step; the heading capitalises
+it. It never has to finish a sentence, so it can say anything a step could be called, but it
+still never speaks to the reader ("what have you learned?" fails for a watcher, since every
+viewer reads the same words), and never names the plan: the title bar and the first finished
+line already do. When several things are owed at once and no one of them is the step, it
+names what they share ("carry out the picks").
+
+**Say it once.** The who-line says who the game is waiting on and the heading says what for,
+and the roll is a step with its own heading, so a panel prints no "otto is resolving…", "Dice
+roll in progress…" or "Waiting for otto to …" under it, and a sub-step's title that is the
+heading's own words ("Enact the law", "Things We Share") is left out. A line that says more
+than the heading does (it names the asset: "Asking sol to give up Dame Orr") stays. A role is
+said once, beside the name ("alice · signatory"); a picker's label names what it lists and
+never repeats the sentence above it. `plans/headingSaysIt.test.ts` holds the first two.
+
+**Sub-headings and labels.** A sub-heading names one part of the step: **12px, uppercase,
+letter-spaced, deep gold** (`.choices-header`). It is named once, with no colon, question mark,
+count or separator ("The decree", not "Proposed decree being debated:"); a count is a plain
+sentence under it ("2 remaining."). The sentences under it stay at body size, because
+players read them to act. A **field's prompt is a label, not a heading**: 14px, secondary
+(`.picker-label`, or the label `FormField` and `CardPicker` print, with no colon added). Sub-steps
+are separated by space and these labels, never by a rule. `plans/subHeadings.test.ts` fails a
+sub-heading written the old way.
+
+**A set piece** stages the moment the game brings two named pieces face to face: Clandestinely
+Liaise's meeting and Propose Duel's pairing (`plans/shared/SetPiece.svelte`). It is centred: the
+scene in quotes at body size, each player's name in their colour, the peers in italic deep gold at
+18px (`<AssetName setPiece>`), the connector ("meets", "faces") a small faint uppercase label,
+and 24px around it. It bends three rules on purpose (centring is otherwise for structural
+boundaries, deep gold for headings, 18px for the step heading), which is why it stays rare. It
+carries no difficulty line: the meter shows that. Make War's declaration and Make Introductions'
+newcomer are candidates, not built.
+
+**Player-written text the step is about is centred** (`plans/shared/QuotedText.svelte`): the
+decree in debate, the rumor, the law being written. A small deep-gold label names it and the
+player, whose name is in their colour ("alice proposes", "The rumor"); under it the words are
+16px main text in their own quotation marks, at most 320px wide. A finished step keeps it to one
+line; text being typed stays left-aligned in its field.
+
+**What was fixed at preparation is in the preparation line**, drawn by `ResolvingCard` with its
+`against` snippet: "bob prepared Make Demands against alice's Seek Answers (row 5)". That line may
+wrap (`FinishedStep wrap`), since the facts are its point. The open step carries no "Targeting:"
+or "vs" lead line of its own, and still says everything a player needs to act.
 
 **A pending roll** splits its dice into **For** and **Against** (labelled only when
 there is an Against), and a choice in it (aid or interfere, easier or harder) is a
@@ -851,9 +892,7 @@ panel's body in a `.step-groups` column once, so every panel's groups are 24px a
 frame's own parts (the finished lines, the roll, the heading) keep the frame's 12px. A panel
 that nests groups inside one of its own (the festivity's body, the duel's setup, the demand
 overlay) wraps them in `.step-groups` too. A line that belongs to a group goes inside it: a
-lead line left outside, next to the group it leads, now sits 24px away from it. The count
-after a lead line ("· 0 of 1 taken", "· 2 mars to settle") is `.taken-count`: secondary
-words, not part of the heading.
+line left outside, next to the group it belongs to, now sits 24px away from it.
 
 **What a player presses in a step is a shared piece:** a choice among a few words is a `Chip`
 (`PlayerChips` is a row of them, each a player's shape and their name in their colour: the
@@ -963,7 +1002,7 @@ because you want that shape.
 Scene setup (`SceneSetupForm.svelte`) and the scene's panel (`SceneDetailsPanel.svelte`)
 are the Play pane's two scene steps. They were never mocked up, so they apply the rules
 above as written; the questions those rules left open are in `docs/work/questions/`. The page
-draws the step's heading above both ("Your move — set the scene", "Waiting on otto — the
+draws the step's heading above both ("Your move" or "Waiting on otto" over "Set the scene", "The
 scene"), so neither draws one.
 
 - **A small heading, then words, not a panel.** The prompt, Where, When, Who else is here,

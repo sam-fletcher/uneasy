@@ -10,6 +10,11 @@
   step's mark in front, and a thin rule between it and the next, so a run of
   them reads as a list.
 
+  `wrap` lets the line run to a second line instead of being cut with an ellipsis:
+  only the preparation line asks for it, because the facts fixed at preparation
+  ("bob prepared Make Demands against alice's Seek Answers (row 5)") are the point
+  of it and can't be shortened.
+
   `mark` is a house mark of the step's noun (the plan's flag, the roll's die,
   the pencil for words someone wrote); the caller passes it so the mark is
   drawn once, in LogMark, and never here.
@@ -33,11 +38,13 @@
 		detail?: Snippet;
 		/** Start open (rare: a result worth showing in full the moment it lands). */
 		open?: boolean;
+		/** Let the line wrap rather than cut it short. */
+		wrap?: boolean;
 	}
 
 	// `open` seeds the row's own (uncontrolled) state once.
 	// svelte-ignore state_referenced_locally
-	let { mark, children, detail, open: startOpen = false }: Props = $props();
+	let { mark, children, detail, open: startOpen = false, wrap = false }: Props = $props();
 	// svelte-ignore state_referenced_locally
 	let open = $state(startOpen);
 </script>
@@ -60,7 +67,7 @@
 	{:else}
 		<div class="done-line">
 			<span class="done-mark">{@render mark()}</span>
-			<span class="done-text">{@render children()}</span>
+			<span class="done-text" class:wrap>{@render children()}</span>
 		</div>
 	{/if}
 </div>
@@ -100,6 +107,12 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.done-text.wrap {
+		white-space: normal;
+		overflow: visible;
+		text-overflow: clip;
 	}
 
 	/* Opened in place: indented to sit under the text, not under the mark

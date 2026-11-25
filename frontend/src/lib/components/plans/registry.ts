@@ -35,7 +35,7 @@ export interface PlanRegistryEntry {
 	 *  it into a variable would defeat the split. */
 	load: () => Promise<Component<PlanPanelProps>>;
 	/** What the plan calls the step it is on, for the open step's heading
-	 *  ("Your move — …"). Pure and eager, unlike `load`: the heading must be right
+	 *  ("Your move"). Pure and eager, unlike `load`: the heading must be right
 	 *  before the panel's chunk has arrived, and the page reads it with no panel
 	 *  mounted (lib/waitingOn.ts). Required, so a thirteenth plan can't forget it. */
 	stepLabel: StepLabelFn;
