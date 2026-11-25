@@ -36,9 +36,5 @@
 			participants={revealParticipants}
 			prompt=""
 		/>
-	{:else}
-		<p class="choices-note muted">
-			Waiting for participants to reveal their delay dice…
-		</p>
 	{/if}
 </div>

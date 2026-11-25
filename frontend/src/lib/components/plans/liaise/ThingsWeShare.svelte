@@ -169,7 +169,7 @@
 	{#if seats.amLockedOut}
 		<p class="choices-note"><PlayerName {players} id={seats.preparerSeatHolder} /> is making your pick for you.</p>
 	{:else if seats.iShared}
-		<p class="choices-note">You've submitted. Waiting for your partner…</p>
+		<p class="choices-note">You've submitted your pick.</p>
 	{:else}
 		{#if seats.actingForPreparerSeat}
 			<p class="ft-prompt">

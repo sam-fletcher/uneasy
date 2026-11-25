@@ -9,7 +9,7 @@ import { MIRROR, mirrorOf } from './mirrorMatchers';
 // the winner, or a winner-driven plan shows no way forward.
 //
 // A seat that is not acting gets no form and no line about who is: the open step's
-// heading names who the table waits on and the step ("Waiting on sol — describe
+// heading names who the table waits on and the step ("Waiting on sol", "Describe
 // each arrival", from plans/stepLabels). The lines this panel used to print for it
 // ("sol is welcoming the new peers…", "ravi is naming the new peers…", "… is
 // resolving the marred introductions…") must stay gone.
@@ -122,7 +122,7 @@ describe('MakeIntroductionsPanel commit marker', () => {
 			expect(body).toContain('Resolve peer');
 			expect(body).not.toContain('Dice roll in progress');
 			expect(body).not.toContain('plus 1 for each');
-			expect(body).not.toContain('What can happen?');
+			expect(body).not.toContain('What can happen');
 		});
 
 		it('mar, actor, roll still on screen: still the fate form, not the dice wait', () => {
@@ -199,7 +199,7 @@ describe('MakeIntroductionsPanel commit marker', () => {
 				rollOutcome: null, mi: { peer_count: 2, drafts: DRAFTS }, noWinner: true,
 			});
 			expect(body).toContain('plus 1 for each');
-			expect(body).toContain('What can happen?');
+			expect(body).toContain('What can happen');
 		});
 	});
 

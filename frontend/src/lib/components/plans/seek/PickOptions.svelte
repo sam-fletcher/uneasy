@@ -75,9 +75,9 @@
 <fieldset class="resolve-mirror-wrap" class:resolve-mirror={!canPick} disabled={!canPick}>
 	<div class="choices-section">
 		<p class="choices-header">
-			Result: <span class="outcome-{rollOutcome}">
+			<span class="outcome-{rollOutcome}">
 				{rollOutcome === 'make' ? 'Make' : 'Mar'}
-			</span>
+			</span> options
 		</p>
 		<p class="choices-note">
 			Pick options equal to {canPick ? 'your' : 'the'} dice result (repeatable){#if requiredPicks != null}: choose exactly {requiredPicks}{/if}.

@@ -241,7 +241,7 @@ test('make: pre-roll narration opens the roll; a take needs consent, a repeat re
 	// The preparer states the rumor and how it spreads; nobody else can, and no
 	// roll exists until she does.
 	await expect(alice.getByText('Spread the rumor', { exact: true })).toBeVisible({ timeout: 10_000 });
-	await expectHeading(bob, 'Waiting on alice — state the rumor');
+	await expectHeading(bob, 'Waiting on alice. State the rumor');
 	const early = await t.alice.request.get(`/api/tables/${t.gameID}/rolls/active`);
 	expect((await early.json()).roll ?? null).toBeNull();
 
@@ -257,12 +257,12 @@ test('make: pre-roll narration opens the roll; a take needs consent, a repeat re
 	await forceRoll(t.alice.request, (await rollRes.json()).roll.id, 'make');
 
 	// The stated rumor is public to the whole table once the roll is settled.
-	await expect(bob.locator('.rumor-quote', { hasText: RUMOR })).toBeVisible({ timeout: 10_000 });
-	await expect(cara.locator('.rumor-target', { hasText: HOW })).toBeVisible();
+	await expect(bob.locator('.quoted-body', { hasText: RUMOR })).toBeVisible({ timeout: 10_000 });
+	await expect(cara.locator('.quoted-note', { hasText: HOW })).toBeVisible();
 
 	// Alice drives the picker; bob and cara see it inert and are told who is choosing.
 	await expect(more(alice, TAKE)).toBeEnabled({ timeout: 10_000 });
-	await expectHeading(bob, 'Waiting on alice — choose the options');
+	await expectHeading(bob, 'Waiting on alice. Choose the options');
 	await expect(more(bob, TAKE)).toHaveCount(1);
 	await expect(more(bob, TAKE)).toBeDisabled();
 
@@ -271,8 +271,8 @@ test('make: pre-roll narration opens the roll; a take needs consent, a repeat re
 	// The victim is asked, by name, for exactly that asset; the others just wait.
 	await expect(bob.getByText('Consent needed')).toBeVisible({ timeout: 10_000 });
 	await expect(bob.getByText('alice wants to take')).toBeVisible();
-	await expect(cara.getByText('Waiting for bob to agree to give up')).toBeVisible();
-	await expect(alice.getByText('Waiting for bob to agree to give up')).toBeVisible();
+	await expect(cara.getByText('Asking bob to give up')).toBeVisible();
+	await expect(alice.getByText('Asking bob to give up')).toBeVisible();
 	expect(await actingIDs(t.alice.request, t.gameID)).toEqual([t.players.bob]);
 
 	// A second request while one is open is refused, not silently re-opened.
@@ -394,8 +394,8 @@ test('mar: the target-asset owner is the actor, writes the counter-rumor, and th
 	// the preparer, who used to be named for the whole mar branch.
 	await expect(bob.getByText('The rumor backfires')).toBeVisible({ timeout: 10_000 });
 	expect(await actingIDs(t.alice.request, t.gameID)).toEqual([t.players.bob]);
-	await expectHeading(alice, 'Waiting on bob — write the counter-rumor');
-	await expectHeading(cara, 'Waiting on bob — write the counter-rumor');
+	await expectHeading(alice, 'Waiting on bob. Write the counter-rumor');
+	await expectHeading(cara, 'Waiting on bob. Write the counter-rumor');
 	// The counter-rumor is about alice's main character, and says so.
 	await expect(bob.getByText("alice's main character", { exact: true }).first()).toBeVisible();
 
@@ -413,9 +413,9 @@ test('mar: the target-asset owner is the actor, writes the counter-rumor, and th
 	await bob.getByRole('button', { name: 'Spread it' }).click();
 
 	// The table reads the counter-rumor; the failed rumor is not what spreads.
-	await expect(alice.locator('.rumor-quote', { hasText: COUNTER })).toBeVisible({ timeout: 10_000 });
+	await expect(alice.locator('.quoted-body', { hasText: COUNTER })).toBeVisible({ timeout: 10_000 });
 	await expect(alice.getByText('The rumor that backfired')).toBeVisible();
-	await expectHeading(cara, 'Waiting on bob — choose the options');
+	await expectHeading(cara, 'Waiting on bob. Choose the options');
 
 	// Bob picks a take and a leverage. The take is from the PREPARER's assets.
 	await more(bob, 'Take an asset from alice').click();
@@ -438,7 +438,7 @@ test('mar: the target-asset owner is the actor, writes the counter-rumor, and th
 
 	// Bystanders only see who is being waited on.
 	await expect(cara.getByText('Consent needed')).toHaveCount(0);
-	await expect(cara.getByText('Waiting for alice to agree to give up')).toBeVisible();
+	await expect(cara.getByText('Asking alice to give up')).toBeVisible();
 
 	await alice.getByRole('button', { name: 'Agree', exact: true }).click();
 	await expect.poll(async () => (await getPlan(t.alice.request, t.planID)).plan.status).toBe('resolved');
@@ -512,7 +512,7 @@ test('mar: break and hide land on the preparer\'s main character and the actor\'
 	const breakForm = bob.locator('.plan-form', { hasText: "Break alice's main character" });
 	await expect(breakForm).toBeVisible({ timeout: 10_000 });
 	await expect(breakForm.locator('.card')).toHaveCount(1);
-	await expect(alice.getByText("Break alice's main character (1 remaining)")).toBeVisible();
+	await expect(alice.locator('.choices-header', { hasText: "Break alice's main character" })).toBeVisible();
 	await breakForm.locator('.card', { hasText: "alice's main character" }).getByRole('checkbox').click();
 	await breakForm.getByRole('button', { name: 'Tear marginalia' }).click();
 

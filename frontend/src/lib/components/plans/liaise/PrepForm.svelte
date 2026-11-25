@@ -165,7 +165,7 @@
 			<p class="choices-note muted">Pick a partner to choose their meeting peer.</p>
 		{/if}
 		<label class="form-label">
-			Details:
+			Details
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 				placeholder="Where do the two peers meet? Will they share a meal, meet under a bridge, or something more intimate?" required></textarea>
 		</label>

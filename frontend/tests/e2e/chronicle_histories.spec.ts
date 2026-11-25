@@ -107,7 +107,7 @@ test('pre-roll: everyone sees the live meter, only the preparer picks, one submi
 	}
 	// The others wait (the heading says on whom and for what); they get neither the
 	// submit button nor an enabled scene field.
-	await expectHeading(bob, 'Waiting on alice — set the scene');
+	await expectHeading(bob, 'Waiting on alice. Set the scene');
 	await expect(bob.getByRole('button', { name: 'Set the scene & gather your dice' })).toHaveCount(0);
 	await expect(carol.getByPlaceholder('Describe the moment from the past')).toBeDisabled();
 
@@ -137,7 +137,7 @@ test('pre-roll: everyone sees the live meter, only the preparer picks, one submi
 	// The invoke phase is closed for good: the picker is gone for all and the invoked
 	// list is shown instead. The meter stays (it is the table's cue to help or
 	// interfere), no longer a "starting" one, at the roll's difficulty.
-	await expect(bob.getByText('Invoked artifacts (2)')).toBeVisible();
+	await expect(bob.getByText('Invoked artifacts')).toBeVisible();
 	await expect(bob.getByText('Invoke artifacts to shed light on')).toHaveCount(0);
 	await expect(bob.getByText('Starting difficulty')).toHaveCount(0);
 	for (const p of [alice, bob, carol]) {
@@ -216,7 +216,7 @@ test('make: the outcome is applied on the roll; two options, one at a time, and 
 	await expect.poll(async () => (await chronicleData(g, planID)).make_budget).toBe(2);
 	expect((await chronicleData(g, planID)).make_choices_done ?? 0).toBe(0);
 	await expect(alice.getByText('2 of 2 choices remaining')).toBeVisible();
-	await expectHeading(bob, 'Waiting on alice — choose a make option');
+	await expectHeading(bob, 'Waiting on alice. Choose a make option');
 	await expectPlanLog(alice, ['Chronicle Histories succeeded']);
 
 	// The plan cannot be wrapped with options still owed.
@@ -324,7 +324,7 @@ test('make: breaking the last marginalia destroys the artifact, and a torn line 
 	expect((await chronicleData(g, planID)).invoked_artifact_ids).toContain(unInvoked.id);
 	// Everyone reads the scene's list; a destroyed relic stays on it as history.
 	await bob.reload();
-	await expect(bob.getByText('Invoked artifacts (3)')).toBeVisible();
+	await expect(bob.getByText('Invoked artifacts')).toBeVisible();
 	await expect(bob.getByText("carol's artifact (carol)")).toBeVisible();
 });
 
@@ -341,12 +341,12 @@ test('mar: every player, the preparer included, chooses exactly one; the plan wa
 	// The gate is on record from the dice: three choosers, none yet.
 	await expect.poll(async () => (await chronicleData(g, planID)).mar_required_choices).toBe(3);
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('Submitted so far (0):')).toBeVisible();
+		await expect(p.getByText('Submitted so far')).toBeVisible();
 		await expect(p.getByText('Your choice')).toBeVisible();
 	}
 	// The wrap button is the preparer's, and shut until everyone has chosen.
 	await expect(alice.getByRole('button', { name: 'Wrap the scene' })).toBeDisabled();
-	await expect(alice.getByText('Waiting for all players to choose (0/3)…')).toBeVisible();
+	await expect(alice.getByText('0 of 3 have chosen.')).toBeVisible();
 	await expect(bob.getByRole('button', { name: 'Wrap the scene' })).toHaveCount(0);
 	await expectStatus(await g.ctx.alice.request.post(`/api/plans/${planID}/complete`), 409);
 
@@ -357,7 +357,7 @@ test('mar: every player, the preparer included, chooses exactly one; the plan wa
 	await expect(bob.getByText('Your choice has been submitted.')).toBeVisible();
 	// The others see it live, no reload.
 	await expect(alice.getByText('bob: broke')).toBeVisible();
-	await expect(alice.getByText('Waiting for all players to choose (1/3)…')).toBeVisible();
+	await expect(alice.getByText('1 of 3 have chosen.')).toBeVisible();
 	await expect(carol.getByText('bob: broke')).toBeVisible();
 	// One choice per player, exactly.
 	await expectStatus(
@@ -367,7 +367,7 @@ test('mar: every player, the preparer included, chooses exactly one; the plan wa
 	await chooseOption(carol, OPT.echo);
 	await carol.getByRole('button', { name: 'Submit choice' }).click();
 	await expect(carol.getByText('Your choice has been submitted.')).toBeVisible();
-	await expect(alice.getByText('Waiting for all players to choose (2/3)…')).toBeVisible();
+	await expect(alice.getByText('2 of 3 have chosen.')).toBeVisible();
 	await expectStatus(await g.ctx.alice.request.post(`/api/plans/${planID}/complete`), 409);
 	await chooseOption(alice, OPT.control);
 	await alice.getByRole('button', { name: 'Submit choice' }).click();
@@ -449,8 +449,8 @@ for (const outcome of ['make', 'mar'] as const) {
 		const { alice, bob, carol } = await openAll(g);
 
 		for (const p of [alice, bob, carol]) {
-			await expect(p.getByText(outcome === 'make' ? 'Result: Make' : 'Result: Mar', { exact: true })).toBeVisible();
-			await expect(p.getByText('Invoked artifacts (1)')).toBeVisible();
+			await expect(p.getByText(outcome === 'make' ? 'Make options' : 'Mar options', { exact: true })).toBeVisible();
+			await expect(p.getByText('Invoked artifacts')).toBeVisible();
 			await expectNoHorizontalScroll(p);
 		}
 		// The waiting bar names the people who owe something, and not the others.
@@ -458,7 +458,7 @@ for (const outcome of ['make', 'mar'] as const) {
 			await expect(alice.getByRole('button', { name: 'Submit choice' })).toBeVisible();
 			// Non-preparers see the controls greyed out, never live.
 			for (const p of [bob, carol]) {
-				await expectHeading(p, 'Waiting on alice — choose a make option');
+				await expectHeading(p, 'Waiting on alice. Choose a make option');
 				await expect(p.getByRole('button', { name: OPT.echo, exact: true })).toBeDisabled();
 				await expect(p.getByRole('button', { name: 'Submit choice' })).toHaveCount(0);
 			}
@@ -484,12 +484,12 @@ test('the auto-applied outcome reaches open panels live, without a reload', asyn
 	const { alice, bob } = await openAll(g);
 	const bobArt = await artifactOf(g, 'bob');
 	const rollID = await castCH(g, planID, [bobArt.id]);
-	await expect(bob.getByText('Invoked artifacts (1)')).toBeVisible();
+	await expect(bob.getByText('Invoked artifacts')).toBeVisible();
 	await expectRollOpen(alice, bob);
 	await forceCH(g, rollID, 'make');
 	// No reload: the preparer's choices and the others' heading arrive live.
 	await expect(alice.getByText('2 of 2 choices remaining')).toBeVisible();
-	await expectHeading(bob, 'Waiting on alice — choose a make option');
+	await expectHeading(bob, 'Waiting on alice. Choose a make option');
 });
 
 test('another player\'s mar choice reaches open panels and the clocks without a reload', async ({ browser }) => {
@@ -497,11 +497,11 @@ test('another player\'s mar choice reaches open panels and the clocks without a 
 	track(g.gameID);
 	const { planID } = await rolledCH(g, ['bob', 'carol'], 'mar');
 	const { alice, carol } = await openAll(g);
-	await expect(alice.getByText('Submitted so far (0):')).toBeVisible();
+	await expect(alice.getByText('Submitted so far')).toBeVisible();
 	await expectStatus(
 		await g.ctx.bob.request.post(`/api/plans/${planID}/mar-choice`, { data: { choice: 'echo_present' } }), 200);
 	for (const p of [alice, carol]) {
-		await expect(p.getByText('Submitted so far (1):')).toBeVisible();
+		await expect(p.getByText('Submitted so far')).toBeVisible();
 	}
 	// bob has chosen, so the clocks must stop naming him and still name carol.
 	await expect.poll(() => waitingOnNames(alice)).toContain('carol');
@@ -512,7 +512,7 @@ test('the Buffet\'s Mar tab says every player chooses, the preparer included', a
 	const { g } = await resolvingGame(browser, PHONE);
 	const alice = await g.ctx.alice.newPage();
 	await alice.goto(`/table/${g.gameID}`);
-	await alice.getByText('What can happen?').click();
+	await alice.getByText('What can happen').click();
 	await alice.getByRole('tab', { name: 'Mar', exact: true }).click();
 	await expect(alice.getByText('Every player, the preparer included, chooses one of these instead')).toBeVisible();
 	await expect(alice.getByText('Every OTHER player')).toHaveCount(0);
@@ -522,7 +522,7 @@ test('the Buffet words the take-control option as the player whose character it 
 	const { g } = await resolvingGame(browser, PHONE);
 	const alice = await g.ctx.alice.newPage();
 	await alice.goto(`/table/${g.gameID}`);
-	await alice.getByText('What can happen?').click();
+	await alice.getByText('What can happen').click();
 	await expect(alice.getByText('decides how they act; if you can\'t agree, drop this option').first()).toBeVisible();
 	await expect(alice.getByText('requires that player\'s consent')).toHaveCount(0);
 	await expectNoHorizontalScroll(alice);

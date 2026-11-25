@@ -1,5 +1,5 @@
 import { test, expect, type Page } from './fixtures';
-import { cleanupGameAfterEach, expectHeading, openRecordTab, expectWaitingOn } from './helpers';
+import { cleanupGameAfterEach, expectHeading, openRecordTab, expectWaitingOn, stepHeading } from './helpers';
 import { expectRollOpen } from './helpers/roll_open';
 import {
 	seedPD, prepareDecree, resolveDecree, resolvingDecree, openAll, act, actOK, forceRoll, decreeState,
@@ -42,7 +42,7 @@ const LAW = 'No private armies within the capital.';
 
 /** The proposed text under debate, as the panel shows it (not the prep note above it). */
 const debated = (page: Page) =>
-	page.locator('.choices-header', { hasText: 'Proposed decree being debated:' }).locator('+ p.ft-prompt');
+	page.locator('.quoted-text', { has: page.locator('.choices-header', { hasText: 'proposes' }) }).locator('.quoted-body');
 
 /** Tick a card in a CardPicker (assets are chosen by checkbox). */
 async function pickCard(page: Page, name: string) {
@@ -119,17 +119,17 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 
 	// Kickoff: the preparer is seated at once as the sole member and signatory;
 	// the others see the roster and are asked to join before the text is final.
-	await expect(alice.getByText('Council (1) · Signatory: alice')).toBeVisible();
-	await expect(bob.getByText('Council (1) · Signatory: alice')).toBeVisible();
-	await expect(alice.getByText('Finalize your decree')).toBeVisible();
+	await expect(alice.locator('.council-list li')).toHaveText(['alice · signatory']);
+	await expect(bob.locator('.council-list li')).toHaveText(['alice · signatory']);
+	await expect(alice.getByText('The decree', { exact: true })).toBeVisible();
 	await expect(bob.getByText('alice is finalizing the decree…')).toBeVisible();
 	// Two asks are open at once (alice's text, the others' join-or-decline), so the heading names
 	// what they share, to alice and to a player who may join alike.
-	await expectHeading(alice, 'Your move — form the council');
-	await expectHeading(bob, 'Your move — form the council');
-	await expect(bob.getByText('Join the council?')).toBeVisible();
-	await expect(carol.getByText('Join the council?')).toBeVisible();
-	await expect(bob.getByText('Proposed decree being debated:')).toHaveCount(0);
+	await expectHeading(alice, /^Your move(?: · also .+)?\. Form the council$/);
+	await expectHeading(bob, /^Your move(?: · also .+)?\. Form the council$/);
+	await expect(bob.getByText('Join the council')).toBeVisible();
+	await expect(carol.getByText('Join the council')).toBeVisible();
+	await expect(bob.locator('.quoted-text')).toHaveCount(0);
 	await expect(bob.getByRole('button', { name: 'Open the debate' })).toHaveCount(0);
 	for (const who of ['bob', 'carol']) {
 		await expectWaitingOn({ bob, carol }[who as 'bob' | 'carol'], ['alice'], who, 'including');
@@ -141,14 +141,16 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 
 	await alice.getByRole('button', { name: 'Open the debate' }).click();
 	// The proposed law now shows to everyone, live.
-	await expect(bob.getByText('Proposed decree being debated:')).toBeVisible();
+	await expect(bob.locator('.quoted-text')).toBeVisible();
 	for (const page of [alice, bob, carol]) await expect(debated(page)).toHaveText(`“${LAW}”`);
 	expect((await act(g, 'alice', planID, 'start-debate', { text: LAW })).status()).toBe(409);
 
 	// The signatory can't close the debate while anyone is undecided.
 	const endDebate = alice.getByRole('button', { name: 'End the debate' });
 	await expect(endDebate).toBeDisabled();
-	await expect(alice.getByText('Waiting on bob, carol to decide if they want to join the council.')).toBeVisible();
+	// Who is undecided is the heading's who-line: alice owes the debate's close, and they owe their decisions.
+	await expect(stepHeading(alice)).toContainText('bob');
+	await expect(stepHeading(alice)).toContainText('carol');
 	expect((await act(g, 'alice', planID, 'call-roll')).status()).toBe(409);
 	// Only the signatory may call it at all.
 	expect((await act(g, 'bob', planID, 'call-roll')).status()).toBe(403);
@@ -160,22 +162,23 @@ test('council: text is finalized first, lower-ranked players join or decline, th
 	// alice is not deciding, so she sees each pending player's picker greyed out and inert (their own
 	// un-leveraged assets, in the third person); bob, who is deciding, has his live picker and is
 	// shown none of carol's.
-	await expect(alice.getByText('bob may join the council')).toBeVisible();
-	await expect(alice.getByText('carol may join the council')).toBeVisible();
+	await expect(alice.getByText('bob may join')).toBeVisible();
+	await expect(alice.getByText('carol may join')).toBeVisible();
 	await expect(alice.locator('.resolve-mirror .select-tap').first()).toHaveAttribute('aria-disabled', 'true');
 	await expect(alice.getByRole('button', { name: 'Join', exact: true })).toHaveCount(0);
-	await expect(bob.getByText('carol may join the council')).toHaveCount(0);
+	await expect(bob.getByText('carol may join')).toHaveCount(0);
 
 	// bob joins by leveraging one asset, through the picker.
 	const spare = await spareAsset(g, 'bob');
 	expect(await bankedDice(g, 'bob')).toHaveLength(0);
 	await pickCard(bob, spare.name);
 	await bob.getByRole('button', { name: 'Join', exact: true }).click();
-	await expect(alice.getByText('Council (2) · Signatory: alice')).toBeVisible();
-	await expect(alice.getByText('Waiting on carol to decide if they want to join the council.')).toBeVisible();
+	await expect(alice.locator('.council-list li')).toHaveCount(2);
+	await expect(stepHeading(alice)).toContainText('carol');
+	await expect(stepHeading(alice)).not.toContainText('bob');
 	// bob has decided, so his picker is gone from alice's page; carol's is now bob's to watch.
-	await expect(alice.getByText('bob may join the council')).toHaveCount(0);
-	await expect(bob.getByText('carol may join the council')).toBeVisible();
+	await expect(alice.getByText('bob may join')).toHaveCount(0);
+	await expect(bob.getByText('carol may join')).toBeVisible();
 	await expect
 		.poll(async () => (await assets(g)).find(a => a.id === spare.id)?.is_leveraged)
 		.toBe(true);
@@ -235,11 +238,11 @@ test('make: the signatory\'s addendum, then the preparer names the resource; the
 	const { alice, bob, carol } = await openAll(g);
 
 	// Passing the decree is automatic: straight to the addendum, no "pass" gate.
-	await expect(alice.getByText("Signatory's Addendum")).toBeVisible();
+	await expect(alice.getByText('The addendum', { exact: true })).toBeVisible();
 	await expect(alice.getByRole('button', { name: 'Pass the decree' })).toHaveCount(0);
-	await expectHeading(bob, 'Waiting on alice — place the addendum');
-	await expectHeading(carol, 'Waiting on alice — place the addendum');
-	await expect(bob.getByText('The decree passed — writing the law.')).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice. Place the addendum');
+	await expectHeading(carol, 'Waiting on alice. Place the addendum');
+	await expect(bob.locator('.quoted-text .choices-header')).toHaveText('The law');
 	await expect(carol.getByRole('button', { name: 'Place addendum' })).toHaveCount(0);
 	await expectWaitingOn(bob, ['alice'], 'bob');
 
@@ -259,7 +262,7 @@ test('make: the signatory\'s addendum, then the preparer names the resource; the
 	// disabled until the resource has a name and a marginalia.
 	const enact = alice.getByRole('button', { name: 'Enact the law' });
 	await expect(enact).toBeDisabled();
-	await expectHeading(bob, 'Waiting on alice — enact the law');
+	await expectHeading(bob, 'Waiting on alice. Enact the law');
 	await expect(carol.getByRole('button', { name: 'Enact the law' })).toHaveCount(0);
 	expect((await act(g, 'bob', planID, 'enact-law', { resource_name: 'Salt Tax', resource_marginalia: ['x'] })).status()).toBe(403);
 	expect((await act(g, 'alice', planID, 'enact-law', { resource_marginalia: ['x'] })).status()).toBe(400);
@@ -316,8 +319,9 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 
 	// Everyone outranks the preparer, so everyone is seated and nobody is asked
 	// to decide; bob (rank 1) signs.
-	await expect(alice.getByText('Council (3) · Signatory: bob')).toBeVisible();
-	await expect(carol.getByText('Join the council?')).toHaveCount(0);
+	await expect(alice.locator('.council-list li')).toHaveCount(3);
+	await expect(alice.locator('.council-list li', { hasText: 'signatory' })).toHaveText('bob · signatory');
+	await expect(carol.getByText('Join the council')).toHaveCount(0);
 	expect((await act(g, 'carol', planID, 'join-council', { asset_ids: [1] })).status()).toBe(403);
 	expect((await act(g, 'carol', planID, 'decline-council')).status()).toBe(403);
 
@@ -341,10 +345,10 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 
 	// Lowest power first: carol (rank 2), then bob (rank 1). The preparer doesn't amend.
 	await expect.poll(async () => (await decreeState(g, planID)).amendment_order).toEqual([g.ids.carol, g.ids.bob]);
-	await expectHeading(carol, 'Your move — amend the law');
+	await expectHeading(carol, /^Your move(?: · also .+)?\. Amend the law$/);
 	await expect(alice.getByText('The council is amending the law (2 to go). Next: carol.')).toBeVisible();
 	await expect(bob.getByText('The council is amending the law (2 to go). Next: carol.')).toBeVisible();
-	await expect(alice.getByText('The decree passed — writing the law (being amended).')).toBeVisible();
+	await expect(alice.locator('.quoted-text .choices-header')).toHaveText('The law');
 	await expectWaitingOn(alice, ['carol'], 'alice');
 	await expect(bob.getByRole('button', { name: 'Submit amendment' })).toHaveCount(0);
 
@@ -370,7 +374,7 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 	await bob.getByPlaceholder('a simple phrase. (optional)').fill('the Queen consents');
 	await bob.getByRole('button', { name: 'Place addendum' }).click();
 	await expect(alice.getByText('The law above takes effect (no resource on a mar).')).toBeVisible();
-	await expectHeading(carol, 'Waiting on alice — enact the law');
+	await expectHeading(carol, 'Waiting on alice. Enact the law');
 	await expect(alice.getByPlaceholder('The amended law…')).toHaveCount(0);
 
 	// NOTE: "Enact the law" on a mar is a click-to-agree gate that the audit flagged
@@ -410,16 +414,16 @@ test('monarch: the crown-bearer signs and sits on the council even at the lowest
 	const pd = await decreeState(g, planID);
 	expect(pd.signatory_id).toBe(g.ids.carol);
 	expect([...pd.signatory_player_ids].sort()).toEqual([g.ids.alice, g.ids.carol].sort());
-	await expect(alice.getByText('Council (2) · Signatory: carol')).toBeVisible();
-	await expect(carol.getByText('carol (signatory)')).toBeVisible();
-	await expect(carol.getByText('Join the council?')).toHaveCount(0);
-	await expect(bob.getByText('Join the council?')).toBeVisible();
+	await expect(alice.locator('.council-list li')).toHaveCount(2);
+	await expect(carol.getByText('carol · signatory')).toBeVisible();
+	await expect(carol.getByText('Join the council')).toHaveCount(0);
+	await expect(bob.getByText('Join the council')).toBeVisible();
 	// A seated monarch can't also leverage in; alice is a higher power but not the signatory.
 	expect((await act(g, 'carol', planID, 'join-council', { asset_ids: [(await spareAsset(g, 'carol')).id] })).status()).toBe(409);
 
 	await actOK(g, 'alice', planID, 'start-debate', { text: LAW });
 	await expect(carol.getByRole('button', { name: 'End the debate' })).toBeDisabled();
-	await expect(carol.getByText('Waiting on bob to decide if they want to join the council.')).toBeVisible();
+	await expect(stepHeading(carol)).toContainText('bob');
 	await expect(alice.getByRole('button', { name: 'End the debate' })).toHaveCount(0);
 	await bob.getByRole('button', { name: 'Decline' }).click();
 	expect((await act(g, 'alice', planID, 'call-roll')).status()).toBe(403);
@@ -437,8 +441,8 @@ test('monarch: the crown-bearer signs and sits on the council even at the lowest
 	await forceAndSettle(g, planID, rollID, 'make');
 
 	// The monarch signs; the preparer enacts and keeps the resource.
-	await expect(carol.getByText("Signatory's Addendum")).toBeVisible();
-	await expectHeading(alice, 'Waiting on carol — place the addendum');
+	await expect(carol.getByText('The addendum', { exact: true })).toBeVisible();
+	await expectHeading(alice, 'Waiting on carol. Place the addendum');
 	expect((await act(g, 'alice', planID, 'set-addendum', { connector: 'and', addendum: 'alice signs' })).status()).toBe(403);
 	await carol.getByPlaceholder('a simple phrase. (optional)').fill('by the crown\'s leave');
 	await carol.getByRole('button', { name: 'Place addendum' }).click();
@@ -456,7 +460,7 @@ test('monarch: the crown-bearer signs and sits on the council even at the lowest
 test('phone width: the join and decline buttons are real tap targets and nothing overflows', async ({ browser }) => {
 	const { g } = await resolving(browser, { viewport: { width: 375, height: 812 } });
 	const { alice, bob, carol } = await openAll(g);
-	await expect(bob.getByText('Join the council?')).toBeVisible();
+	await expect(bob.getByText('Join the council')).toBeVisible();
 
 	// Join only appears once an asset is picked, so measure it after ticking one.
 	await pickCard(bob, (await spareAsset(g, 'bob')).name);
@@ -480,8 +484,8 @@ test('make: the signatory is handed the addendum live, with no reload', async ({
 	const { alice, bob } = await openAll(g);
 	await expectRollOpen(alice);
 	await forceRoll(g, rollID, 'make');
-	await expect(alice.getByText("Signatory's Addendum")).toBeVisible();
-	await expectHeading(bob, 'Waiting on alice — place the addendum');
+	await expect(alice.getByText('The addendum', { exact: true })).toBeVisible();
+	await expectHeading(bob, 'Waiting on alice. Place the addendum');
 });
 
 // The audit found the finalized text vanishing once the roll started, leaving

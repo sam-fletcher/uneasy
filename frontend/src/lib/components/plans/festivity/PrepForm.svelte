@@ -54,7 +54,7 @@
 	<div class="plan-form">
 		{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 		<label class="form-label">
-			Event type:
+			Event type
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 				placeholder="A gala or a ball? A big feast, a hunting party, a tournament?" required></textarea>
 		</label>

@@ -349,7 +349,7 @@
 		<div class="plan-form">
 			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 			<label class="form-label">
-				Area of study:
+				Area of study
 				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="What problem are you solving? What part of history are you investigating or recording?" required></textarea>
 			</label>
@@ -377,13 +377,13 @@
 				headline={invokePhaseClosed ? 'Difficulty' : 'Starting difficulty'} />
 		{/if}
 
-		<!-- "What can happen?" reference (shared) ──────────────────────────── -->
+		<!-- "What can happen" reference (shared) ──────────────────────────── -->
 		<Buffet tabs={buffetTabs} />
 
 		<!-- Invoked artifacts — context once the dice are cast ──────────────── -->
 		{#if invokePhaseClosed && invokedArtifacts.length > 0}
 			<div class="choices-section">
-				<p class="choices-header">Invoked artifacts ({invokedArtifacts.length})</p>
+				<p class="choices-header">Invoked artifacts</p>
 				<ul class="plan-notes chp-list">
 					{#each invokedArtifacts as a}
 						<li>{a.name} <span class="muted">(<PlayerName {players} id={a.owner_id} />)</span></li>
@@ -427,7 +427,7 @@
 		{#if rollOutcome === 'make'}
 			<div class="choices-section">
 				<p class="choices-header">
-					Result: <span class="outcome-make">Make</span>
+					<span class="outcome-make">Make</span> options
 				</p>
 
 				{#if makeRemaining > 0}
@@ -486,7 +486,7 @@
 									onSelect={(id) => (makeAssetID = id)}
 								/>
 							{/if}
-							<FormField label="Summary (optional, you can expand in the chat):">
+							<FormField label="Summary (optional, you can expand in the chat)">
 								<textarea rows={2} bind:value={makeNarration} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 									placeholder="Describe this beat of the scene (optional)"></textarea>
 							</FormField>
@@ -553,7 +553,7 @@
 			<!-- Every player picks one option during mar ─────────────────── -->
 			<div class="choices-section">
 				<p class="choices-header">
-					Result: <span class="outcome-mar">Mar</span>
+					<span class="outcome-mar">Mar</span> options
 				</p>
 				<p class="choices-note">
 					Each player (including the preparer) chooses one option from the
@@ -620,7 +620,7 @@
 				<!-- Committed state (Tier-1, ADR-006). Steps carry each choice's target;
 				     marEntries is the fallback for plans that resolved before steps
 				     were recorded, and still reads as a name + choice list. -->
-				<p class="choices-header">Submitted so far ({marEntries.length}):</p>
+				<p class="choices-header">Submitted so far</p>
 				{#if marEntries.length === 0}
 					<p class="choices-note muted">None yet.</p>
 				{:else if steps.length > 0}
@@ -651,7 +651,7 @@
 							Every player has chosen. The scene stays open — play it out in the chat, and
 							when it has found its ending, wrap it.
 						{:else}
-							Waiting for all players to choose{#if marRequired > 0}{' '}({marEntries.length}/{marRequired}){/if}…
+							{#if marRequired > 0}{marEntries.length} of {marRequired} have chosen.{:else}Everyone chooses one option.{/if}
 						{/if}
 					</p>
 					<button class="action-btn primary"

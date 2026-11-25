@@ -189,7 +189,7 @@ describe('Spread Propaganda: what a watcher sees of the mar picks', () => {
 			const body = renderSP({ seat, outcome: 'mar' });
 			expect(body).toMatch(MIRROR);
 			const t = textOf(body);
-			expect(t).toContain('Result: Mar');
+			expect(t).toContain('Mar options');
 			expect(t).toContain('ravi picks options equal to (difficulty − result)');
 			expect(t).toContain('Total picks: 0');
 			// Every option is on offer, worded for a bystander ("the preparer's", not "your").
@@ -271,7 +271,7 @@ describe('Spread Propaganda: a watcher sees the picks the preparer still owes', 
 		expect(give).toContain('Give up peer');
 		const brk = renderSP({ seat: PREPARER, outcome: 'mar', ...owed('break_self') });
 		expect(brk).toContain('Break asset');
-		expect(textOf(brk)).toContain('Break yourself — break one of your assets');
+		expect(textOf(brk)).toContain('Break one of your own assets');
 	});
 
 	it('is the same for every watcher, and built from public assets only', () => {

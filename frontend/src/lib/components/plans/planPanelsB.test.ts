@@ -208,11 +208,13 @@ describe('Propose Decree', () => {
 		expect(pressed(but)).toBe(false);
 	});
 
-	it('the result reads "Make" or "Mar" in words, with no typed check or cross', () => {
+	it('the law step says the step, not the result, and draws no typed check or cross', () => {
 		for (const outcome of ['make', 'mar'] as const) {
 			const body = decree({ amendment_order: [], addendum_placed: false }, PREPARER, outcome);
-			const word = outcome === 'make' ? 'Make' : 'Mar';
-			expect(body).toMatch(new RegExp(`Result: <span class="outcome-${outcome}[^"]*">${word}</span>`));
+			// A decree's roll result is the finished roll line above ("Rolled MAKE"), so the step
+			// under it is named for what it is, the law, with no "Result" and no mark of its own.
+			expect(body).not.toMatch(/Result:|outcome-(make|mar)/);
+			expect(body).toMatch(/<p class="choices-header">(<!--[^>]*-->)*The law(<!--[^>]*-->)*<\/p>/);
 			expect(body).not.toMatch(/[✓✗]/);
 		}
 	});
@@ -233,14 +235,13 @@ describe('Propose Decree', () => {
 				props: { ctx: ctxFor({ plans: [plan] as never, currentPlayerID: seat, rollOutcome, ...extra }), plan: plan as never, mode: 'resolve' },
 			}).body;
 		};
-		expectTitled(as({ debate_started: false }, PREPARER, null), 'Finalize your decree');
-		expectTitled(as({}, OTHER, null, { rankings: RANKS as never, assets: [{ id: 1, owner_id: OTHER, name: 'Ring', asset_type: 'artifact', is_destroyed: false, is_leveraged: false, marginalia: [] }] as never }), 'Join the council?');
-		expectTitled(as({ outcome: 'make' }, PREPARER, 'make'), "Signatory's Addendum");
-		expectTitled(as({}, OTHER, null), 'Proposed decree being debated:');
+		expectTitled(as({ debate_started: false }, PREPARER, null), 'The decree');
+		expectTitled(as({}, OTHER, null, { rankings: RANKS as never, assets: [{ id: 1, owner_id: OTHER, name: 'Ring', asset_type: 'artifact', is_destroyed: false, is_leveraged: false, marginalia: [] }] as never }), 'Join the council');
+		expectTitled(as({ outcome: 'make' }, PREPARER, 'make'), 'The addendum');
 	});
 
 	it('a step whose title the heading says word for word has no title', () => {
-		// "Your move — amend the law" / "— enact the law" (plans/stepLabels/propose_decree).
+		// "Your move", "Amend the law" / "— enact the law" (plans/stepLabels/propose_decree).
 		const as = (over: Record<string, unknown>, seat: number, rollOutcome: 'make' | 'mar') => {
 			const plan = {
 				id: 9, plan_type: 'propose_decree', status: 'resolving', preparer_id: PREPARER, preparation_notes: 'x',
@@ -279,12 +280,15 @@ describe('Propose Decree', () => {
 
 	it('the addendum is plain text after the law, not italic', () => {
 		const body = clean(decree({ addendum_placed: true, addendum: 'salt is exempt', addendum_connector: 'and' }));
-		expect(body).toMatch(/<p class="ft-prompt[^"]*">Law: No private armies\. — and salt is exempt<\/p>/);
+		// Two player-written parts, each in its own quotation marks, joined by the app's own
+		// word outside both of them.
+		expect(body).toMatch(/<p class="quoted-body[^"]*"><span class="quote">“No private armies\.”<\/span> — and <span class="quote">“salt is exempt”<\/span><\/p>/);
 	});
 
-	it('the law under debate is step text, and the council is a plain list', () => {
+	it('the law under debate is centred under "ravi proposes", and the council is a plain list', () => {
 		const body = decree({ outcome: '' }, OTHER, null);
-		expect(body).toMatch(/<p class="ft-prompt[^"]*">(<!--[^>]*-->)*<span class="quote">“No private armies\.”<\/span>(<!--[^>]*-->)*<\/p>/);
+		expect(body).toMatch(/<div class="quoted-text[^"]*"><p class="choices-header">(<!--[^>]*-->)*<span class="player-name"[^>]*>(<!--[^>]*-->)*ravi(<!--[^>]*-->)*<\/span>(<!--[^>]*-->)* proposes/);
+		expect(body).toMatch(/<p class="quoted-body[^"]*">(<!--[^>]*-->)*<span class="quote">“No private armies\.”<\/span>/);
 		expect(body).toContain('council-list');
 		expect(body).not.toMatch(/style="[^"]*margin/);
 	});
@@ -366,12 +370,13 @@ describe('Clandestinely Liaise delay reveal', () => {
 		},
 	}).body;
 
-	it('says who meets whom as one line of step text', () => {
-		expect(body).toMatch(/<p class="ft-prompt cl-meeting-peers[^"]*">/);
+	it('stages who meets whom as a set piece: the scene, then each player and their peer, face to face', () => {
+		expect(body).toMatch(/<section class="set-piece[^"]*" aria-label="The meeting">/);
+		expect(body).toContain('class="asset-name set-piece-peer"');
 		expect(text(body)).toContain("ravi's Dame Orr meets sol's Lord Vane");
 	});
 
-	it('quotes the note in typographic quotes, left-aligned like every other step line', () => {
+	it('quotes the scene in typographic quotes, in its own paragraph above the pairing', () => {
 		expect(text(body)).toContain('“Under the old bridge.”');
 		expect(body).not.toContain('class="cl-peer');
 	});
@@ -379,7 +384,7 @@ describe('Clandestinely Liaise delay reveal', () => {
 
 
 describe('Clandestinely Liaise phases', () => {
-	// The open step's heading says the phase ("Your move — secrets we keep",
+	// The open step's heading says the phase ("Your move", "Secrets we keep",
 	// plans/stepLabels/clandestinely_liaise), word for word, so the panel has no
 	// title for it: just the phase's own sentence.
 	const PHASES: [string, string][] = [

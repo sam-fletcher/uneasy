@@ -116,7 +116,7 @@
 	</FormField>
 {/if}
 
-<FormField label="How will you pay?">
+<FormField label="How you pay">
 	<div class="chip-row">
 		<Chip selected={kind === 'break_asset'} onclick={() => setKind('break_asset')}>Break an asset</Chip>
 		<Chip selected={kind === 'leverage_two'} onclick={() => setKind('leverage_two')}>Leverage two</Chip>
@@ -165,7 +165,7 @@
 	{/if}
 {:else}
 	<label class="form-label">
-		Peace terms:
+		Peace terms
 		<textarea rows={3} bind:value={peaceTerms} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 			placeholder="Describe the terms you propose…"></textarea>
 	</label>

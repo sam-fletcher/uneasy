@@ -270,12 +270,9 @@
 	<div class="step-groups">
 		<!-- What the demand does to this plan: plain rules, so no box and no colour. -->
 		<div class="demand-summary">
-			<p class="demand-banner-header">
+			<p class="choices-header demand-banner-header">
 				<span class="demand-mark" aria-hidden="true"><LogMark family="demand" /></span>
-				<span>
-					Demand in effect from
-					<PlayerName {players} id={demand.preparer_id} />
-				</span>
+				<span>Demand from <PlayerName {players} id={demand.preparer_id} /></span>
 			</p>
 			<ul class="demand-winners">
 				{#if winners.perform_steps != null && winners.perform_steps !== plan.preparer_id}
@@ -334,7 +331,7 @@
 		<!-- ── Retarget picker ─────────────────────────────────────────── -->
 		{#if showRetargetForm}
 			<div class="demand-form">
-				<p class="choices-header">Keep or change this plan's target</p>
+				<p class="choices-header">This plan's target</p>
 				{#if retargetFinalized}
 					<p class="choices-note">
 						You've settled where this plan is aimed{retargetHoldsRoll
@@ -409,9 +406,7 @@
 		<!-- ── Leverage picker ─────────────────────────────────────────── -->
 		{#if showLeverageForm}
 			<div class="demand-form">
-				<p class="choices-header">
-					Leverage <PlayerName {players} id={plan.preparer_id} />'s assets onto the roll
-				</p>
+				<p class="choices-header">Leverage on the roll</p>
 				{#if !targetRolls}
 					<!-- D7: nothing of the preparer's to leverage into. The rules expect
 					     the four options to land unevenly, so name the dud instead of
@@ -428,8 +423,8 @@
 						</p>
 					{:else}
 						<p class="choices-note">
-							Commit as much or as little of it as you like. Leveraging none is a
-							real move: it can guarantee the roll fails.
+							Commit as much or as little of <PlayerName {players} id={plan.preparer_id} />'s
+							assets as you like. Leveraging none is a real move: it can guarantee the roll fails.
 						</p>
 					{/if}
 					{#if leverageError}<ErrorText message={leverageError} variant="panel" />{/if}
@@ -468,13 +463,11 @@
 		flex-direction: column;
 		gap: var(--space-2);
 	}
-	/* The lead names the demand, with the demand's own mark (the log's) in front. */
+	/* The sub-heading names the demand, with the demand's own mark (the log's) in front. */
 	.demand-banner-header {
 		display: flex;
 		align-items: flex-start;
 		gap: var(--space-2);
-		margin: 0;
-		font-size: var(--text-body);
 	}
 	.demand-mark {
 		display: flex;

@@ -230,14 +230,14 @@ test('seek answers: ask → veto → re-ask → answer each reach the other side
 	await askForm.getByRole('button', { name: 'Ask question' }).click();
 
 	// Bob's answer/veto panel appears without a reload (the core regression).
-	await expect(bob.getByText('alice asks you a question')).toBeVisible({ timeout: 10_000 });
+	await expect(bob.getByText('A question for you')).toBeVisible({ timeout: 10_000 });
 	await expect(bob.getByText(q1)).toBeVisible();
 	// `exact` to avoid matching the "Seek Answers" plan chip in the record rail.
 	await expect(bob.getByRole('button', { name: 'Answer', exact: true })).toBeVisible();
 	const vetoBtn = bob.getByRole('button', { name: 'Veto (ask another)' });
 	await expect(vetoBtn).toBeVisible();
 	// Alice's own panel flips to the waiting state.
-	await expect(alice.getByText(/Waiting for bob to answer/)).toBeVisible();
+	await expect(alice.getByText('to answer or veto')).toBeVisible();
 
 	// ── Leg 2: bob vetoes. Alice must be re-prompted to ask again, live. ─────
 	await vetoBtn.click();
@@ -274,7 +274,7 @@ test('seek answers: ask → veto → re-ask → answer each reach the other side
 
 // ── What the 12-plan UX audit fixed in Seek Answers ──────────────────────────
 //
-//   - the Buffet ("What can happen?") is previewable by everyone before any dice,
+//   - the Buffet ("What can happen") is previewable by everyone before any dice,
 //     and its mar copy says what a mar costs the preparer: one of their own
 //     resources broken per point the roll fell short (#29)
 //   - the make/mar picks run on the shared Stepper: capped per option at its live
@@ -297,14 +297,14 @@ test('seek answers pre-roll: preparer narrates, others wait, the Buffet is previ
 
 	// ── Pre-roll: no dice yet. The preparer is asked, and the button says it opens the roll.
 	// Everyone else gets no form (the heading says whose move it is) but sees how hard the roll is. ──
-	await expect(alice.page.getByText('What have you learned?')).toBeVisible({ timeout: 10_000 });
+	await expect(alice.page.getByText('What you learned')).toBeVisible({ timeout: 10_000 });
 	await expect(alice.page.getByRole('button', { name: 'Post & open the roll', exact: true })).toBeDisabled();
 	await expect(alice.page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
 	for (const p of [alice, bob, carol]) {
 		await expect(p.page.getByText(/rank on the knowledge track/)).toBeVisible();
 	}
 	for (const p of [bob, carol]) {
-		await expect(stepHeading(p.page)).toHaveText('Waiting on alice — describe what was learned', { timeout: 10_000 });
+		await expect(stepHeading(p.page)).toHaveText('Waiting on alice. Describe what was learned', { timeout: 10_000 });
 		await expect(p.page.getByPlaceholder('Where you have been looking')).toHaveCount(0);
 		await expect(p.page.getByRole('button', { name: 'Post & open the roll', exact: true })).toHaveCount(0);
 	}
@@ -314,7 +314,7 @@ test('seek answers pre-roll: preparer narrates, others wait, the Buffet is previ
 	expect(forged.status(), 'only the preparer may cast').toBe(403);
 
 	// ── The Buffet: collapsed by default, open to the bystander before any dice ──
-	const toggle = carol.page.getByRole('button', { name: 'What can happen?' });
+	const toggle = carol.page.getByRole('button', { name: 'What can happen' });
 	await expect(toggle).toBeVisible();
 	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 	await toggle.click();
@@ -333,7 +333,7 @@ test('seek answers pre-roll: preparer narrates, others wait, the Buffet is previ
 	const roll = await sa.castFromUI(t, MESSAGE);
 	expect(roll.result, 'dice are cast but not yet rolled out').toBeNull();
 	for (const p of [alice, bob, carol]) {
-		await expect(p.page.getByText('What have you learned?')).toHaveCount(0, { timeout: 10_000 });
+		await expect(p.page.getByText('What you learned')).toHaveCount(0, { timeout: 10_000 });
 	}
 	await expect.poll(async () =>
 		(await (await bob.ctx.request.get(`/api/tables/${t.gameID}/posts`)).text()).includes(MESSAGE),
@@ -377,7 +377,7 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 	await expect(alice.page.getByText(/You must also describe a flaw in \(break\) \d+ of your own resource assets/)).toBeVisible();
 	// Bystanders get the same options greyed out, a wait line, and nothing to press.
 	for (const p of [bob, carol]) {
-		await expect(stepHeading(p.page)).toHaveText('Waiting on alice — choose the options', { timeout: 10_000 });
+		await expect(stepHeading(p.page)).toHaveText('Waiting on alice. Choose the options', { timeout: 10_000 });
 		await expect(p.page.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 		await expect(sa.more(p.page, sa.OPT.declareTruth)).toBeDisabled();
 		await expect(p.page.getByText(/alice must also describe a flaw in \(break\) \d+ of their own resource assets/)).toBeVisible();
@@ -428,7 +428,7 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 	}
 	for (const p of [bob, carol]) {
 		// Two kinds of pick are owed at once, so the heading names what they share.
-		await expect(stepHeading(p.page)).toHaveText('Waiting on alice — carry out the picks');
+		await expect(stepHeading(p.page)).toHaveText('Waiting on alice. Carry out the picks');
 		await expect(p.page.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 		await expect(p.page.getByRole('button', { name: 'Reveal secrets' })).toHaveCount(0);
 	}
@@ -461,7 +461,7 @@ test('seek answers mar: Stepper picks, the bystander sees the committed state, a
 
 	// The penalty is the one thing left owed: not resolved, alice is the one waited on.
 	expect(await sa.planStatus(alice.ctx.request, t.planID)).toBe('resolving');
-	await expect(stepHeading(carol.page)).toHaveText('Waiting on alice — pay the mar penalty');
+	await expect(stepHeading(carol.page)).toHaveText('Waiting on alice. Pay the mar penalty');
 	await expect(a.getByText('Describe a flaw in your own resource assets')).toBeVisible();
 	await expect(a.getByText('The plan marred by 1')).toBeVisible();
 	const pen = await alice.ctx.request.post(`/api/plans/${t.planID}/break-resource`, {
@@ -516,7 +516,7 @@ test('seek answers mar: a zero-pick commit is a committed choice, so the wait mo
 	await sa.forceRoll(alice.ctx.request, roll.id, { outcome: 'mar', result: 1 });
 	await expect(alice.page.getByText('choose exactly 1')).toBeVisible({ timeout: 10_000 });
 	for (const p of [bob, carol]) {
-		await expect(stepHeading(p.page)).toHaveText('Waiting on alice — choose the options', { timeout: 10_000 });
+		await expect(stepHeading(p.page)).toHaveText('Waiting on alice. Choose the options', { timeout: 10_000 });
 	}
 	const aliceID = (await sa.getPlan(alice.ctx.request, t.planID)).plan.preparer_id;
 
@@ -570,15 +570,15 @@ test('seek answers make: a question and its answer are told to the whole table, 
 	// them for different things: the heading names what the two share, to the asker and the asked
 	// alike, never "answer the question" to the one who asked it.
 	for (const p of [alice, bob]) {
-		await expect(stepHeading(p.page)).toHaveText('Your move — the question and the picks', { timeout: 10_000 });
+		await expect(stepHeading(p.page)).toHaveText(/^Your move(?: · also .+)?\. The question and the picks$/, { timeout: 10_000 });
 	}
-	await expect(stepHeading(carol.page)).toHaveText(/^Waiting on (bob and alice|alice and bob) — the question and the picks$/);
+	await expect(stepHeading(carol.page)).toHaveText(/^Waiting on (bob and alice|alice and bob)\. The question and the picks$/);
 	const dt = await alice.ctx.request.post(`/api/plans/${t.planID}/declare-truth`, { data: { text: 'The seal is warm.' } });
 	expect(dt.ok(), `declare-truth: ${await dt.text()}`).toBeTruthy();
 	// Carol, who is not asked, still reads the question and who owes the answer.
-	await expect(stepHeading(carol.page)).toHaveText('Waiting on bob — answer the question', { timeout: 10_000 });
-	await expect(stepHeading(alice.page)).toHaveText('Waiting on bob — answer the question');
-	await expect(stepHeading(bob.page)).toHaveText('Your move — answer the question');
+	await expect(stepHeading(carol.page)).toHaveText('Waiting on bob. Answer the question', { timeout: 10_000 });
+	await expect(stepHeading(alice.page)).toHaveText('Waiting on bob. Answer the question');
+	await expect(stepHeading(bob.page)).toHaveText(/^Your move(?: · also .+)?\. Answer the question$/);
 	await expect(carol.page.getByText(Q)).toBeVisible();
 	await expect(carol.page.getByRole('button', { name: 'Answer', exact: true })).toHaveCount(0);
 	await expect(bob.page.getByRole('button', { name: 'Answer', exact: true })).toBeVisible({ timeout: 10_000 });
@@ -622,7 +622,7 @@ test('seek answers make: a pick with no valid target is carried by the forfeit h
 	// The empty picker says why, and the note says what that means for the pick: once each.
 	await expect(alice.page.getByText('No asset\'s secrets remain to learn.')).toBeVisible({ timeout: 10_000 });
 	await expect(alice.page.getByText('This pick has no valid target.')).toBeVisible();
-	await expect(stepHeading(carol.page)).toHaveText("Waiting on alice — learn an asset's secrets", { timeout: 10_000 });
+	await expect(stepHeading(carol.page)).toHaveText("Waiting on alice. Learn an asset's secrets", { timeout: 10_000 });
 	await expect(carol.page.getByRole('button', { name: 'Skip — no valid targets' })).toHaveCount(0);
 	expect(await sa.planStatus(alice.ctx.request, t.planID)).toBe('resolving');
 	// Only the preparer may forfeit.
@@ -648,7 +648,7 @@ test('seek answers mar: after a zero-pick commit the panels move on to the self-
 
 	await expect(alice.page.getByText('Describe a flaw in your own resource assets')).toBeVisible({ timeout: 10_000 });
 	for (const p of [bob, carol]) {
-		await expect(stepHeading(p.page)).toHaveText('Waiting on alice — pay the mar penalty', { timeout: 10_000 });
+		await expect(stepHeading(p.page)).toHaveText('Waiting on alice. Pay the mar penalty', { timeout: 10_000 });
 	}
 });
 
@@ -681,14 +681,14 @@ test('seek answers make: a bystander sees each step land live, with no reload', 
 		data: { result: 'make', choices: ['break_resource', 'declare_truth'] },
 	});
 	expect(commit.ok(), `commit: ${await commit.text()}`).toBeTruthy();
-	await expect(carol.page.getByText('Break a resource (1 remaining)')).toBeVisible({ timeout: 10_000 });
+	await expect(carol.page.locator('.choices-header', { hasText: 'Break a resource' })).toBeVisible({ timeout: 10_000 });
 
 	const brk = await alice.ctx.request.post(`/api/plans/${t.planID}/break-resource`, {
 		data: { asset_id: bobResource.id, marginalia_id: bobResource.marginalia[0].id },
 	});
 	expect(brk.ok(), `break-resource: ${await brk.text()}`).toBeTruthy();
 	await expect(carol.page.locator('.resolved-so-far').getByText(`Broke ${bobResource.name}`)).toBeVisible({ timeout: 10_000 });
-	await expect(carol.page.getByText('Break a resource (1 remaining)')).toHaveCount(0);
+	await expect(carol.page.locator('.choices-header', { hasText: 'Break a resource' })).toHaveCount(0);
 });
 
 // Make Demands' perform_steps winner drives the choices in the preparer's stead; the preparer
@@ -705,6 +705,6 @@ test('seek answers under perform_steps: the preparer sees a wait line, not a pic
 	await H.call(f.api.alice, 'post', `/api/rolls/${cast.roll.id}/skip-vote`);
 	await H.call(f.api.alice, 'post', '/api/dev/force-roll', { roll_id: cast.roll.id, result: 2 });
 	const { alice } = await H.openPages(browser, f);
-	await expectHeading(alice, 'Waiting on bob — choose the options');
+	await expectHeading(alice, 'Waiting on bob. Choose the options');
 	await expect(alice.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 });

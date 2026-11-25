@@ -128,16 +128,19 @@
 }
 .form-label-text { color: var(--color-text-secondary); }
 
-/* A sub-step's own lead line ("What have you learned?", "Result: Make"). */
+/* A SUB-HEADING names one part of the step ("The decree", "Join the council"): a
+   small deep-gold label, 12px, uppercase and letter-spaced. The sentences under
+   it stay at body size, because players read them to act. It is named once, with
+   no colon, question mark, count or separator, and sub-steps are told apart by
+   the space between them and these labels, never by a rule (Round 6, "Inside a
+   step"). Its sibling is the field prompt below, which is a label, not a heading. */
 .choices-header {
-	font-size: var(--text-body);
+	font-size: var(--text-label);
+	font-weight: 400;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--color-accent);
 	margin: 0;
-}
-/* The count after a lead line ("· 0 of 1 taken", "· 2 mars to settle"): plain
-   secondary words, not part of the heading. */
-.taken-count {
-	color: var(--color-text-secondary);
-	font-size: var(--text-small);
 }
 
 .outcome-make { color: var(--color-success); }
@@ -159,6 +162,9 @@
 	margin: 0;
 }
 
+/* A FIELD'S PROMPT, or the label over a picker: 14px secondary, a label and not a
+   heading ("Rows until you meet again, or 0 to part ways"). It names what the
+   field takes and never repeats the sentence above it. */
 .picker-label {
 	font-size: var(--text-small);
 	color: var(--color-text-secondary);

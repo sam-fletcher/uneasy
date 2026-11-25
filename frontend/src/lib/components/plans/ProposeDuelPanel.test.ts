@@ -5,7 +5,7 @@ import type { PlanContext } from './types';
 
 // The duel's difficulty was a bare number tacked on the end of the "ravi vs sol" line.
 // It is the shared meter now (the challenged player's esteem status: on a mar, that many
-// of the loser's stakes change hands), and a "What can happen?" says what a make and a
+// of the loser's stakes change hands), and a "What can happen" says what a make and a
 // mar do. Both are for everyone until the dice land.
 
 // The panel listens for the duel's window events and lets go of them when it is destroyed,
@@ -44,10 +44,12 @@ describe('Propose Duel: the difficulty', () => {
 		}
 	});
 
-	it('is no longer a bare figure on the "ravi vs sol" line', () => {
+	it('is no longer a bare figure on a "ravi vs sol" line: the pairing is a set piece, and the meter shows it', () => {
 		const t = textOf(renderDuel({ seat: BYSTANDER, phase: 'setup' }));
-		expect(t).toContain('ravi vs sol');
-		expect(t).not.toMatch(/ravi vs sol\s*·\s*difficulty/);
+		expect(t).not.toContain('ravi vs sol');
+		expect(t).toMatch(/ravi\s+faces\s+sol/);
+		expect(t).not.toMatch(/sol\s*·\s*difficulty/);
+		expect(t).toMatch(/Difficulty 4/);
 	});
 
 	it('is gone once the dice have landed', () => {
@@ -55,14 +57,14 @@ describe('Propose Duel: the difficulty', () => {
 	});
 });
 
-describe('Propose Duel: "What can happen?"', () => {
-	const toggle = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?What can happen\?/;
+describe('Propose Duel: "What can happen"', () => {
+	const toggle = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?What can happen/;
 
 	it.each(['setup', 'bouts'] as const)('is a collapsed row for everyone in the %s step', (phase) => {
 		for (const seat of [CHALLENGER, CHALLENGED, BYSTANDER]) expect(renderDuel({ seat, phase })).toMatch(toggle);
 	});
 
 	it('is gone once the dice have landed: the claim step says what each side may take', () => {
-		for (const o of ['make', 'mar'] as const) expect(renderDuel({ seat: BYSTANDER, phase: 'roll', outcome: o })).not.toContain('What can happen?');
+		for (const o of ['make', 'mar'] as const) expect(renderDuel({ seat: BYSTANDER, phase: 'roll', outcome: o })).not.toContain('What can happen');
 	});
 });

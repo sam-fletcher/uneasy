@@ -97,9 +97,9 @@ test('scene setup: the focus player fills it in; a watcher sees the same form, m
 
 	// ── The step ──────────────────────────────────────────────────────────────
 	await expect(stepHeading(alice.page)).toContainText('Your move', { timeout: 10_000 });
-	await expect(stepHeading(alice.page)).toContainText('set the scene');
+	await expect(stepHeading(alice.page)).toContainText('Set the scene');
 	await expect(stepHeading(bob.page)).toContainText('Waiting on alice');
-	await expect(stepHeading(bob.page)).toContainText('set the scene');
+	await expect(stepHeading(bob.page)).toContainText('Set the scene');
 
 	// ── Prompt and groups: small headings and plain text, no box ─────────────
 	for (const p of [alice.page, bob.page]) {
@@ -215,7 +215,7 @@ test('scene details: the focus player ends it; another player takes over a peer 
 
 	// ── The scene, as alice (focus) ──────────────────────────────────────────
 	await expect(stepHeading(alice.page)).toContainText('Your move', { timeout: 10_000 });
-	await expect(stepHeading(alice.page)).toContainText('the scene');
+	await expect(stepHeading(alice.page)).toContainText('The scene');
 	const aliceScene = details(alice.page);
 	await expect(aliceScene).toBeVisible();
 	await expect(aliceScene.locator('.place')).toContainText('The Orangery');

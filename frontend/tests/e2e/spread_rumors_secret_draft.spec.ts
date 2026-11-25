@@ -40,8 +40,8 @@ test("a rumor's text is never sent to a watcher: typed first, ticked after, or u
 	await alice.getByText('Spread Rumors', { exact: true }).click();
 	await alice.getByRole('button', { name: 'bob', exact: true }).first().click();
 
-	const aliceBox = alice.getByRole('textbox', { name: 'Rumor:' });
-	const carolBox = carol.getByRole('textbox', { name: 'Rumor:' });
+	const aliceBox = alice.getByRole('textbox', { name: 'Rumor', exact: true });
+	const carolBox = carol.getByRole('textbox', { name: 'Rumor', exact: true });
 	const writing = carol.getByText('alice is writing the rumor.');
 	const keptSecret = carol.getByText('Kept secret for now. Only alice can read it.');
 

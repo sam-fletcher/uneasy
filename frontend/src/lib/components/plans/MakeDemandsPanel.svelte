@@ -209,7 +209,7 @@
 	}
 
 	// What an option does against THIS target, or that it does nothing and why: the same line as the
-	// "What can happen?" before the dice. The generic effect is only the fallback for a target plan that
+	// "What can happen" before the dice. The generic effect is only the fallback for a target plan that
 	// is not on this client. The picker and a watcher's mirror both say it with this.
 	function optionLine(opt: DemandOption): string {
 		return targetPlan
@@ -334,7 +334,7 @@
 				</FormField>
 
 				<label class="form-label">
-					Motivation:
+					Motivation
 					<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 						placeholder="Why are you getting involved?" required></textarea>
 				</label>
@@ -353,10 +353,13 @@
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={resError}>
-		{@const targetSummary = targetPlan
-			? `${PLAN_SHORT[targetPlan.plan_type] ?? targetPlan.plan_type} by ${playerName(players, targetPlan.preparer_id)} (row ${targetPlan.row_number})`
-			: 'unknown target'}
-		<p class="choices-note">Targeting: {targetSummary}</p>
+		{#snippet against()}
+			{#if targetPlan}
+				against <PlayerName {players} id={targetPlan.preparer_id} />'s {PLAN_SHORT[targetPlan.plan_type] ?? targetPlan.plan_type} (row {targetPlan.row_number})
+			{:else}
+				against an unknown plan
+			{/if}
+		{/snippet}
 
 		<!-- Before the dice land: how hard the roll is (the target plan's difficulty plus the
 		     power gap), and what each of the four options does against THIS target. After,
@@ -376,9 +379,8 @@
 		{#if rollOutcome === 'make'}
 			<!-- ── Draft picker ───────────────────────────────────────────── -->
 			<div class="choices-section">
-				<p class="choices-header">
-					Demand draft ({draftChoices.length} of 4 picked)
-				</p>
+				<p class="choices-header">The draft</p>
+				<p class="choices-note">{draftChoices.length} of 4 picked.</p>
 
 				{#if draftChoices.length > 0}
 					<!-- Each pick so far is a finished step: one line, its picker's shape in front. -->

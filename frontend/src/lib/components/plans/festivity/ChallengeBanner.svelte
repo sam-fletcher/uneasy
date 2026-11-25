@@ -38,10 +38,10 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">
-		Duel challenge:
-		<PlayerName {players} id={challenge.challenger_id} />
-		→ <PlayerName {players} id={challenge.target_id} />
+	<p class="choices-header">Duel challenge</p>
+	<p class="ft-prompt">
+		<PlayerName {players} id={challenge.challenger_id} /> challenges
+		<PlayerName {players} id={challenge.target_id} />.
 	</p>
 	{#if challenge.notes}
 		<p class="plan-notes">"{challenge.notes}"</p>

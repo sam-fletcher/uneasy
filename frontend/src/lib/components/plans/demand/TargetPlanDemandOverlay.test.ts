@@ -164,7 +164,7 @@ describe('TargetPlanDemandOverlay keep_assets banner', () => {
 
 	it.each(['seek_answers', 'chronicle_histories'])('does not on %s, which awards none', (t) => {
 		const body = overlay({ viewer: 3, targetType: t });
-		expect(body).toContain('Demand in effect from');
+		expect(body).toContain('Demand from');
 		expect(body).not.toContain('go to bob instead');
 	});
 });

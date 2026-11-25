@@ -12,7 +12,6 @@
 -->
 <script lang="ts">
 	import Quote from '$lib/components/shared/Quote.svelte';
-	import PlayerNames from '$lib/components/shared/PlayerNames.svelte';
 	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { keepSecret, type Plan } from '$lib/api';
 	import { liaiseSecretHeader } from '$lib/plans/liaiseSecret';
@@ -124,25 +123,16 @@
 	{#if seats.amLockedOut}
 		<!-- A demand handed this seat to someone else; say so rather than
 		     offering a form the server would refuse. -->
-		<!-- Distinct names: one player can hold both seats (the demander who is
-		     also the partner), and "Waiting for X, X" reads as a bug. -->
-		{@const pendingIDs = [...new Set(seats.participants
-			.filter(p => !seats.keepSecretSubmittedIDs.has(p.player_id))
-			.map(p => p.player_id))]}
 		<p class="choices-note">
 			<PlayerName {players} id={seats.preparerSeatHolder} /> is nominating on your behalf.
-			{#if pendingIDs.length > 0}Waiting for <PlayerNames {players} ids={pendingIDs} />…{/if}
 		</p>
 	{:else if seats.iKeptSecret}
-		{@const waitingFor = seats.participants.filter(p => !seats.keepSecretSubmittedIDs.has(p.player_id))}
-		{#if waitingFor.length > 0}
-			<p class="choices-note">
-				You've committed your secret. Waiting for
-				<PlayerNames {players} ids={waitingFor.map(p => p.player_id)} />…
-			</p>
-		{:else}
-			<p class="choices-note">Both secrets are committed.</p>
-		{/if}
+		<!-- Who is still owed is the step heading's who-line to say. -->
+		<p class="choices-note">
+			{seats.participants.some(p => !seats.keepSecretSubmittedIDs.has(p.player_id))
+				? "You've committed your secret."
+				: 'Both secrets are committed.'}
+		</p>
 	{:else}
 		{#if seats.actingForPreparerSeat}
 			<p class="ft-prompt">
@@ -151,7 +141,7 @@
 			</p>
 		{/if}
 		<CardPicker
-			label="Asset to hold the secret"
+			label="Assets that can hold it"
 			items={myKeepSecretAssets}
 			{players}
 			emptyMessage="{seats.actingForPreparerSeat ? playerName(players, plan.preparer_id) + ' has' : 'You have'} no assets to bear the secret."
@@ -168,7 +158,7 @@
 				</p>
 			{/if}
 			<label class="form-label">
-				<span class="form-label-text">The meeting:</span>
+				<span class="form-label-text">The meeting</span>
 				<textarea
 					rows={4}
 					class="form-textarea"

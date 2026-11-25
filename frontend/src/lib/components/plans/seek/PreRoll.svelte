@@ -41,11 +41,11 @@
 </script>
 
 <PreRollStep
-	title="What have you learned?"
+	title="What you learned"
 	prompt="Restate your methods of research, then describe one thing that you've learned while researching."
 	fields={[{
 		key: 'narration',
-		label: 'Your methods, and one thing you have learned',
+		label: 'Your research',
 		placeholder: 'Where you have been looking, and what turned up.',
 		rows: 4,
 		max: TEXT_LIMITS.LONG_TEXT,

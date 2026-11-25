@@ -6,9 +6,8 @@
   reveal has no plan card to draw it in).
 -->
 <script lang="ts">
-	import Quote from '$lib/components/shared/Quote.svelte';
-	import AssetName from '$lib/components/shared/AssetName.svelte';
-	import PlayerName from '$lib/components/shared/PlayerName.svelte';
+	import SetPiece from '../shared/SetPiece.svelte';
+	import QuotedText from '../shared/QuotedText.svelte';
 	import SimultaneousRevealInput from '../SimultaneousRevealInput.svelte';
 	import DelayThresholdNote from '../shared/DelayThresholdNote.svelte';
 	import { playerName, finaleSlotSpent } from '../shared';
@@ -39,38 +38,40 @@
 </script>
 
 <div class="plan-panel pending">
-	{#if plan.preparation_notes}
-		<p class="plan-notes"><Quote text={plan.preparation_notes} /></p>
-	{/if}
-	{#if preparerMeetingPeer || partnerMeetingPeerAsset}
-		<p class="ft-prompt cl-meeting-peers">
-			<PlayerName {players} id={plan.preparer_id} />'s
-			<AssetName name={preparerMeetingPeer?.name ?? '?'} />
-			meets
-			<PlayerName {players} id={clState.partnerID} />'s
-			<AssetName name={partnerMeetingPeerAsset?.name ?? '?'} />
-		</p>
-	{/if}
-	<!-- Everyone sees the line, participant or not: the faces are chosen rather
-	     than rolled, so overflowing row 13 is a decision the pair is making.
-	     The slot at stake is the PREPARER's, not the submitter's. -->
-	<DelayThresholdNote
-		currentRow={ctx.currentRow}
-		endingMode={ctx.endingMode}
-		slotSpent={finaleSlotSpent(plans, plan.preparer_id)}
-		preparerName={playerName(players, plan.preparer_id)}
-	/>
-	{#if seats.amParticipant && clState.delayRevealID != null && currentPlayerID != null}
-		<SimultaneousRevealInput
-			revealID={clState.delayRevealID}
-			{currentPlayerID}
-			participants={seats.participants}
-			prompt="Pick a die face to set the delay:"
+	<div class="step-groups">
+		<!-- The meeting is a set piece: the scene, then the two peers face to face. The
+		     step heading above says whose move it is; the difficulty line is not here
+		     because a liaison has no roll to be hard. -->
+		{#if clState.partnerID != null && (preparerMeetingPeer || partnerMeetingPeerAsset)}
+			<SetPiece
+				{players}
+				a={{ playerID: plan.preparer_id, peer: preparerMeetingPeer?.name ?? '?' }}
+				b={{ playerID: clState.partnerID, peer: partnerMeetingPeerAsset?.name ?? '?' }}
+				connector="meets"
+				scene={plan.preparation_notes}
+				label="The meeting"
+			/>
+		{:else if plan.preparation_notes}
+			<QuotedText text={plan.preparation_notes}>
+				{#snippet label()}The scene{/snippet}
+			</QuotedText>
+		{/if}
+		<!-- Everyone sees the line, participant or not: the faces are chosen rather
+		     than rolled, so overflowing row 13 is a decision the pair is making.
+		     The slot at stake is the PREPARER's, not the submitter's. -->
+		<DelayThresholdNote
+			currentRow={ctx.currentRow}
+			endingMode={ctx.endingMode}
+			slotSpent={finaleSlotSpent(plans, plan.preparer_id)}
+			preparerName={playerName(players, plan.preparer_id)}
 		/>
-	{:else}
-		<p class="choices-note muted">
-			<PlayerName {players} id={plan.preparer_id} /> and
-			<PlayerName {players} id={clState.partnerID} /> are settling on a time…
-		</p>
-	{/if}
+		{#if seats.amParticipant && clState.delayRevealID != null && currentPlayerID != null}
+			<SimultaneousRevealInput
+				revealID={clState.delayRevealID}
+				{currentPlayerID}
+				participants={seats.participants}
+				prompt="Pick a die face to set the delay"
+			/>
+		{/if}
+	</div>
 </div>

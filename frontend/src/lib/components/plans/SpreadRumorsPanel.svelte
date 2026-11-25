@@ -25,7 +25,7 @@
   the error line.
 -->
 <script lang="ts">
-	import Quote from '$lib/components/shared/Quote.svelte';
+	import QuotedText from './shared/QuotedText.svelte';
 	import AssetName from '$lib/components/shared/AssetName.svelte';
 	import './planPanel.css';
 	import { parseSpreadRumorsData } from '$lib/plans/resolutionData/spread_rumors';
@@ -104,7 +104,12 @@
 	{@const pendingConsent = srData.pending_take_consent ?? null}
 	{@const choicesDone = hasCommittedChoices}
 
-	<ResolvingCard {plan} {players} error={resError} showNotes={false}>
+	{#snippet aboutTarget()}about <AssetName {assets} id={plan.target_asset_id} />{/snippet}
+	<!-- What the rumor was prepared about stays in the preparation line in a mar too: it is a fact
+	     of preparation, and public (the plan list shows the target); the mar only changes whom
+	     the rumor that spreads is about, which the counter-rumor's own label says. -->
+	<ResolvingCard {plan} {players} error={resError} showNotes={false}
+		against={plan.target_asset_id ? aboutTarget : undefined}>
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
 		<!-- How hard the roll is, for everyone, until the dice land: a rumor about a main
@@ -115,38 +120,35 @@
 		{#if !choicesDone}
 			<Buffet tabs={scene.buffet} />
 		{/if}
-		<div class="rumor-summary">
-			<!-- Before the pre-roll the prep note is only a draft (principle 2), and a
-			     secret rumor's text is nobody's business yet — so neither is shown as
-			     though it were the rumor. After it, the STATED rumor is. -->
-			{#if preRollDone && srData.rumor_text}
-				<p class="rumor-label">{scene.mar ? 'The rumor that backfired' : 'The rumor, as stated'}</p>
-				<p class="rumor-quote"><Quote text={srData.rumor_text} /></p>
-				{#if srData.how_spread}
-					<p class="rumor-target">How it's spreading: {srData.how_spread}</p>
-				{/if}
-			{:else if !preRollDone && srData.is_secret}
-				<p class="rumor-label">A secret rumor</p>
-				<p class="rumor-target">
+		<!-- The rumor is the text this step is about, so it is centred under a small label
+		     (Round 6); what it is about is in the preparation line above. Before the
+		     pre-roll the prep note is only a draft (principle 2), and a secret rumor's text
+		     is nobody's business yet — so neither is shown as though it were the rumor.
+		     After it, the STATED rumor is. -->
+		{#if preRollDone && srData.rumor_text}
+			<QuotedText text={srData.rumor_text} note={srData.how_spread ? `How it's spreading: ${srData.how_spread}` : null}>
+				{#snippet label()}{scene.mar ? 'The rumor that backfired' : 'The rumor'}{/snippet}
+			</QuotedText>
+		{:else if !preRollDone && srData.is_secret}
+			<div class="rumor-secret">
+				<p class="choices-header">A secret rumor</p>
+				<p class="choices-note">
 					Kept under {#if srData.secret_asset_id != null}<AssetName {assets} id={srData.secret_asset_id} />{:else}an asset{/if}
 					until it is stated before the roll.
 				</p>
-			{:else if plan.preparation_notes && (preRollDone || !scene.isPreparer)}
-				<!-- (The preparer's own draft is not repeated here: it is already in the
-				     field below, where they are about to restate it.) -->
-				<p class="rumor-label">{preRollDone ? 'Rumor' : 'As prepared — a draft, restated before the roll'}</p>
-				<p class="rumor-quote"><Quote text={plan.preparation_notes} /></p>
-			{/if}
-			{#if srData.counter_rumor_text}
-				<p class="rumor-label">The rumor that spreads instead</p>
-				<p class="rumor-quote"><Quote text={srData.counter_rumor_text} /></p>
-			{/if}
-			{#if plan.target_asset_id && !scene.mar}
-				<p class="rumor-target">
-					Targeting: <AssetName {assets} id={plan.target_asset_id} />
-				</p>
-			{/if}
-		</div>
+			</div>
+		{:else if plan.preparation_notes && (preRollDone || !scene.isPreparer)}
+			<!-- (The preparer's own draft is not repeated here: it is already in the
+			     field below, where they are about to restate it.) -->
+			<QuotedText text={plan.preparation_notes}>
+				{#snippet label()}{preRollDone ? 'The rumor' : 'A draft of the rumor'}{/snippet}
+			</QuotedText>
+		{/if}
+		{#if srData.counter_rumor_text}
+			<QuotedText text={srData.counter_rumor_text}>
+				{#snippet label()}The rumor that spreads instead{/snippet}
+			</QuotedText>
+		{/if}
 
 		{#if !preRollDone}
 			<StateRumor {ctx} {plan} bind:error={resError} />
@@ -172,21 +174,5 @@
 {/if}
 
 <style>
-	/* The rumor as the table heard it, in quotation marks. Quoted player text is
-	   not styled (the style guide keeps italic for asset names), so it is body
-	   text with no margin of its own. */
-	.rumor-summary { display: flex; flex-direction: column; gap: var(--space-2); }
-	.rumor-label {
-		font-size: var(--text-label);
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-faint);
-		margin: 0;
-	}
-	.rumor-quote { margin: 0; }
-	.rumor-target {
-		font-size: var(--text-small);
-		color: var(--color-text-secondary);
-		margin: 0;
-	}
+	.rumor-secret { display: flex; flex-direction: column; gap: var(--space-2); }
 </style>

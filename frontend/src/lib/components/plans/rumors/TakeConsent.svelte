@@ -92,10 +92,10 @@
 	</div>
 {:else}
 	<p class="ft-prompt muted">
-		Waiting for <PlayerName {players} id={pendingConsent.victim_id} /> to agree to give up
+		Asking <PlayerName {players} id={pendingConsent.victim_id} /> to give up
 		{pendingConsent.asset_ids.length === 1
 			? assetName(assets, pendingConsent.asset_ids[0])
-			: `${pendingConsent.asset_ids.length} assets`}…
+			: `${pendingConsent.asset_ids.length} assets`}.
 	</p>
 {/if}
 

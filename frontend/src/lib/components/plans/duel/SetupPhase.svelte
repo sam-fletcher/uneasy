@@ -14,8 +14,7 @@
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import { electChampion, selectStakes, type Asset, type DuelStake, type Plan, type Player } from '$lib/api';
 	import CardPicker from '../CardPicker.svelte';
-	import { playerName } from '../shared';
-	import type { DuelRes } from './shared';
+	import { duelerOf, mainCharacterOf, type DuelRes } from './shared';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { plan, duelRes, players, assets, currentPlayerID, amParticipant, amPreparer, amTarget, myMaxStakes, myStakes, onPlansChanged, onRefresh }: {
@@ -41,13 +40,7 @@
 				a.owner_id === currentPlayerID && a.asset_type === 'peer' && !a.is_destroyed),
 	);
 	// A player's main character is their default duellist.
-	function mainCharacterOf(playerID: number | null): Asset | null {
-		if (playerID == null) return null;
-		return assets.find(a =>
-			a.owner_id === playerID && a.asset_type === 'peer'
-			&& a.is_main_character && !a.is_destroyed) ?? null;
-	}
-	const myMC = $derived(mainCharacterOf(currentPlayerID));
+	const myMC = $derived(mainCharacterOf(assets, currentPlayerID));
 	const myChampionID = $derived(amPreparer ? duelRes.prepChampID : amTarget ? duelRes.targChampID : null);
 	// The peer currently set to duel for me: an elected champion, else my MC.
 	const myDuelerID = $derived(myChampionID ?? myMC?.id ?? null);
@@ -55,11 +48,6 @@
 	// Whoever duels for a side: the elected champion, else their main character. It
 	// is an asset, so its name is marked as one (<AssetName>, the one piece every panel uses).
 	// Only a player with no peer at all falls back to their own name.
-	function dueler(playerID: number | null, champID: number | null): Asset | null {
-		return champID != null
-			? (assets.find(a => a.id === champID) ?? null)
-			: mainCharacterOf(playerID);
-	}
 
 	// Peers I could send in my stead: any but the one already duelling for me. With
 	// none the choice can't be made, and the panel says so instead of dropping the
@@ -67,16 +55,13 @@
 	const otherPeers = $derived(myPeers.filter(a => a.id !== myDuelerID));
 	// Nobody to duel for me at all: only a main character lost mid-resolution gets
 	// here. The duellist is always a peer, so this never reads as the player fighting.
-	const iHaveNoDueler = $derived(dueler(currentPlayerID, myChampionID) == null);
-
-	const opponentID = $derived(amPreparer ? plan.target_player_id : plan.preparer_id);
-	const opponentChampID = $derived(amPreparer ? duelRes.targChampID : duelRes.prepChampID);
+	const iHaveNoDueler = $derived(duelerOf(assets, currentPlayerID, myChampionID) == null);
 
 	// Duel-type framing carries the narrative weight (arms vs wits).
 	const heading = $derived(
-		duelRes.duelType === 'wits' ? 'Trial of wits — who speaks for you?'
-		: duelRes.duelType === 'arms' ? 'Duel of arms — who fights for you?'
-		: 'The duel — who duels for you?',
+		duelRes.duelType === 'wits' ? 'Who speaks for you'
+		: duelRes.duelType === 'arms' ? 'Who fights for you'
+		: 'Who duels for you',
 	);
 	const verbPhrase = $derived(
 		myChampionID === null ? (
@@ -155,15 +140,16 @@
 </script>
 
 {#snippet duelerName(playerID: number | null, champID: number | null)}
-	{@const who = dueler(playerID, champID)}
+	{@const who = duelerOf(assets, playerID, champID)}
 	{#if who}<AssetName name={who.name} />{:else}<PlayerName {players} id={playerID} />{/if}
 {/snippet}
 
 <div class="step-groups">
-	<!-- Who duels -->
-	<div class="choices-section">
-		<p class="choices-header">{heading}</p>
-		{#if amParticipant}
+	<!-- Who duels. The pairing (who faces whom) is the panel's set piece above, so this
+	     group is only the duellist's own choice, and a bystander has none. -->
+	{#if amParticipant}
+		<div class="choices-section">
+			<p class="choices-header">{heading}</p>
 			{#if changing}
 				<CardPicker
 					label="Choose a peer to duel in your stead"
@@ -181,41 +167,26 @@
 						Cancel
 					</button>
 				</div>
+			{:else if iHaveNoDueler}
+				<p class="choices-note">You have no peer to put forward in this duel.</p>
 			{:else}
-				{#if iHaveNoDueler}
-					<p class="choices-note">You have no peer to put forward in this duel.</p>
+				<p class="choices-note">
+					{@render duelerName(currentPlayerID, myChampionID)} {verbPhrase}.
+				</p>
+				{#if otherPeers.length > 0}
+					<button type="button" class="action-btn secondary" onclick={openPicker}>
+						Send someone else
+					</button>
 				{:else}
-					<p class="choices-note">
-						{@render duelerName(currentPlayerID, myChampionID)} {verbPhrase}.
-					</p>
-					{#if otherPeers.length > 0}
-						<button type="button" class="action-btn secondary" onclick={openPicker}>
-							Send someone else
-						</button>
-					{:else}
-						<p class="choices-note muted">You have no other peer to send in your stead.</p>
-					{/if}
+					<p class="choices-note muted">You have no other peer to send in your stead.</p>
 				{/if}
 			{/if}
-			<p class="choices-note muted">
-				Facing {@render duelerName(opponentID, opponentChampID)}.
-			</p>
-		{:else}
-			<p class="choices-note muted">
-				{@render duelerName(plan.preparer_id, duelRes.prepChampID)}
-				vs {@render duelerName(plan.target_player_id, duelRes.targChampID)}.
-			</p>
-		{/if}
-	</div>
+		</div>
+	{/if}
 
 	<!-- Stakes -->
 	<div class="choices-section">
-		<p class="choices-header">
-			Choose assets to stake
-			{#if amParticipant && !iCommitted && effectiveMaxStakes >= 1}
-				<span class="muted">&mdash; pick 1&ndash;{effectiveMaxStakes} {#if effectiveMaxStakes < myMaxStakes}(all you own; esteem allows {myMaxStakes}){/if}</span>
-			{/if}
-		</p>
+		<p class="choices-header">The stakes</p>
 		<p class="choices-note">
 			Each staked asset hides a rolled die for the duel and final difficulty result.
 			More dice means more control, but the staked assets could be taken if you lose.
@@ -225,7 +196,6 @@
 			{#if iCommitted}
 				<p class="choices-note">
 					You've staked {myStakes.length} asset{myStakes.length === 1 ? '' : 's'}.
-					Waiting for your opponent…
 				</p>
 			{:else if effectiveMaxStakes < 1}
 				<Notice tone="warning">
@@ -233,7 +203,7 @@
 				</Notice>
 			{:else}
 				<CardPicker
-					label="Check the assets you'll stake"
+					label="Pick 1–{effectiveMaxStakes} of your assets{effectiveMaxStakes < myMaxStakes ? ` (all you own; esteem allows ${myMaxStakes})` : ''}"
 					items={myStakeableAssets}
 					{players}
 					ownerLabel={stakeableLabel}

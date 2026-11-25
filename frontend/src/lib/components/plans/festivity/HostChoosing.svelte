@@ -134,9 +134,8 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">
-		Your extra Makes <span class="taken-count">· {taken} of {earned} taken</span>
-	</p>
+	<p class="choices-header">Your extra Makes</p>
+	<p class="choices-note">{taken} of {earned} taken.</p>
 	{#if remaining > 0 && blockedByOtherRoll}
 		<p class="choices-note muted">
 			Waiting for <PlayerName {players} id={activeRollerID} /> to finish their roll…
@@ -158,7 +157,7 @@
 		</FormField>
 		{#if hostPickedChoice === 'spread_rumor'}
 			<label class="form-label">
-				Rumor text:
+				Rumor text
 				<textarea rows={2} bind:value={hostRumor} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}></textarea>
 			</label>
 		{:else if hostPickedChoice === 'introduce_peer'}

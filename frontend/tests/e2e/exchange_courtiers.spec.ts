@@ -77,7 +77,7 @@ test('preparation: the target peer is picked from the target player', async ({ b
 	await expect(prepare).toBeDisabled();
 
 	// The rules reference is available before committing.
-	await alice.getByText('What can happen?').click();
+	await alice.getByText('What can happen').click();
 	await expect(alice.getByText('the target may name one of the preparer')).toBeVisible();
 
 	// Target player defaults to the first other player (bob); pick his courtier.
@@ -125,7 +125,7 @@ test('fair trade accepted: both peers change hands, the log names both, then the
 	// bystander sees the same peers greyed out (never an action).
 	await expect(bob.getByText('You may name one of their peers to receive in exchange')).toBeVisible();
 	await expect(bob.getByRole('button', { name: 'Propose trade' })).toBeDisabled();
-	await expect(alice.getByText(`Waiting for bob to propose a fair trade for their peer, ${PEER.bob}`)).toBeVisible();
+	await expect(alice.getByText(`alice prepared Exchange Courtiers for bob's ${PEER.bob}`)).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Propose trade' })).toHaveCount(0);
 	for (const watcher of [alice, carol]) {
 		await expect(watcher.getByText('Peer to receive in trade')).toBeVisible();
@@ -144,7 +144,7 @@ test('fair trade accepted: both peers change hands, the log names both, then the
 
 	// The preparer is handed the decision live; the target waits on it.
 	await expect(alice.getByText(`bob will hand over ${PEER.bob} if you give them ${PEER.alice}`)).toBeVisible();
-	await expect(bob.getByText("Waiting for alice's decision…")).toBeVisible();
+	await expect(bob.getByText(`You asked for ${PEER.alice} in exchange.`)).toBeVisible();
 	await expect(alice.getByRole('button', { name: 'Accept — exchange without rolling' })).toBeVisible();
 	// The players waiting on that answer are told what each leads to, and are given no button of their own.
 	for (const waiting of [bob, carol]) {
@@ -227,8 +227,8 @@ test('mar by 2: riposte lets the preparer break the requested peer before bob ta
 
 	// The preparer is now the one who acts; the target and bystander wait.
 	await expect(alice.getByText(`Riposte: bob takes your ${PEER.alice}`)).toBeVisible();
-	await expect(bob.getByText(`Riposte — waiting for alice to break or surrender ${PEER.alice}`)).toBeVisible();
-	await expect(carol.getByText(`Riposte — waiting for alice to break or surrender ${PEER.alice}`)).toBeVisible();
+	await expect(bob.getByText(`The riposte is over ${PEER.alice}.`)).toBeVisible();
+	await expect(carol.getByText(`The riposte is over ${PEER.alice}.`)).toBeVisible();
 	// Still alice's until she decides.
 	expect(await ownerOf(g, g.peers.alice)).toBe(g.ids.alice);
 
@@ -308,8 +308,8 @@ test('make: the targeted peer transfers, the target owes a messy break, then it 
 	// The peer moved; the target now owes a break on one of alice's assets.
 	await expect.poll(() => ownerOf(g, g.peers.bob)).toBe(g.ids.alice);
 	await expect(bob.getByText("The exchange was messy. You may break one of alice's marginalia")).toBeVisible();
-	await expectHeading(alice, 'Waiting on bob — break a marginalia');
-	await expectHeading(carol, 'Waiting on bob — break a marginalia');
+	await expectHeading(alice, 'Waiting on bob. Break a marginalia');
+	await expectHeading(carol, 'Waiting on bob. Break a marginalia');
 	expect(await planStatus(g, planID)).toBe('resolving');
 
 	// bob breaks the sole marginalia on alice's courtier (destroying it). It is her
@@ -389,7 +389,7 @@ test('re-aim: a peer destroyed before resolution pauses the plan for the prepare
 	await expect(alice.getByRole('button', { name: 'Re-aim this plan' })).toBeDisabled();
 	// Target and bystander just wait for the preparer — and get no controls.
 	for (const p of [bob, carol]) {
-		await expect(p.getByText('Waiting for alice to choose a new target')).toBeVisible();
+		await expect(p.getByText('A plan may change its target when the original no longer makes sense.')).toBeVisible();
 		await expect(p.getByRole('button', { name: 'Re-aim this plan' })).toHaveCount(0);
 		await expect(p.getByRole('button', { name: 'Propose trade' })).toHaveCount(0);
 	}
@@ -413,7 +413,7 @@ test('re-aim: a peer destroyed before resolution pauses the plan for the prepare
 	// The plan carries on from the top, now about carol — who is the one asked
 	// to name a trade; bob (no longer the target) only watches.
 	await expect(carol.getByText('You may name one of their peers to receive in exchange')).toBeVisible();
-	await expect(alice.getByText(`Waiting for carol to propose a fair trade for their peer, ${PEER.carol}`)).toBeVisible();
+	await expect(alice.getByText(`alice prepared Exchange Courtiers, now for carol's ${PEER.carol}`)).toBeVisible();
 	await expect(bob.getByRole('button', { name: 'Propose trade' })).toHaveCount(0);
 
 	await expectPlanLog(carol, planID, [
@@ -440,13 +440,13 @@ test('every seat that is not acting is told who the plan is waiting on', async (
 	const { alice, bob, carol } = await openAll(g);
 
 	// A bystander before the offer: waiting on bob, who owes the offer.
-	await expectHeading(carol, 'Waiting on bob — propose a fair trade');
+	await expectHeading(carol, 'Waiting on bob. Propose a fair trade');
 
 	// The preparer while the target chooses the mar response: waiting on bob.
 	await offerTrade(g, planID);
 	await declineAndForce(g, planID, 1); // difficulty 2, result 1: a mar by 1
 	await expect(bob.getByRole('button', { name: 'Apply choices' })).toBeVisible();
-	await expectHeading(alice, 'Waiting on bob — choose how to respond to the mar');
+	await expectHeading(alice, 'Waiting on bob. Choose how to respond to the mar');
 });
 
 test('the target is told the preparer is choosing, during a make', async ({ browser }) => {
@@ -455,7 +455,7 @@ test('the target is told the preparer is choosing, during a make', async ({ brow
 	await offerTrade(g, planID);
 	await declineAndForce(g, planID, 2); // difficulty 2, result 2: a make
 	await expect(alice.getByRole('button', { name: 'Apply choices' })).toBeVisible();
-	await expectHeading(bob, 'Waiting on alice — say how the trade went');
+	await expectHeading(bob, 'Waiting on alice. Say how the trade went');
 });
 
 // Regression (audit Tier 6): Riposte is described to its chooser, the target;

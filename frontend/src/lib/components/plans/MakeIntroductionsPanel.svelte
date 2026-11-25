@@ -430,7 +430,7 @@
 			</FormField>
 			<p class="form-hint">Difficulty will be {2 + miPeerCount}.</p>
 			<label class="form-label">
-				Intent:
+				Intent
 				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="What role will they fill, in court or otherwise?" required></textarea>
 			</label>
@@ -628,12 +628,12 @@
 								</p>
 							{:else if marOutcome === 'broken_journey'}
 								<label class="form-label">
-									Who arrived:
+									Who arrived
 									<textarea rows={2} class="form-textarea" bind:value={marText} maxlength={TEXT_LIMITS.MARGINALIA}
 										placeholder="A description, a function, a fun fact…"></textarea>
 								</label>
 								<label class="form-label">
-									What the journey cost them (arrives torn):
+									What the journey cost them (arrives torn)
 									<textarea rows={2} class="form-textarea" bind:value={marJourneyText} maxlength={TEXT_LIMITS.MARGINALIA}
 										placeholder="The mark of an arduous journey…"></textarea>
 								</label>

@@ -181,7 +181,7 @@
 			</p>
 		{:else}
 			<label class="form-label">
-				Rumor:
+				Rumor
 				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder={prepKeepSecret
 						? 'Write the rumor — only you will see it until you spread it.'

@@ -91,7 +91,7 @@
 			/>
 		</FormField>
 		<label class="form-label">
-			Motivation:
+			Motivation
 				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="Casus belli, opening move, rally cry, et cetera" required></textarea>
 		</label>

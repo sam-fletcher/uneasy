@@ -78,7 +78,7 @@ test('the meeting is written, not defaulted: both boxes start empty, the prepare
 	}
 
 	await keep(aliceSec).click();
-	await expect(alice.getByText("You've committed your secret. Waiting for bob")).toBeVisible();
+	await expect(alice.getByText("You've committed your secret.")).toBeVisible();
 	await expect
 		.poll(() => frames.carol.some(f => f.includes('liaise.keep_secret_submitted')), { message: 'carol heard of the pick live' })
 		.toBe(true);

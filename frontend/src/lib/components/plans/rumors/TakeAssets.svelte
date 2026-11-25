@@ -55,9 +55,9 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">Choose {k} asset{k === 1 ? '' : 's'} to take</p>
+	<p class="choices-header">Take assets</p>
 	<p class="choices-note">
-		From <PlayerName {players} id={victimID} />'s assets — they'll be asked to consent.
+		Choose {k} of <PlayerName {players} id={victimID} />'s assets. They'll be asked to consent.
 	</p>
 	<CardPicker
 		label="Assets to take"

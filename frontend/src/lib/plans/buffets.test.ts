@@ -5,7 +5,7 @@ import {
 import { DEMAND_OPTIONS, demandOptionInertReason } from '$lib/components/plans/shared';
 import type { PlanType } from '$lib/api';
 
-// What each plan's "What can happen?" says, from the book's plan pages. These pin the
+// What each plan's "What can happen" says, from the book's plan pages. These pin the
 // facts a player decides on (a count, who chooses, what is lost), not the exact words;
 // the wording beyond the book is the owner's to settle (docs/work/questions).
 

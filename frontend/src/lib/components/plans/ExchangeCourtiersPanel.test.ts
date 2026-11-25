@@ -54,15 +54,15 @@ function renderFor(
 const text = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
 
 describe('before the offer', () => {
-	it('tells a bystander the target is proposing', () => {
-		expect(text(renderFor(BYSTANDER, {}))).toContain('Waiting for sol to propose a fair trade');
+	it('says what the trade is for in the preparation line (the heading says who is proposing it)', () => {
+		expect(text(renderFor(BYSTANDER, {}))).toMatch(/prepared Exchange Courtiers for sol's Lord Vane/);
 	});
 	it('names the preparer when they have no peers to trade', () => {
 		const t = text(renderFor(BYSTANDER, {}, null, ASSETS.filter(a => a.owner_id !== PREPARER)));
-		expect(t).toContain('Waiting for ravi to proceed to the dice roll');
+		expect(t).toContain('ravi has no peers to trade for');
 	});
-	it('tells the preparer the target is proposing', () => {
-		expect(text(renderFor(PREPARER, {}))).toContain('Waiting for sol to propose a fair trade');
+	it('says it to the preparer too', () => {
+		expect(text(renderFor(PREPARER, {}))).toMatch(/prepared Exchange Courtiers for sol's Lord Vane/);
 	});
 });
 
@@ -170,7 +170,7 @@ describe('commit marker', () => {
 			const t = text(renderFor(PREPARER, riposte, 'mar', withNotes, MARKED));
 			expect(t).toContain('You may break it first');
 			expect(t).toContain('Either choice is the last step');
-			expect(text(renderFor(BYSTANDER, riposte, 'mar', ASSETS, MARKED))).toContain('Riposte — waiting for ravi');
+			expect(text(renderFor(BYSTANDER, riposte, 'mar', ASSETS, MARKED))).toContain('The riposte is over');
 		});
 	});
 });
@@ -290,7 +290,7 @@ describe('the difficulty, before the dice', () => {
 			rankings, top: { choice_submitted: true }, activeRoll: other,
 		}));
 		expect(t).not.toContain('1 easy');
-		expect(t).not.toContain('What can happen?');
+		expect(t).not.toContain('What can happen');
 	});
 });
 
@@ -384,7 +384,7 @@ describe('what a watcher sees of the picks', () => {
 			const body = renderFor(seat, {});
 			expect(body).toMatch(MIRROR);
 			const t = text(body);
-			expect(t).toContain('Waiting for sol to propose a fair trade');
+			expect(t).toMatch(/prepared Exchange Courtiers for sol's Lord Vane/);
 			expect(t).toContain('Peer to receive in trade');
 			expect(t).toContain('Dame Orr');
 			// Only the preparer's peers can be named: the target's own is the one being asked for.

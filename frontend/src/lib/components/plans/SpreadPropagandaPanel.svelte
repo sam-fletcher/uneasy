@@ -29,6 +29,7 @@
 
 	import type { PlanPanelProps } from './types';
 	import { TEXT_LIMITS } from '$lib/textLimits';
+	import QuotedText from './shared/QuotedText.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import Stepper from './shared/Stepper.svelte';
@@ -428,7 +429,7 @@
 		<div class="plan-form">
 			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 			<label class="form-label">
-				Message and Methods:
+				Message and Methods
 				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="What are you spreading through the realm, and how? Distributing pamphlets? Giving sermons? Feeding talking points to town criers?" required></textarea>
 			</label>
@@ -456,11 +457,13 @@
 		<!-- The message. Before the pre-roll the prep note is only a draft (principle
 		     2) and is labelled so; after it, the stated version replaces it. -->
 		{#if preRollDone && spData.pre_roll_text}
-			<p class="choices-note muted">The message, as stated:</p>
-			<p class="plan-notes">"{spData.pre_roll_text}"</p>
+			<QuotedText text={spData.pre_roll_text}>
+				{#snippet label()}The message{/snippet}
+			</QuotedText>
 		{:else if plan.preparation_notes && (preRollDone || !isPreparer)}
-			<p class="choices-note muted">{preRollDone ? 'As prepared:' : 'As prepared — a draft, restated before the roll:'}</p>
-			<p class="plan-notes">"{plan.preparation_notes}"</p>
+			<QuotedText text={plan.preparation_notes}>
+				{#snippet label()}{preRollDone ? 'The message, as prepared' : 'A draft of the message'}{/snippet}
+			</QuotedText>
 		{/if}
 
 		{#if !preRollDone}
@@ -471,7 +474,7 @@
 					: "Summarize the message you want the public to take from your propaganda and describe again how you've been spreading it."}
 				fields={[{
 					key: 'narration',
-					label: 'The message and how it spreads',
+					label: 'Your message',
 					placeholder: 'What should the public take from this, and how have you been getting it out?',
 					draft: plan.preparation_notes,
 					rows: 4,
@@ -504,7 +507,7 @@
 			<fieldset class="resolve-mirror-wrap choices-section"
 				class:resolve-mirror={!amChoiceActor} disabled={!amChoiceActor}>
 				<p class="choices-header">
-					Result: <span class="outcome-mar">Mar</span>
+					<span class="outcome-mar">Mar</span> options
 				</p>
 				<!-- The player choosing is told what to do; everyone else, what the actor is doing. -->
 				<p class="choices-note">
@@ -584,13 +587,14 @@
 					<fieldset class="resolve-mirror-wrap" class:resolve-mirror={!amChoiceActor} disabled={!amChoiceActor}>
 						{#if needsGivePeer}
 							<div class="plan-form">
-								<p class="choices-header">
+								<p class="choices-header">Give up a peer</p>
+								<p class="ft-prompt">
 									{#if amChoiceActor}
-										A peer leaves {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} retinue — hand it to another player
+										A peer leaves {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} retinue. Hand it to another player.
 									{:else}
-										A peer leaves {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} retinue, to be handed to another player
+										A peer leaves {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} retinue, to be handed to another player.
 									{/if}
-									{#if givePeerPicked > 1}({givePeerPicked - givePeerDone} of {givePeerPicked} remaining){/if}
+									{#if givePeerPicked > 1}{givePeerPicked - givePeerDone} of {givePeerPicked} remaining.{/if}
 								</p>
 								<CardPicker
 									label="Peer to give up"
@@ -630,13 +634,14 @@
 
 						{#if needsBreakSelf}
 							<div class="plan-form">
-								<p class="choices-header">
+								<p class="choices-header">Break an asset</p>
+								<p class="ft-prompt">
 									{#if amChoiceActor}
-										Break yourself — break one of {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} assets
+										Break one of {#if isPreparer || !plan}your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if} own assets.
 									{:else}
-										<PlayerName {players} id={plan.preparer_id} /> breaks one of their own assets
+										<PlayerName {players} id={plan.preparer_id} /> breaks one of their own assets.
 									{/if}
-									{#if breakSelfPicked > 1}({breakSelfPicked - breakSelfDone} of {breakSelfPicked} remaining){/if}
+									{#if breakSelfPicked > 1}{breakSelfPicked - breakSelfDone} of {breakSelfPicked} remaining.{/if}
 								</p>
 								<CardPicker
 									label="Marginalium to tear"

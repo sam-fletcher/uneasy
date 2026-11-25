@@ -48,9 +48,8 @@
 </script>
 
 <div class="plan-form">
-	<p class="choices-header">
-		Break a resource ({brRemaining} remaining)
-	</p>
+	<p class="choices-header">Break a resource</p>
+	<p class="choices-note">{brRemaining} remaining.</p>
 	<CardPicker
 		label="Marginalium to tear"
 		items={scene.brResourcesWithMarginalia}

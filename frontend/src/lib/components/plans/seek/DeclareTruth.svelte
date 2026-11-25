@@ -38,14 +38,13 @@
 </script>
 
 <div class="plan-form">
-	<p class="choices-header">
-		Declare something true ({scene.dtRemaining} remaining)
-	</p>
+	<p class="choices-header">Declare something true</p>
+	<p class="choices-note">{scene.dtRemaining} remaining.</p>
 	<p class="choices-note">
 		It can't contradict any truth already known to the table.
 	</p>
 	<label class="form-label">
-		The truth you declare:
+		The truth you declare
 		<textarea rows={2} bind:value={drafts.dtText} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 			placeholder="Declare something true about the world…"></textarea>
 	</label>

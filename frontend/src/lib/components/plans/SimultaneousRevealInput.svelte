@@ -125,7 +125,7 @@
 	{#if !reveal}
 		<p class="choices-note">Loading reveal…</p>
 	{:else if reveal.is_complete}
-		<p class="choices-header">Reveal complete</p>
+		<p class="choices-header">The reveal</p>
 		<ul class="reveal-list">
 			{#each reveal.entries as entry}
 				<li>{nameFor(entry.player_id)}: <strong>{entry.face}</strong></li>
@@ -136,7 +136,7 @@
 		{/if}
 	{:else}
 		{@const submitted = mySubmission != null}
-		<p class="choices-header">{prompt}</p>
+		<p class="picker-label">{prompt}</p>
 		<!-- After submitting, the picker stays visible with the chosen face
 		     highlighted but locked: the faces are disabled and Submit flips to a
 		     non-interactive "Submitted" state. -->
@@ -164,20 +164,12 @@
 				</button>
 			{/if}
 		</div>
-		{#if submitted}
-			<p class="choices-note">
-				{#if waitingOn.length === 0}
-					All submissions in — revealing…
-				{:else}
-					Waiting on {waitingOn.length}
-					{waitingOn.length === 1 ? 'other' : 'others'}:
-					{waitingOn.map(p => p.display_name).join(', ')}
-				{/if}
-			</p>
+		<!-- Who is still owed is the step heading's who-line, which names at most two players, so
+		     the progress stays here as a count; the last face in says what happens next. -->
+		{#if waitingOn.length === 0}
+			{#if submitted}<p class="choices-note">All submissions in — revealing…</p>{/if}
 		{:else if waitingOn.length < participants.length}
-			<p class="choices-note">
-				{participants.length - waitingOn.length} of {participants.length} submitted.
-			</p>
+			<p class="choices-note">{participants.length - waitingOn.length} of {participants.length} submitted.</p>
 		{/if}
 	{/if}
 

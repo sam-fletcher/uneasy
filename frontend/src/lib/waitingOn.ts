@@ -12,6 +12,7 @@
 import type { DiceRoll, Plan, RowState } from '$lib/api';
 import { REGISTRY } from '$lib/components/plans/registry';
 import { ownRoll, UNKNOWN_STEP } from '$lib/plans/stepLabel';
+import { duelBoutLabel } from '$lib/plans/stepLabels/propose_duel';
 
 /** A single party the game is waiting on. */
 export type Waitee =
@@ -19,10 +20,10 @@ export type Waitee =
 	| { kind: 'everyone' }
 	| { kind: 'label'; text: string };
 
-/** Who the game is waiting on, and for what. `stepLabel` finishes the sentence
- *  the open step's heading starts ("Your move — …", "Waiting on otto — …"), so
- *  it is a lower-case phrase that reads after the dash and never repeats the
- *  plan's name (the title bar and the finished steps above already say that). */
+/** Who the game is waiting on, and for what. `stepLabel` is the step alone, the
+ *  open step's heading under its who-line ("Your move", "Waiting on otto"): a
+ *  lower-case phrase (the heading capitalises it) that never repeats the plan's
+ *  name (the title bar and the finished steps above already say that). */
 export interface WaitingOnState {
 	waitees: Waitee[];
 	stepLabel?: string;
@@ -170,7 +171,16 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 			// still owes a stake (acting_player_ids).
 			return { waitees: actingWaitees(), stepLabel: 'stake for the duel' };
 		case 'await_duel_bout':
-			return { waitees: actingWaitees(), stepLabel: 'the bout' };
+			// The verb survives from the old "alice to declare / to respond" line, which the
+			// heading's who-line replaced: the label says which half of the bout is pending.
+			return {
+				waitees: actingWaitees(),
+				stepLabel: duelBoutLabel(
+					plans.find(p => p.id === rowState.plan_id)
+						?? plans.find(p => p.plan_type === 'propose_duel' && p.status === 'resolving'),
+					rowState.acting_player_ids ?? [],
+				),
+			};
 		case 'await_take_consent':
 			return { waitees: actingWaitees(), stepLabel: 'consent to the take' };
 		case 'await_question_answer':

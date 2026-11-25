@@ -236,11 +236,8 @@
 {/snippet}
 
 <div class="choices-section">
-	<p class="choices-header">
-		Bout {duelRes.currentBout + (boutInProgress ? 0 : 1)} of {totalBouts}
-		· <PlayerName {players} id={currentActorID} />
-		{#if boutInProgress}to respond{:else}to declare{/if}
-	</p>
+	<!-- Who must act is the step heading's who-line; the buttons say declare or respond. -->
+	<p class="choices-header">Bout {duelRes.currentBout + (boutInProgress ? 0 : 1)} of {totalBouts}</p>
 
 	<div class="duel-tracker">
 		{@render sideColumn(plan.preparer_id, prepViews, accumulated.prep, true)}
@@ -282,7 +279,7 @@
 	{#if isMyTurn && myUnresolvedStakes.length > 0}
 		<div class="plan-form">
 			{#if !boutInProgress}
-				<FormField label="Will your die be higher or lower than your opponent's?">
+				<FormField label="Your die against your opponent's">
 					<div class="chip-row">
 						<Chip selected={pickedDeclaration === 'high'} onclick={() => (pickedDeclaration = 'high')}>Higher</Chip>
 						<Chip selected={pickedDeclaration === 'low'} onclick={() => (pickedDeclaration = 'low')}>Lower</Chip>
@@ -297,11 +294,6 @@
 			</button>
 			<EndsNote show={boutInProgress && isFinalBout} text="This is the last bout: the bouts end when you respond, and the duel's dice roll follows." />
 		</div>
-	{:else if amParticipant}
-		<p class="choices-note muted">
-			Waiting for <PlayerName {players} id={currentActorID} /> to
-			{boutInProgress ? 'respond' : 'declare'}…
-		</p>
 	{/if}
 </div>
 

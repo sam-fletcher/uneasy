@@ -58,7 +58,7 @@
 {#snippet picker()}
 	<div class="choices-section">
 		<p class="choices-header">
-			Result: <span class="outcome-{outcome}">{outcome === 'make' ? 'Make' : 'Mar'}</span>
+			<span class="outcome-{outcome}">{outcome === 'make' ? 'Make' : 'Mar'}</span> options
 		</p>
 
 		{#if header}{@render header()}{/if}
