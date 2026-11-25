@@ -13,9 +13,10 @@
   `<label>`-wraps-the-input pattern carries useful screen-reader
   association, keep the explicit `<label class="form-label">` pattern.
 
-  The trailing `:` on labels is conventional in this codebase — pass
-  the label without it and FormField appends one (skipped if the label
-  already ends in punctuation).
+  A label is a label, not a heading, and carries no trailing punctuation: it names
+  what the field takes ("Rows until you meet again, or 0 to part ways") and never
+  repeats the sentence above it (Round 6, "Inside a step"). FormField used to append
+  a colon; it prints the label as written.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -26,12 +27,9 @@
 	}
 	let { label, children }: Props = $props();
 
-	const labelText = $derived(
-		/[.:!?]$/.test(label) ? label : `${label}:`,
-	);
 </script>
 
 <div class="form-label">
-	<span class="form-label-text">{labelText}</span>
+	<span class="form-label-text">{label}</span>
 	{@render children()}
 </div>

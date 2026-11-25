@@ -109,9 +109,9 @@ test('the draft: duds are greyed with a reason while a live option remains, and 
 	const second = first === 'alice' ? 'bob' : 'alice';
 	const [pick, other] = [pages[first], pages[second]];
 
-	await expectHeading(pick, 'Your move — draft pick');
-	await expectHeading(other, `Waiting on ${first} — draft pick`);
-	await expectHeading(pages.carol, `Waiting on ${first} — draft pick`);
+	await expectHeading(pick, /^Your move(?: · also .+)?\. Draft pick$/);
+	await expectHeading(other, `Waiting on ${first}. Draft pick`);
+	await expectHeading(pages.carol, `Waiting on ${first}. Draft pick`);
 	// Everyone who is not picking sees the same four cards, greyed out and inert, and no button to
 	// pick with: the board the picker chooses from. A native `disabled` takes them out of the tab order.
 	for (const watcher of [pages.carol, other]) {
@@ -154,7 +154,7 @@ test('the draft: duds are greyed with a reason while a live option remains, and 
 	await expect(draftCards(pages.carol)).toHaveCount(4);
 
 	// The second picker takes the other live option; now only duds remain.
-	await expectHeading(other, 'Your move — draft pick');
+	await expectHeading(other, /^Your move(?: · also .+)?\. Draft pick$/);
 	await card(other, 'Perform steps').click();
 	await other.getByRole('button', { name: 'Pick option' }).click();
 	await expect.poll(async () => (await draftOf(f)).length).toBe(2);
@@ -297,7 +297,7 @@ test('control leverage against a plan with no roll of the preparer\'s own is a d
 	await expectWaitingOn(alice, ['alice'], 'alice', 'including');
 	await expectWaitingOn(carol, ['alice'], 'carol', 'including');
 	for (const p of [alice, carol]) await expect.poll(() => waitingOnNames(p)).not.toContain('bob');
-	for (const p of [alice, carol]) await expect(stepHeading(p)).not.toContainText('leverage on the roll');
+	for (const p of [alice, carol]) await expect(stepHeading(p)).not.toContainText('Leverage on the roll');
 });
 
 /**
@@ -343,14 +343,14 @@ test('keep or change target: the winner is asked either way, the roll waits on t
 	await expect(bob.getByRole('button', { name: 'Keep the current target' })).toBeEnabled();
 
 	// Bob re-aims through the form: a different player, then one of their assets.
-	await bob.locator('.demand-form', { hasText: "Keep or change this plan's target" }).getByRole('button', { name: 'carol' }).click();
+	await bob.locator('.demand-form', { hasText: "This plan's target" }).getByRole('button', { name: 'carol' }).click();
 	await bob.locator('.card', { hasText: "carol's holding" }).getByRole('checkbox').click();
 	await bob.getByRole('button', { name: 'Re-aim this plan' }).click();
 
 	await expect.poll(() => targetOf(f)).toEqual({ asset: carolsAsset, player: f.ids.carol, settled: true });
 	await expect(bob.getByText("You've settled where this plan is aimed — the roll is no longer held for you.")).toBeVisible();
 	// ...and the new aim reaches the others without a reload.
-	for (const p of [alice, carol]) await expect(p.getByText("Targeting: carol's holding")).toBeVisible();
+	for (const p of [alice, carol]) await expect(p.getByText("about carol's holding")).toBeVisible();
 	await expect.poll(() => H.postsText(f)).toContain("bob re-aimed alice's Spread Rumors under their demand.");
 });
 
@@ -402,7 +402,7 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 	const { alice, bob, carol } = await H.openPages(browser, f);
 
 	// Everyone sees the demand in effect.
-	for (const p of [alice, bob, carol]) await expect(p.getByText('Demand in effect from bob')).toBeVisible();
+	for (const p of [alice, bob, carol]) await expect(p.getByText('Demand from bob')).toBeVisible();
 	// The winner is told they act in the preparer's place; the others, who.
 	await expect(bob.getByText("You will submit this plan's make/mar choices in alice's place.")).toBeVisible();
 	for (const [p, who] of [[alice, 'alice'], [carol, 'carol']] as const) {
@@ -410,7 +410,7 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 		await expectWaitingOn(p, ['bob'], who);
 	}
 	await expectWaitingOn(bob, ['bob'], 'bob');
-	await expectHeading(carol, 'Waiting on bob — choose the options');
+	await expectHeading(carol, 'Waiting on bob. Choose the options');
 	await expect(carol.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 
 	// Only bob can act: alice, though it is her plan, is refused.
@@ -445,7 +445,7 @@ test('perform steps: the preparer sees a wait line, not a picker she cannot subm
 	const f = await H.seedMD({ target: 'seek_answers' });
 	await performStepsOpen(f);
 	const { alice } = await H.openPages(browser, f);
-	await expectHeading(alice, 'Waiting on bob — choose the options');
+	await expectHeading(alice, 'Waiting on bob. Choose the options');
 	await expect(alice.getByRole('button', { name: 'Apply choices' })).toHaveCount(0);
 });
 
@@ -459,7 +459,7 @@ test('a marred demand: the target preparer places the counter-demand, the demand
 	// Only alice — whose plan was demanded against — is asked.
 	await expect(alice.getByText('The demand was marred. You may place a free counter-demand')).toBeVisible();
 	for (const p of [bob, carol]) {
-		await expectHeading(p, 'Waiting on alice — the counter-demand');
+		await expectHeading(p, 'Waiting on alice. The counter-demand');
 		await expect(p.getByRole('button', { name: 'Place counter-demand' })).toHaveCount(0);
 	}
 	await expect(bob.getByRole('button', { name: 'Complete plan' })).toHaveCount(0);
@@ -484,7 +484,7 @@ test('perform steps: the banner does not promise spoils from a plan that awards 
 	await performStepsOpen(f);
 	const { alice, bob, carol } = await H.openPages(browser, f);
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('Demand in effect from bob')).toBeVisible();
+		await expect(p.getByText('Demand from bob')).toBeVisible();
 		await expect(p.getByText('Any assets this plan would have given alice go to bob instead.')).toHaveCount(0);
 	}
 });
@@ -581,5 +581,5 @@ test('retarget before the roll exists: the winner can settle it in the window be
 	expect(res.status(), await res.text()).toBe(200);
 	expect(await targetOf(f)).toEqual({ asset: carolsHolding, player: f.ids.carol, settled: true });
 	const { alice } = await H.openPages(browser, f);
-	await expect(alice.getByText("Targeting: carol's holding")).toBeVisible();
+	await expect(alice.getByText("about carol's holding")).toBeVisible();
 });

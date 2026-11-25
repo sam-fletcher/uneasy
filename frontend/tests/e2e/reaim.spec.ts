@@ -82,7 +82,7 @@ test('spread rumors: a rumor whose subject was destroyed pauses for the preparer
 
 	// Bob (whose artifact it was) and carol only wait, and get no controls.
 	for (const p of [pb, pc]) {
-		await expect(p.getByText('Waiting for alice to choose a new target')).toBeVisible({ timeout: 10_000 });
+		await expect(p.getByText('A plan may change its target when the original no longer makes sense.')).toBeVisible({ timeout: 10_000 });
 		await expect(p.getByRole('button', { name: 'Re-aim this plan' })).toHaveCount(0);
 	}
 
@@ -142,7 +142,7 @@ test('make demands: the demand offers the plans it can still be aimed at, picked
 	const bob = await open('bob');
 	const panel = bob.locator('.reaim');
 	await expect(panel.getByText(reason)).toBeVisible({ timeout: 10_000 });
-	await expect(panel.getByText('Demand against:')).toBeVisible();
+	await expect(panel.getByText('Demand against')).toBeVisible();
 
 	// One option card: the plan and what its preparer wrote. Nothing is picked yet.
 	const card = panel.getByRole('button', { name: /Seek Answers/ });
@@ -170,7 +170,7 @@ test('make demands: the demand offers the plans it can still be aimed at, picked
 
 	// A bystander gets the wait line and no controls.
 	const carol = await open('carol');
-	await expect(carol.getByText('Waiting for bob to choose a new target')).toBeVisible({ timeout: 10_000 });
+	await expect(carol.getByText('A plan may change its target when the original no longer makes sense.')).toBeVisible({ timeout: 10_000 });
 	await expect(carol.getByRole('button', { name: 'Re-aim this plan' })).toHaveCount(0);
 	await expect(carol.getByRole('button', { name: /Seek Answers/ })).toHaveCount(0);
 });

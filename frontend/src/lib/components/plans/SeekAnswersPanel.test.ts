@@ -313,7 +313,7 @@ describe('the pre-roll, before the dice', () => {
 		// `rollOutcome` follows whichever roll is on the table: it is null again for the newly opened one.
 		const t = text(renderPreRoll({ seat: OTHER, preRollDone: true, committedWithOtherRoll: true }));
 		expect(t).not.toContain('1 easy');
-		expect(t).not.toContain('What can happen?');
+		expect(t).not.toContain('What can happen');
 	});
 
 	it('draws the meter only until the dice land', () => {

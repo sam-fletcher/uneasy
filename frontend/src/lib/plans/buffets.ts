@@ -1,4 +1,4 @@
-// The "What can happen?" reference for the five plans that lacked one: Propose Decree,
+// The "What can happen" reference for the five plans that lacked one: Propose Decree,
 // Propose Duel, Make War, Clandestinely Liaise and Make Demands. Each says, from the
 // book's plan page, what the plan can do, in the third person (everyone reads it, and a
 // second-person line would read as the viewer's own).
@@ -133,7 +133,7 @@ const MAR_STAYS_WITH_TARGET: ReadonlySet<PlanType> = new Set<PlanType>([
 /**
  * What one of a demand's four options does against a target plan of this type, in a
  * sentence, or why it does nothing. `target` is the player who prepared the target plan.
- * The "What can happen?" before the dice and the draft's cards (after them) both say it
+ * The "What can happen" before the dice and the draft's cards (after them) both say it
  * with this, so the two can't disagree.
  */
 export function demandOptionLine(opt: DemandOption, planType: PlanType, target: string): string {
@@ -167,7 +167,7 @@ export function demandOptionLine(opt: DemandOption, planType: PlanType, target: 
 }
 
 /**
- * "What can happen?" for a Make Demands, against the plan it targets. The four options
+ * "What can happen" for a Make Demands, against the plan it targets. The four options
  * are the book's, each said for this target: what it does, or that it does nothing, with
  * the same reason the draft's cards give (`demandOptionInertReason`). `demander` is who
  * prepared the demand; `target` is who prepared the plan it is aimed at.

@@ -24,7 +24,6 @@
   make the resource asset is created at that same enactment step.
 -->
 <script lang="ts">
-	import Quote from '$lib/components/shared/Quote.svelte';
 	import PlayerNames from '$lib/components/shared/PlayerNames.svelte';
 	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import { onDestroy } from 'svelte';
@@ -47,6 +46,7 @@
 	import { playerName, parseResolutionData, ownerUnleveragedAssets, resolutionActorID } from './shared';
 
 	import type { PlanPanelProps } from './types';
+	import QuotedText from './shared/QuotedText.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Chip from '$lib/components/shared/Chip.svelte';
 
@@ -403,7 +403,7 @@
 		<div class="plan-form">
 			{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 			<label class="form-label">
-				Decree:
+				Decree
 				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="What law are you drafting?" required></textarea>
 			</label>
@@ -432,21 +432,14 @@
 
 		<!-- Council roster (visible to all) ────────────────────────────── -->
 		<div class="titled">
-			<p class="choices-header">
-				Council ({pdState.council.length})
-				{#if pdState.signatoryID != null}
-					· Signatory: <PlayerName {players} id={pdState.signatoryID} />
-				{/if}
-			</p>
+			<p class="choices-header">The council</p>
 			{#if pdState.council.length === 0}
 				<p class="choices-note muted">Something has gone wrong; try refreshing the page.</p>
 			{:else}
 				<ul class="council-list">
 					{#each pdState.council as pid}
 						<li>
-							<PlayerName {players} id={pid} />
-							{#if pid === pdState.signatoryID}(signatory){/if}
-							{#if pid === plan.preparer_id}<span class="muted"> (preparer)</span>{/if}
+							<PlayerName {players} id={pid} />{#if pid === pdState.signatoryID}{' '}· signatory{/if}
 						</li>
 					{/each}
 				</ul>
@@ -465,7 +458,7 @@
 				{#if isPreparer}
 					<div class="plan-form">
 						<div class="titled">
-							<p class="choices-header">Finalize your decree</p>
+							<p class="choices-header">The decree</p>
 							<p class="ft-prompt">
 								Decide the text of the law you're proposing, then open the debate.
 							</p>
@@ -486,13 +479,11 @@
 					</p>
 				{/if}
 			{:else}
-				<!-- Debate open: show the proposed law under discussion. -->
-				<div class="titled">
-					<p class="choices-header">
-						Proposed decree being debated:
-					</p>
-					<p class="ft-prompt"><Quote text={pdState.lawText} /></p>
-				</div>
+				<!-- Debate open: the proposed law under discussion, centred: it is what the step is
+				     about (Round 6). -->
+				<QuotedText text={pdState.lawText}>
+					{#snippet label()}<PlayerName {players} id={plan.preparer_id} /> proposes{/snippet}
+				</QuotedText>
 			{/if}
 
 			<!-- Join / decline — available while the council forms (before and
@@ -500,14 +491,14 @@
 			{#if canDecide}
 				<div class="plan-form">
 					<div class="titled">
-						<p class="choices-header">Join the council?</p>
+						<p class="choices-header">Join the council</p>
 						<p class="ft-prompt">
-							Leverage one asset to join the debate — it becomes a die you can use
-							during the roll to help or interfere.
+							Leverage one of your assets to join the debate. It becomes a die you can
+							use in the roll, to help or to interfere.
 						</p>
 					</div>
 					<CardPicker
-						label="Leverage one asset to join"
+						label="Your un-leveraged assets"
 						items={myUnleveragedAssets}
 						{players}
 						emptyMessage="You have no un-leveraged assets to offer — you can only decline."
@@ -552,17 +543,17 @@
 					{@const who = playerName(players, pid)}
 					<div class="plan-form">
 						<div class="titled">
-							<p class="choices-header">{who} may join the council</p>
+							<p class="choices-header"><PlayerName {players} id={pid} /> may join</p>
 							{#if i === 0}
 								<p class="ft-prompt">
-									They may leverage one asset to join the debate, or decline. It becomes a die
-									they can use during the roll to help or interfere.
+									They may leverage one of their assets to join the debate, or decline. It
+									becomes a die they can use in the roll, to help or to interfere.
 								</p>
 							{/if}
 						</div>
 						<fieldset class="resolve-mirror-wrap resolve-mirror" disabled>
 							<CardPicker
-								label="Assets {who} may leverage"
+								label="Their un-leveraged assets"
 								items={ownerUnleveragedAssets(assets, pid)}
 								{players}
 								emptyMessage="{who} has no un-leveraged assets to offer, so can only decline."
@@ -578,15 +569,9 @@
 			     every eligible player has decided). -->
 			{#if amSignatory && debateStarted}
 				<div class="plan-form">
-					{#if pendingDeciderIDs.length > 0}
-						<p class="choices-note muted">
-							Waiting on <PlayerNames {players} ids={pendingDeciderIDs} />
-							to decide if they want to join the council.
-						</p>
-					{:else}
+					{#if pendingDeciderIDs.length === 0}
 						<p class="ft-prompt">
-							The council members are final. Discuss the proposed decree in the chat.
-							When the discussion is done, call for the roll.
+							The council is final. Discuss the decree in the chat, then call for the roll.
 						</p>
 					{/if}
 					<button class="action-btn primary"
@@ -608,28 +593,13 @@
 		{:else if outcomeApplied}
 			{@const amendmentsDone = amendmentsRemaining === 0}
 			<div class="complete-section">
-				{#if !lawEnacted && rollOutcome != null}
-					<p class="choices-header">
-						Result: <span class="outcome-{rollOutcome}">
-							{rollOutcome === 'make' ? 'Make' : 'Mar'}
-						</span>
-					</p>
-				{/if}
-				<p class="choices-applied">
-					{#if lawEnacted}
-						Law enacted.
-					{:else}
-						The decree passed — writing the law{#if rollOutcome === 'mar'}{' '}(being amended){/if}.
-					{/if}
-				</p>
-
-				<!-- Current law text (live, reflects amendments so far). -->
-				<p class="ft-prompt">
-					Law: {pdState.lawText}
-					{#if pdState.addendumPlaced && pdState.addendum}
-						— {pdState.addendumConnector} {pdState.addendum}
-					{/if}
-				</p>
+				<!-- The roll's result is a finished line above ("Rolled MAKE"), and the heading
+				     names the step, so neither is said again here. The law is the text the step
+				     is about: centred, live (it reflects each amendment so far). -->
+				<QuotedText text={pdState.lawText}
+					then={pdState.addendumPlaced && pdState.addendum ? { connector: pdState.addendumConnector, text: pdState.addendum } : null}>
+					{#snippet label()}{lawEnacted ? 'The law, enacted' : 'The law'}{/snippet}
+				</QuotedText>
 
 				<!-- Mar amendment chain (sequential, lowest power first). -->
 				{#if rollOutcome === 'mar' && !amendmentsDone}
@@ -671,7 +641,7 @@
 					{#if amAddendumActor}
 						<div class="plan-form">
 							<div class="titled">
-								<p class="choices-header">Signatory's Addendum</p>
+								<p class="choices-header">The addendum</p>
 								<p class="ft-prompt">
 									Add your rider to the final law's text (or leave it blank).
 								</p>

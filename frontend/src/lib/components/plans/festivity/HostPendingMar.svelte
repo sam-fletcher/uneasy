@@ -126,9 +126,10 @@
 
 {#if total > 0}
 	<div class="choices-section">
-		<p class="choices-header">
-			<PlayerName {players} id={insisterID} /> insists you take a Mar
-			{#if total > 1}<span class="taken-count"> · {total} mars to settle</span>{/if}
+		<p class="choices-header">Your Mar</p>
+		<p class="ft-prompt">
+			<PlayerName {players} id={insisterID} /> insists you take a Mar.
+			{#if total > 1}{total} mars to settle.{/if}
 		</p>
 
 		{#if blockedByOtherRoll}
@@ -153,7 +154,7 @@
 
 			{#if picked === 'rumor_about_you'}
 				<label class="form-label">
-					The rumor about you:
+					The rumor about you
 					<textarea rows={2} bind:value={rumor} class="form-textarea"
 						maxlength={TEXT_LIMITS.LONG_TEXT} placeholder="What does the rumor say?"></textarea>
 				</label>

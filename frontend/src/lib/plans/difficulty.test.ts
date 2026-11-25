@@ -311,7 +311,7 @@ describe('planDifficulty: the difficulty vote', () => {
 	});
 });
 
-// Every panel shows the meter and its "What can happen?" until THIS plan's dice land. The
+// Every panel shows the meter and its "What can happen" until THIS plan's dice land. The
 // page's `rollOutcome` follows whichever plan-linked roll is on the table, so a gate on it
 // alone brings them back when another plan's roll opens (a counter-propaganda rolls while
 // the plan it answers still owes steps).

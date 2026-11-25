@@ -16,7 +16,6 @@
     · Make Demands       — another plan on the same row
 -->
 <script lang="ts">
-	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import EndsNote from './shared/EndsNote.svelte';
 	import './planPanel.css';
 	import '$lib/components/shared/actionButton.css';
@@ -122,8 +121,7 @@
 
 		{#if !isPreparer}
 			<p class="choices-note">
-				Waiting for <PlayerName {players} id={plan.preparer_id} /> to choose a new target — a plan may change its
-				target when the original no longer makes sense.
+				A plan may change its target when the original no longer makes sense.
 			</p>
 		{:else if !loaded && !loadError}
 			<p class="choices-note">Loading the choices…</p>

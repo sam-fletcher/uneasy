@@ -329,7 +329,7 @@
 			{/if}
 
 			<label class="form-label">
-				Preparation:
+				Preparation
 				<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder="How are you planning to take them into your retinue?" required></textarea>
 			</label>
@@ -395,7 +395,9 @@
 		</p>
 	{/snippet}
 
+	<!-- The trade's subject is fixed at preparation, so the preparation line says it. -->
 	<ResolvingCard {plan} {players} error={resError}>
+		{#snippet against()}for <PlayerName {players} id={plan.target_player_id} />'s <AssetName {assets} id={plan.target_asset_id} />{/snippet}
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			bind:performStepsWinnerID />
 		<!-- Reference the full make/mar options only up to the roll. Once an
@@ -441,23 +443,17 @@
 							{ftDecideBusy ? '…' : 'Proceed to dice roll'}
 						</button>
 					{:else}
-						<p class="ft-prompt">
-							Waiting for <PlayerName {players} id={plan.target_player_id} /> to propose a fair trade for their peer,
-							<AssetName {assets} id={plan.target_asset_id} />.
-						</p>
 						{@render tradeMirror()}
 					{/if}
 				{:else}
-					<p class="ft-prompt muted">
-						{#if preparerIntactPeers.length === 0}
-							Waiting for <PlayerName {players} id={plan.preparer_id} /> to proceed to the dice roll — they
-							have no peers to trade for <AssetName {assets} id={plan.target_asset_id} />.
-						{:else}
-							Waiting for <PlayerName {players} id={plan.target_player_id} /> to propose a fair trade for
-							<AssetName {assets} id={plan.target_asset_id} />.
-						{/if}
-					</p>
-					{#if preparerIntactPeers.length > 0}{@render tradeMirror()}{/if}
+					{#if preparerIntactPeers.length === 0}
+						<p class="ft-prompt muted">
+							<PlayerName {players} id={plan.preparer_id} /> has no peers to trade for
+							<AssetName {assets} id={plan.target_asset_id} />, so the plan goes on to the dice roll.
+						</p>
+					{:else}
+						{@render tradeMirror()}
+					{/if}
 				{/if}
 			{:else}
 				<!-- Offer has been made. Preparer decides. -->
@@ -481,13 +477,12 @@
 				{:else if isTarget}
 					<p class="ft-prompt">
 						You asked for <AssetName {assets} id={ftAssetID} /> in exchange.
-						Waiting for <PlayerName {players} id={plan.preparer_id} />'s decision…
 					</p>
 					{@render answersNote()}
 				{:else}
 					<p class="ft-prompt muted">
 						<PlayerName {players} id={plan.target_player_id} /> asked for <AssetName {assets} id={ftAssetID} />
-						in exchange. Waiting for <PlayerName {players} id={plan.preparer_id} />'s decision…
+						in exchange.
 					</p>
 					{@render answersNote()}
 				{/if}
@@ -648,8 +643,7 @@
 					</div>
 				{:else}
 					<p class="ft-prompt muted">
-						Riposte — waiting for <PlayerName {players} id={resolutionActorID(plan, plans)} /> to break or
-						surrender <AssetName name={requestedPeerName} />…
+						The riposte is over <AssetName name={requestedPeerName} />.
 					</p>
 					<!-- The notes they could tear first, greyed out and inert. Nothing to mirror
 					     when the peer could not survive a break: the line is all there is. -->

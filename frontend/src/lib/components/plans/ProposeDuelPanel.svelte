@@ -36,7 +36,8 @@
 	import SetupPhase from './duel/SetupPhase.svelte';
 	import BoutsPhase from './duel/BoutsPhase.svelte';
 	import RollPhase from './duel/RollPhase.svelte';
-	import type { DuelRes } from './duel/shared';
+	import { duelerOf, type DuelRes } from './duel/shared';
+	import SetPiece from './shared/SetPiece.svelte';
 
 	import type { PlanPanelProps } from './types';
 
@@ -153,13 +154,22 @@
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={duelStateError}>
+		{#snippet against()}against <PlayerName {players} id={plan.target_player_id} />{#if duelRes.duelType === 'arms' || duelRes.duelType === 'wits'}{' '}· {duelRes.duelType === 'wits' ? 'a trial of wits' : 'a duel of arms'}{/if}{/snippet}
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			ownStakeLaid={myStakes.length > 0} />
 
-		<p class="choices-note">
-			<PlayerName {players} id={plan.preparer_id} />
-			vs <PlayerName {players} id={plan.target_player_id} />
-		</p>
+		<!-- The pairing is a set piece of the setup step: who faces whom, by the peers who
+		     fight. It is drawn once, before the stakes; later steps name who they mean. The
+		     plan's own preparation line says who it was prepared against. -->
+		{#if aimSettler == null && (duelRes.phase === 'setup' || duelRes.phase === '')}
+			<SetPiece
+				{players}
+				a={{ playerID: plan.preparer_id, peer: duelerOf(assets, plan.preparer_id, duelRes.prepChampID)?.name ?? null }}
+				b={{ playerID: plan.target_player_id, peer: duelerOf(assets, plan.target_player_id, duelRes.targChampID)?.name ?? null }}
+				connector="faces"
+				label="The pairing"
+			/>
+		{/if}
 
 		<!-- Until the dice land: the difficulty (the challenged player's esteem status; on a
 		     mar it is how many of the loser's stakes change hands, so it is worth knowing

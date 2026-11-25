@@ -15,7 +15,7 @@
   the "change whatever has changed" note keep the moment from being a bare "Next".
 
   Non-actors get nothing from this component: the open step's heading already says
-  whose move it is ("Waiting on alice — state the rumor"). The caller shows the draft
+  whose move it is ("Waiting on alice", "State the rumor"). The caller shows the draft
   (or the secret's placeholder) itself, since only it knows whether the draft is
   public.
 -->

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import DiceRollPanel from './DiceRollPanel.svelte';
 import type { DiceRollDie, RollIntent, RollParticipant } from '$lib/api';
+import { aHeading } from '$lib/stepHeadingTestKit';
+import type { StepHeading } from '$lib/stepHeading';
 
 // The footer tally counts players by side, in the same unit as the
 // "N of M ready" beside it. It once counted dice in each pool, so the
@@ -95,7 +97,7 @@ import { join } from 'node:path';
 type Stage = 'decide_vote' | 'voting' | 'leverage' | 'resolved';
 
 function panel(
-	over: { stage?: Stage; currentPlayerID?: number; dice?: DiceRollDie[]; participants?: RollParticipant[]; outcome?: 'make' | 'mar' | null; heading?: { text: string; yours: boolean } | null } = {},
+	over: { stage?: Stage; currentPlayerID?: number; dice?: DiceRollDie[]; participants?: RollParticipant[]; outcome?: 'make' | 'mar' | null; heading?: StepHeading | null } = {},
 ): string {
 	const { body } = render(DiceRollPanel, {
 		props: {
@@ -121,9 +123,9 @@ function panel(
 
 describe('DiceRollPanel as a step', () => {
 	it('open, it is a region named for the roll with the heading first', () => {
-		const html = panel({ heading: { text: 'Waiting on wren — the roll', yours: false } });
+		const html = panel({ heading: aHeading('the roll', { yours: false }) });
 		expect(html).toContain('aria-label="Dice roll"');
-		expect(html.indexOf('Waiting on wren — the roll')).toBeLessThan(html.indexOf('wren rolls two dice against difficulty 3'));
+		expect(html.indexOf('The roll</span>')).toBeLessThan(html.indexOf('wren rolls two dice against difficulty 3'));
 	});
 
 	it('says what is being rolled in a sentence', () => {

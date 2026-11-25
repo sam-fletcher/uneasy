@@ -120,13 +120,13 @@ test('delay vote: a bystander sees the sides and the join choices; the participa
 		await expect(p.getByText('alice’s side')).toBeVisible();
 		await expect(p.getByText('bob’s side')).toBeVisible();
 		await expect(p.getByText('alice’s war on bob')).toBeVisible();
-		await expect(stepHeading(p)).toContainText('the delay reveal');
+		await expect(stepHeading(p)).toContainText('The delay reveal');
 	}
 	// The two in the war reveal a face and owe nothing else; carol only watches.
 	await expect(alice.getByRole('button', { name: 'Submit' })).toBeVisible();
 	await expect(bob.getByRole('button', { name: 'Submit' })).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Submit' })).toHaveCount(0);
-	await expect(carol.getByText('Waiting for participants to reveal their delay dice…')).toBeVisible();
+	await expect(stepHeading(carol)).toContainText('The delay reveal');
 	await expectWaitingOn(carol, ['alice', 'bob'], 'carol');
 
 	// Three chips named for the leaders. Nothing is picked, so nothing is priced
@@ -241,7 +241,7 @@ test('cost of battle: owed per opponent, shown in the play area to everyone, and
 		const p = pages[who];
 		// The whole thing is in the play area, not behind the header chip.
 		await expect(p.getByText('Owed this row, in order')).toBeVisible();
-		await expect(stepHeading(p)).toContainText('pay the cost of battle');
+		await expect(stepHeading(p)).toContainText('Pay the cost of battle');
 		await expect(p.getByText('alice’s side')).toBeVisible();
 		await expect(warBand(p, 'alice’s war on bob')).toBeVisible();
 	}
@@ -251,11 +251,11 @@ test('cost of battle: owed per opponent, shown in the play area to everyone, and
 		'carol against bob', 'bob against alice', 'bob against carol', 'alice against bob',
 	]);
 	// The payer is told it is their turn and given the form; the rest are told who.
-	await expect(stepHeading(pages.carol)).toContainText('Your move — pay the cost of battle');
+	await expect(stepHeading(pages.carol)).toContainText(/^Your move(?: · also .+)?\. Pay the cost of battle$/);
 	await expect(costForm(pages.carol)).toBeVisible();
 	await expectWaitingOn(pages.carol, ['carol'], 'carol');
 	for (const who of ['alice', 'bob'] as Who[]) {
-		await expect(stepHeading(pages[who])).toContainText('Waiting on carol — pay the cost of battle');
+		await expect(stepHeading(pages[who])).toContainText('Waiting on carol. Pay the cost of battle');
 		await expect(costForm(pages[who])).toHaveCount(0);
 		await expectWaitingOn(pages[who], ['carol'], who);
 	}
@@ -309,9 +309,9 @@ test('cost of battle: paying by breaking tears the marginalia, hands the turn on
 	await expect.poll(async () => (await assetNamed(g, "carol's holding")).marginalia[0].is_torn).toBe(true);
 	// She is now clear, so the next payer is bob, and everyone is told.
 	await expect.poll(() => frontPayer(g)).toBe('bob');
-	await expect(stepHeading(bob)).toContainText('Your move — pay the cost of battle');
-	await expect(stepHeading(alice)).toContainText('Waiting on bob — pay the cost of battle');
-	await expect(stepHeading(carol)).toContainText('Waiting on bob — pay the cost of battle');
+	await expect(stepHeading(bob)).toContainText(/^Your move(?: · also .+)?\. Pay the cost of battle$/);
+	await expect(stepHeading(alice)).toContainText('Waiting on bob. Pay the cost of battle');
+	await expect(stepHeading(carol)).toContainText('Waiting on bob. Pay the cost of battle');
 	await expectWaitingOn(alice, ['bob'], 'alice');
 	await expect(costForm(carol)).toHaveCount(0);
 
@@ -345,7 +345,7 @@ test('cost of battle: leverage two pays it, and once every cost is paid the row 
 	// bob owes two costs, one per opponent; paying one leaves him next in line.
 	await pay('bob', { opponent_id: g.ids.alice, choice: 'leverage_two', asset_id_1: await leverage("bob's holding"), asset_id_2: await leverage("bob's resource") });
 	expect(await frontPayer(g)).toBe('bob');
-	await expect(stepHeading(bob)).toContainText('Your move — pay the cost of battle');
+	await expect(stepHeading(bob)).toContainText(/^Your move(?: · also .+)?\. Pay the cost of battle$/);
 	await pay('bob', { opponent_id: g.ids.carol, choice: 'break_asset', marginalia_id: (await assetNamed(g, "bob's artifact")).marginalia[0].id });
 	expect(await frontPayer(g)).toBe('alice');
 	await pay('alice', { opponent_id: g.ids.bob, choice: 'leverage_two', asset_id_1: await leverage("alice's holding"), asset_id_2: await leverage("alice's resource") });
@@ -353,7 +353,7 @@ test('cost of battle: leverage two pays it, and once every cost is paid the row 
 	expect((await warState(g)).outstanding_costs).toEqual([]);
 	for (const p of [alice, bob, carol]) {
 		await expect(p.getByText('Owed this row, in order')).toHaveCount(0);
-		await expect(stepHeading(p)).not.toContainText('pay the cost of battle');
+		await expect(stepHeading(p)).not.toContainText('Pay the cost of battle');
 	}
 	// An overpayment has nothing left to pay against.
 	const extra = await g.ctx.alice.request.post(`/api/plans/${g.planID}/pay-battle-cost`, {
@@ -380,9 +380,9 @@ test('peace: the bar names the voters, a rejection is announced and returns the 
 	}
 	// The heading says what is asked, a vote and not a payment, to the voters and
 	// to the proposer alike (the row state is still "pay the cost of battle").
-	await expect(stepHeading(alice)).toContainText('Your move — vote on the peace proposal');
-	await expect(stepHeading(carol)).toContainText('vote on the peace proposal');
-	await expect(stepHeading(carol)).not.toContainText('pay the cost of battle');
+	await expect(stepHeading(alice)).toContainText(/^Your move(?: · also .+)?\. Vote on the peace proposal$/);
+	await expect(stepHeading(carol)).toContainText('Vote on the peace proposal');
+	await expect(stepHeading(carol)).not.toContainText('Pay the cost of battle');
 	// Each voter sees themselves as "You" and the other by name.
 	await expectWaitingOn(alice, ['alice', 'bob'], 'alice');
 	await expectWaitingOn(bob, ['alice', 'bob'], 'bob');
@@ -403,7 +403,7 @@ test('peace: the bar names the voters, a rejection is announced and returns the 
 	expect((await warState(g)).status).toBe('active');
 	await expectLogged(g, 'rejected');
 	// The gate is back with the payer.
-	await expect(stepHeading(carol)).toContainText('Your move — pay the cost of battle');
+	await expect(stepHeading(carol)).toContainText(/^Your move(?: · also .+)?\. Pay the cost of battle$/);
 	await expectWaitingOn(alice, ['carol'], 'alice');
 });
 
@@ -432,7 +432,7 @@ test('peace: unanimous acceptance ends the war and clears the table', async ({ b
 	for (const p of [alice, bob, carol]) {
 		await expect(p.getByText('Owed this row, in order')).toHaveCount(0);
 		await expect(p.getByText('Peace proposal from carol')).toHaveCount(0);
-		await expect(stepHeading(p)).not.toContainText('pay the cost of battle');
+		await expect(stepHeading(p)).not.toContainText('Pay the cost of battle');
 	}
 	// Voting after the war is over is refused.
 	const late = await g.ctx.alice.request.post(`/api/plans/${g.planID}/vote-peace`, { data: { proposal_id: proposalID, accepted: true } });
@@ -473,7 +473,7 @@ test('surrender: emptying a side ends the war while the claim stays open for the
 		await expect(p.getByRole('button', { name: /war on/ })).toHaveCount(0);
 		await expect(p.getByText('The war is over.')).toBeVisible();
 		await expect(p.getByText('(a side surrendered)')).toBeVisible();
-		await expect(stepHeading(p)).toContainText('surrender-asset claims');
+		await expect(stepHeading(p)).toContainText('Surrender-asset claims');
 	}
 	// The claimant's move is hers; the surrendered player and the bystander see alice named.
 	await expectWaitingOn(alice, ['alice'], 'alice');
@@ -514,7 +514,7 @@ test('surrender: the claimant takes an asset of their choice; then the panel and
 	for (const p of [alice, bob, carol]) {
 		await expect(p.getByText('Surrender claims')).toHaveCount(0);
 		await expect(p.getByText('War (ended)')).toHaveCount(0);
-		await expect(stepHeading(p)).not.toContainText('surrender-asset claims');
+		await expect(stepHeading(p)).not.toContainText('Surrender-asset claims');
 	}
 	// Taking twice is refused: the claim is spent.
 	const again = await g.ctx.alice.request.post(`/api/plans/${g.planID}/take-surrender-asset`, {
@@ -573,7 +573,7 @@ test('surrender: a lone side surrendering to two opponents opens two claims, one
 	expect((await assetNamed(g, "alice's artifact")).owner_id).toBe(g.ids.bob);
 	expect((await assetNamed(g, "alice's resource")).owner_id).toBe(g.ids.carol);
 	expect((await warState(g)).open_claims).toEqual([]);
-	for (const p of [alice, bob, carol]) await expect(stepHeading(p)).not.toContainText('surrender-asset claims');
+	for (const p of [alice, bob, carol]) await expect(stepHeading(p)).not.toContainText('Surrender-asset claims');
 });
 
 test('surrender: only the claimant may take, and only from the surrendered player', async ({ browser }) => {
@@ -625,7 +625,7 @@ test('a bystander who never joined sees the whole war but is never asked for any
 	const { carol } = await openAll(g);
 
 	await expect(carol.getByText('Owed this row, in order')).toBeVisible();
-	await expect(stepHeading(carol)).toContainText('Waiting on bob — pay the cost of battle');
+	await expect(stepHeading(carol)).toContainText('Waiting on bob. Pay the cost of battle');
 	await expect(costForm(carol)).toHaveCount(0);
 	await expectWaitingOn(carol, ['bob'], 'carol');
 	await expect(carol.locator('.owed-line')).toHaveText(['bob against alice', 'alice against bob']);
@@ -679,7 +679,7 @@ test('the war band: one line at the top of Play for everyone, opening a sheet wh
 		.toContainEqual([g.ids.carol, 1, false]);
 	// The late joiner now owes entry, said in words beside their name and as a form.
 	await expect(sheet.getByText('joining, owes entry')).toBeVisible();
-	await expect(sheet.getByText('War entry — owed payments')).toBeVisible();
+	await expect(sheet.getByText('War entry payments')).toBeVisible();
 	await expect(alice.getByRole('dialog')).toHaveCount(0); // the sheet is carol's view only
 
 	// Back (the phone's spelling of the close button) dismisses it.

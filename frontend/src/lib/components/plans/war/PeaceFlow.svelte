@@ -59,11 +59,6 @@
 			<PlayerNames {players} ids={proposal.votes.filter(v => v.accepted).map(v => v.player_id)} />
 		{/if}
 	</p>
-	{#if proposal.awaiting.length > 0}
-		<p class="choices-note muted">
-			Waiting on: <PlayerNames {players} ids={proposal.awaiting} />
-		</p>
-	{/if}
 	{#if canVoteProposal}
 		<div class="form-row">
 			<button class="action-btn primary"

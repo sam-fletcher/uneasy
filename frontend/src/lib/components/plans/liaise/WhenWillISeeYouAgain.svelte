@@ -38,7 +38,7 @@
 			actingAs={seats.mySeats}
 			participants={seats.participants}
 			allowZero={true}
-			prompt="Pick a row delay (or 0 to part ways):"
+			prompt="Rows until you meet again, or 0 to part ways"
 		/>
 		<EndsNote text="This is the last step: Clandestinely Liaise resolves as soon as you have both revealed." />
 	{/if}

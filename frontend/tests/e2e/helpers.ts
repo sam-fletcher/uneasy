@@ -100,7 +100,8 @@ export async function openTones(page: Page): Promise<void> {
 
 /**
  * The open step's heading: where the game says, in words, what it asks of whom
- * ("Your move — the roll", "Waiting on otto — aid or interfere"). It replaced
+ * (a who-line, "Your move" or "Waiting on otto", over the step alone: "The roll",
+ * "Aid or interfere"). It replaced
  * the Waiting On bar. Only one is ever on screen at a time.
  */
 export function stepHeading(page: Page) {
@@ -108,8 +109,10 @@ export function stepHeading(page: Page) {
 }
 
 /**
- * The open step's heading, word for word: "Waiting on alice — place the addendum",
- * "Your move — the roll". The plan names its own step (plans/stepLabels), so this is
+ * The open step's heading, word for word: "Waiting on alice. Place the addendum",
+ * "Your move. The roll" (read as text: the who-line, a full stop only a screen reader
+ * hears, then the step; when you are one of several owed it is "Your move · also bob.
+ * The roll"). The plan names its own step (plans/stepLabels), so this is
  * where a spec says which step it expects the table to be on. It replaced the
  * "alice is resolving X…" and "Dice roll in progress…" lines the panels used to print.
  */
@@ -121,8 +124,8 @@ export async function expectHeading(page: Page, text: string | RegExp): Promise<
  * Who the game is waiting on, as the player row says it: a clock on each chip
  * the game waits on (bright gold on your own). The chip's accessible name carries
  * the same words ("— your move", "— their move"), so this reads the names, not
- * the paint. The old Waiting On bar listed everyone owed in words; the heading
- * names the others only when it is not your move, so the full set is read here.
+ * the paint. The old Waiting On bar listed everyone owed in words; the heading's
+ * who-line names at most two of them (then "and others"), so the full set is read here.
  * Returns display names, sorted, with your own included when it is your move.
  */
 export async function waitingOnNames(page: Page): Promise<string[]> {
@@ -176,10 +179,10 @@ export async function expectWaitingOn(
   } else {
     await expect(heading).toContainText('Waiting on');
     await expect(heading).not.toContainText('Your move');
-    // The heading names the others the game waits on, never the viewer, as
-    // lib/stepHeading.ts words it: up to three by name, more as a count.
-    if (got.length > 3) {
-      await expect(heading).toContainText(`Waiting on ${got.length} players`);
+    // The who-line names the others the game waits on, never the viewer, as
+    // lib/stepHeading.ts words it: up to two by name, then "and others".
+    if (got.length > 2) {
+      await expect(heading).toContainText('and others');
     } else {
       for (const n of want) await expect(heading).toContainText(n);
     }

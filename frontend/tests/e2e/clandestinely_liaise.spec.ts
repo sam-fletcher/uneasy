@@ -135,7 +135,7 @@ test('clandestinely liaise: secrets-we-keep hand-off reaches the preparer live',
 	// Preparer (alice) submits FIRST — this is the soft-lock ordering. Her own
 	// refetch leaves her at 1/2 submitted, waiting on bob.
 	await keepSecretInPanel(alice, 'Alice Confidant', ALICE_SECRET);
-	await expect(section(alice, 'Secrets we keep').getByText(/Waiting for/)).toBeVisible();
+	await expect(section(alice, 'Secrets we keep').getByText("You've committed your secret.")).toBeVisible();
 
 	// Partner (bob) submits SECOND. With both secrets in, the server auto-advances
 	// the liaison straight to Things We Share — there is no manual "Advance" click.
@@ -185,10 +185,13 @@ test('prep: bad meeting peers are refused, then the delay reveal is shared with 
 	const pages = await openAll(g);
 
 	// The pair settle the time; everyone can read who is meeting whom.
-	await expect(pages.alice.getByText('Pick a die face to set the delay:')).toBeVisible({ timeout: 10_000 });
-	await expect(pages.bob.getByText('Pick a die face to set the delay:')).toBeVisible();
-	await expect(pages.carol.getByText('alice and bob are settling on a time…')).toBeVisible();
-	await expect(pages.carol.locator('.cl-meeting-peers')).toContainText("alice's Alice Confidant meets bob's Bob Confidant");
+	await expect(pages.alice.getByText('Pick a die face to set the delay')).toBeVisible({ timeout: 10_000 });
+	await expect(pages.bob.getByText('Pick a die face to set the delay')).toBeVisible();
+	await expect(stepHeading(pages.carol)).toHaveText(/^Waiting on (alice and bob|bob and alice)\. The delay reveal$/);
+	// Both players owe the face, so each reads the other beside "Your move".
+	await expect(stepHeading(pages.alice)).toHaveText('Your move · also bob. The delay reveal');
+	await expect(stepHeading(pages.bob)).toHaveText('Your move · also alice. The delay reveal');
+	await expect(pages.carol.locator('.set-piece')).toContainText("alice's Alice Confidant meets bob's Bob Confidant");
 	await expect(pages.carol.getByRole('button', { name: 'Submit' })).toHaveCount(0);
 	// The bystander cannot reveal a face either.
 	const revealID = (await liaiseData(g)).delay_reveal_id as number;
@@ -197,7 +200,7 @@ test('prep: bad meeting peers are refused, then the delay reveal is shared with 
 	// Alice reveals in the panel; her side locks and she waits on bob.
 	await pages.alice.getByRole('button', { name: 'Pick 2' }).click();
 	await pages.alice.getByRole('button', { name: 'Submit', exact: true }).click();
-	await expect(pages.alice.getByText('Waiting on 1 other: bob')).toBeVisible();
+	await expect(stepHeading(pages.alice)).toContainText('Waiting on bob');
 	await expect(pages.alice.getByRole('button', { name: 'Pick 2' })).toBeDisabled();
 	expect((await fetchPlan(g)).row_number, 'no row until both faces are in').toBeNull();
 
@@ -237,13 +240,13 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	expect(assets.find(a => a.id === aliceConfidant)!.secret_count).toBe(0);
 
 	// Positive first: the bystander's table is live, and the heading says what the pair is on.
-	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — secrets we keep$/, { timeout: 10_000 });
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .*\. Secrets we keep$/, { timeout: 10_000 });
 	await expect(section(alice, 'Secrets we keep')).toBeVisible();
 	const framesBefore = carolFrames.length;
 
 	// Alice nominates her Confidant (written while carol's page is open).
 	await keepSecretInPanel(alice, 'Alice Confidant', ALICE_SECRET);
-	await expect(alice.getByText("You've committed your secret. Waiting for bob")).toBeVisible();
+	await expect(alice.getByText("You've committed your secret.")).toBeVisible();
 
 	// What is public: that she wrote a secret, on which asset, and that the asset now bears one.
 	await expectLogged(g, 'wrote a secret on', 'carol');
@@ -307,7 +310,7 @@ test('secret meeting: the secret text never reaches a bystander, even written af
 	await keepSecretInPanel(bob, 'Bob Confidant', BOB_SECRET);
 	await expect(section(alice, 'Things we share')).toBeVisible({ timeout: 10_000 });
 	await expect(section(bob, 'Things we share')).toBeVisible();
-	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — things we share$/);
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .*\. Things we share$/);
 	for (const site of ['list', 'one', 'record'] as const) {
 		expect(await pickAt(site, 'carol'), `${site}: still public once the phase moves on`).toBe(aliceConfidant);
 	}
@@ -346,7 +349,7 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	expect(artifact.owner_id).toBe(g.ids.alice);
 
 	// The bystander watches: the heading says what the pair is on, and there are no controls.
-	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — things we share$/, { timeout: 10_000 });
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .*\. Things we share$/, { timeout: 10_000 });
 	await expect(carol.getByRole('button', { name: 'Submit share choice' })).toHaveCount(0);
 	await expect(section(alice, 'Things we share')).toBeVisible();
 
@@ -356,7 +359,7 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	await pickCard(aliceShare, 'Bob Confidant');
 	await expect(aliceShare.locator('.notice')).toBeVisible();
 	await submitShare(aliceShare);
-	await expect(alice.getByText("You've submitted. Waiting for your partner")).toBeVisible();
+	await expect(alice.getByText("You've submitted your pick.")).toBeVisible();
 	await expectWaitingOn(bob, ['bob'], 'bob');
 	await expectWaitingOn(carol, ['bob'], 'carol');
 	// Nothing is applied until both picks are in.
@@ -377,7 +380,7 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	expect((await asset(g, artifact.id, 'carol')).owner_id, 'the gift changed hands').toBe(g.ids.bob);
 	expect((await asset(g, g.peers.alice, 'carol')).is_destroyed, "alice's own Confidant is untouched").toBe(false);
 	await expectLogged(g, 'from their partner as a gift.', 'carol');
-	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — when will I see you again\?$/);
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .*\. When will I see you again\?$/);
 
 	// Both reveal 0: no follow-up, and the plan resolves as a make by itself.
 	for (const page of [alice, bob]) {
@@ -400,15 +403,15 @@ test('outcomes: break and gift land, both parting 0 resolves a make, and the bys
 	expect(log.some(b => b.includes('Clandestinely Liaise succeeded')), 'the custom line replaces the tautology').toBe(false);
 
 	// Nobody is left owing the liaison anything; the heading no longer names its last phase.
-	await expect(stepHeading(carol)).not.toContainText('when will I see you again');
-	await expect(stepHeading(alice)).not.toContainText('when will I see you again');
+	await expect(stepHeading(carol)).not.toContainText('When will I see you again');
+	await expect(stepHeading(alice)).not.toContainText('When will I see you again');
 });
 
 test('outcomes: update rewrites the meeting peer, and a parting delay schedules the next meeting', async ({ browser }) => {
 	const g = await seedLiaise(browser, 'share');
 	track(g.gameID);
 	const { alice, carol } = await openAll(g);
-	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — things we share$/, { timeout: 10_000 });
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .*\. Things we share$/, { timeout: 10_000 });
 
 	const aliceShare = await chooseShare(alice, "Update partner's meeting peer");
 	await pickCard(aliceShare, 'Bob Confidant');
@@ -520,7 +523,7 @@ test('parting: one player revealing 0 cancels the follow-up for both', async ({ 
 	track(g.gameID);
 	const { carol } = await openAll(g);
 	await expect(section(carol, 'When will I see you again?')).toHaveCount(0); // a bystander is shown no reveal
-	await expect(stepHeading(carol)).toHaveText(/^Waiting on .* — when will I see you again\?$/, { timeout: 10_000 });
+	await expect(stepHeading(carol)).toHaveText(/^Waiting on .*\. When will I see you again\?$/, { timeout: 10_000 });
 
 	await post(g, 'alice', `/api/plans/${g.planID}/redelay-reveal`, { face: 3 }, 200);
 	expect((await fetchPlan(g, 'carol')).status, 'one face in: still open').toBe('resolving');

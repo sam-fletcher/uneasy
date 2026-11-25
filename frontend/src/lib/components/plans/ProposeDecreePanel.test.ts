@@ -7,7 +7,7 @@ import { MIRROR, mirrorsOf } from './mirrorMatchers';
 // Propose Decree showed no difficulty until the dice panel, and nothing said what a
 // make or a mar of a law would do. Before the dice land (the council meeting, and the
 // roll itself) everyone now sees the difficulty (the preparer's power rank) and a
-// "What can happen?" from the book's make and mar.
+// "What can happen" from the book's make and mar.
 
 const PREPARER = 1;
 const OTHER = 2;
@@ -56,15 +56,15 @@ describe('Propose Decree: the difficulty before the dice', () => {
 	});
 });
 
-describe('Propose Decree: "What can happen?"', () => {
-	const toggle = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?What can happen\?/;
+describe('Propose Decree: "What can happen"', () => {
+	const toggle = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?What can happen/;
 
 	it.each(['council', 'rolling'] as const)('is a collapsed row for everyone in the %s step', (phase) => {
 		for (const seat of [PREPARER, OTHER, BYSTANDER]) expect(renderPD({ seat, phase })).toMatch(toggle);
 	});
 
 	it('is gone once the dice have landed: the law-writing steps say what is happening', () => {
-		for (const o of ['make', 'mar'] as const) expect(renderPD({ seat: OTHER, phase: 'passed', outcome: o })).not.toContain('What can happen?');
+		for (const o of ['make', 'mar'] as const) expect(renderPD({ seat: OTHER, phase: 'passed', outcome: o })).not.toContain('What can happen');
 	});
 });
 
@@ -144,11 +144,10 @@ describe('Propose Decree: joining the council, as a watcher sees it', () => {
 
 	it('names whose picker each one is, and what they are choosing, in the third person', () => {
 		const t = textOf(renderCouncil({ seat: RAVI }));
-		expect(t).toContain('sol may join the council');
-		expect(t).toContain('mei may join the council');
-		expect(t).toContain('They may leverage one asset to join the debate, or decline.');
-		expect(t).toContain('Assets sol may leverage');
-		expect(t).toContain('Assets mei may leverage');
+		expect(t).toContain('sol may join');
+		expect(t).toContain('mei may join');
+		expect(t).toContain('They may leverage one of their assets to join the debate, or decline.');
+		expect(t.match(/Their un-leveraged assets/g)).toHaveLength(2);
 	});
 
 	it('is inert: every card says it is disabled, and there is no Join or Decline button', () => {

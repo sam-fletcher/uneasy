@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type BrowserContext, type Locator, type Page } from './fixtures';
-import { cleanupGameAfterEach, expectHeading } from './helpers';
+import { cleanupGameAfterEach, expectHeading, stepHeading } from './helpers';
 import { E2E } from './baseUrl';
 import {
 	cleanupDuelsAfterEach, seedDuel, addPeer, openDuel, openTable, duelWithDice, aliceCall, duelState,
@@ -44,7 +44,7 @@ async function advanceToRow(gameID: number, targetRow: number, ctx: BrowserConte
 // The count is derived from the selection, and stays hidden from the opponent
 // until both sides commit.
 async function stakeAsset(page: Page, assetName: string) {
-	const sec = section(page, 'Choose assets to stake');
+	const sec = section(page, 'The stakes');
 	const card = sec.locator('.card', { hasText: assetName });
 	await expect(card).toBeVisible();
 	await card.getByRole('checkbox').click();
@@ -270,9 +270,9 @@ test('setup: who duels, blind stakes, what a bystander sees', async ({ browser }
 
 	// The arms/wits framing is the heading, and the main character is the default
 	// duellist. The bystander sees the matchup but no controls.
-	await expect(alice.getByText('Duel of arms — who fights for you?')).toBeVisible({ timeout: 10_000 });
+	await expect(alice.getByText('Who fights for you')).toBeVisible({ timeout: 10_000 });
 	await expect(alice.getByText('fights for themselves')).toBeVisible();
-	await expect(bob.getByText('Duel of arms — who fights for you?')).toBeVisible();
+	await expect(bob.getByText('Who fights for you')).toBeVisible();
 	await expect(carol.getByText('The duellists are choosing their stakes.')).toBeVisible();
 	await expect(carol.getByRole('button', { name: 'Send someone else' })).toHaveCount(0);
 	await expect(carol.getByRole('button', { name: /^Commit/ })).toHaveCount(0);
@@ -284,8 +284,8 @@ test('setup: who duels, blind stakes, what a bystander sees', async ({ browser }
 	await alice.getByRole('button', { name: 'Confirm' }).click();
 	await expect(alice.getByText('Alice Peer 1 fights for you.')).toBeVisible();
 	await logHas(g, 'bob', 'elects Alice Peer 1 as their champion');
-	await expect(bob.getByText('Facing Alice Peer 1.')).toBeVisible();
-	await expect(carol.getByText("Alice Peer 1 vs bob's main character.")).toBeVisible();
+	await expect(bob.locator('.set-piece')).toContainText('Alice Peer 1');
+	await expect(carol.locator('.set-piece')).toContainText(/Alice Peer 1 faces bob's/);
 	expect(bodies(await duelLog(g, 'bob'), 'champion')).toHaveLength(1);
 
 	// Stake limits, as exact statuses. Bob is last on the track: two stakes at most.
@@ -293,11 +293,11 @@ test('setup: who duels, blind stakes, what a bystander sees', async ({ browser }
 	expect((await selectStakes(g, 'bob', [a1])).status(), "someone else's asset").toBe(403);
 	expect((await selectStakes(g, 'carol', [a2])).status(), 'a bystander cannot stake').toBe(403);
 	expect((await selectStakes(g, 'bob', [])).status(), 'at least one stake').toBe(400);
-	await expect(section(bob, 'Choose assets to stake')).toContainText('pick 1–2');
+	await expect(section(bob, 'The stakes')).toContainText('Pick 1–2 of your assets');
 
 	// Alice commits one stake through the UI. Her commit is private: bob's view of
 	// the duel holds none of her stakes, and nothing on the log gives her count away.
-	const aStake = section(alice, 'Choose assets to stake');
+	const aStake = section(alice, 'The stakes');
 	await aStake.locator('.card', { hasText: 'Alice Peer 2' }).getByRole('checkbox').click();
 	await aStake.getByRole('button', { name: 'Commit 1 stake' }).click();
 	await expect(alice.getByText("You've staked 1 asset.")).toBeVisible();
@@ -315,7 +315,7 @@ test('setup: who duels, blind stakes, what a bystander sees', async ({ browser }
 	expect((await selectStakes(g, 'alice', [a2])).status(), 'a second commit').toBe(409);
 
 	// Bob commits; both lay their stakes down together and the bouts begin for all.
-	const bStake = section(bob, 'Choose assets to stake');
+	const bStake = section(bob, 'The stakes');
 	await bStake.locator('.card', { hasText: 'Bob Peer 2' }).getByRole('checkbox').click();
 	await bStake.getByRole('button', { name: 'Commit 1 stake' }).click();
 	for (const page of [alice, bob, carol]) {
@@ -430,7 +430,7 @@ test('bouts: each viewer sees only their own dice — over the API, the DOM and 
 	// The responder's own page always has the new initiative (their click refreshes
 	// the plan): bob declares bout 2, since initiative passes to the other side.
 	// The OTHER pages agreeing is the test further down.
-	await expect(section(bob, 'Bout')).toContainText('bob to declare');
+	await expect(stepHeading(bob)).toHaveText('Your move. Declare the bout');
 	await expect(section(bob, 'Bout').getByRole('button', { name: 'Declare' })).toBeVisible();
 });
 
@@ -439,7 +439,7 @@ test('make: the winner takes the loser’s stake, everything staked is leveraged
 	const [alice, bob, carol] = await Promise.all([openTable(g, 'alice'), openTable(g, 'bob'), openTable(g, 'carol')]);
 	await expect(section(alice, 'Bout 1 of 1')).toBeVisible({ timeout: 10_000 });
 	// Initiative is only surfaced here, in the bouts: the setup never named it.
-	await expect(section(carol, 'Bout').getByText('alice to declare')).toBeVisible();
+	await expect(stepHeading(carol)).toHaveText('Waiting on alice. Declare the bout');
 
 	await playBoutInUI(alice, bob, aliceCall(g, true), 'Alice Peer 1', 'Bob Peer 1');
 
@@ -477,8 +477,8 @@ test('make with a real pick: the preparer chooses which of the target’s stakes
 
 	const claim = section(alice, 'The final roll');
 	await expect(claim.getByText("Choose 2 of bob's staked assets to take:")).toBeVisible({ timeout: 10_000 });
-	await expectHeading(bob, 'Waiting on alice — claim the stakes');
-	await expectHeading(carol, 'Waiting on alice — claim the stakes');
+	await expectHeading(bob, 'Waiting on alice. Claim the stakes');
+	await expectHeading(carol, 'Waiting on alice. Claim the stakes');
 	expect(await rowState(g)).toMatchObject({ kind: 'plan_resolving' });
 	// The picker is capped at the budget: a third card cannot be ticked.
 	await claim.locator('.card', { hasText: 'Bob Peer 1' }).getByRole('checkbox').click();
@@ -513,7 +513,7 @@ test('bout 2: both duellists agree whose turn it is', async ({ browser }) => {
 		const next: Who = initiative?.initiative_player_id === g.ids.alice ? 'alice' : 'bob';
 		const other: Who = next === 'alice' ? 'bob' : 'alice';
 		const pages = { alice, bob };
-		await expect(section(carol, 'Bout'), "the bystander's header names the real declarer").toContainText(`${next} to declare`);
+		await expect(stepHeading(carol), "the bystander's who-line names the real declarer").toHaveText(`Waiting on ${next}. Declare the bout`);
 		await expect(section(pages[next], 'Bout').getByRole('button', { name: 'Declare' })).toBeVisible();
 		await expect(section(pages[other], 'Bout').getByRole('button', { name: 'Declare' }), `${other}'s page offers a turn it does not have`).toHaveCount(0);
 	}
@@ -538,8 +538,8 @@ test.describe('the take after a mar is the opponent’s choice', () => {
 		const claim = section(bob, 'The final roll');
 		await expect(claim.getByRole('button', { name: 'Take the stake' })).toBeVisible({ timeout: 10_000 });
 		await expect(claim.getByRole('button', { name: 'Spare alice' })).toBeVisible();
-		await expectHeading(alice, 'Waiting on bob — take the stakes or spare them');
-		await expectHeading(carol, 'Waiting on bob — take the stakes or spare them');
+		await expectHeading(alice, 'Waiting on bob. Take the stakes or spare them');
+		await expectHeading(carol, 'Waiting on bob. Take the stakes or spare them');
 		await expect(section(alice, 'The final roll').getByRole('button')).toHaveCount(0);
 		expect((await planWithData(g)).plan.status).toBe('resolving');
 		expect(await rowState(g)).toMatchObject({ kind: 'plan_resolving', acting_player_ids: [g.ids.bob] });
@@ -593,8 +593,8 @@ test.describe('the take after a mar is the opponent’s choice', () => {
 		const claim = section(bob, 'The final roll');
 		await expect(claim.getByText("Choose 1 of alice's staked asset to take:")).toBeVisible({ timeout: 10_000 });
 		await expect(claim.getByRole('button', { name: 'Spare alice instead' })).toBeVisible();
-		await expectHeading(alice, 'Waiting on bob — take the stakes or spare them');
-		await expectHeading(carol, 'Waiting on bob — take the stakes or spare them');
+		await expectHeading(alice, 'Waiting on bob. Take the stakes or spare them');
+		await expectHeading(carol, 'Waiting on bob. Take the stakes or spare them');
 		await expect(section(alice, 'The final roll').getByRole('button', { name: /^Take/ })).toHaveCount(0);
 		expect((await planWithData(g)).plan.status).toBe('resolving');
 		// The bar names the mar winner, not the preparer.

@@ -121,7 +121,7 @@
 				Peace terms are on the table — the cost of battle waits on the vote.
 			</p>
 		{/if}
-		<!-- Who pays is the open step's heading ("Your move — pay the cost of battle"),
+		<!-- Who pays is the open step's heading ("Your move", "Pay the cost of battle"),
 		     so it is not said again here. What the heading can't carry is the whole
 		     list: every payer and the opponent they owe, in the order they pay. -->
 		<div class="owed-label">Owed this row, in order</div>
@@ -138,7 +138,7 @@
 {/if}
 
 {#if !settledInPlay && itsMyCostTurn && amFullParticipant}
-	<!-- The heading above ("Your move — pay the cost of battle") is the visible
+	<!-- The heading above ("Your move", "Pay the cost of battle") is the visible
 	     title, so the group is named for a screen reader instead of repeating it. -->
 	<div class="choices-section" role="group" aria-label="Your cost of battle">
 		<BattleCostForm
@@ -158,7 +158,7 @@
 
 {#if war.status === 'active' && myPart && !myPart.entry_payment_complete}
 	<div class="choices-section">
-		<p class="choices-header">War entry — owed payments</p>
+		<p class="choices-header">War entry payments</p>
 		{#if entryOpponentsOutstanding.length === 0}
 			<p class="choices-note muted">All entry payments recorded. The server
 				will mark you a full participant momentarily.</p>

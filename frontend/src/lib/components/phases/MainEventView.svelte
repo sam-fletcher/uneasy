@@ -1,7 +1,7 @@
 <!-- MainEventView.svelte
   Main event phase: the play surface. It reads as the steps of whatever is
   happening, in order — finished steps as one line each, then the one open step
-  under its heading (the current ask: "Your move — …" / "Waiting on otto — …").
+  under its heading (the current ask: "Your move" / "Waiting on otto").
   The heading is drawn wherever the open step lives: inside a plan's card or the
   roll step (PlanPanel and DiceRollPanel draw it), over a scene or a takeover
   (here). Owns its local UI state (refresh-asset selection).

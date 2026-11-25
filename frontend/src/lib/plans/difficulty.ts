@@ -238,7 +238,7 @@ export function planDifficulty(plan: Plan, env: DifficultyEnv, opts: DifficultyO
 
 /**
  * Whether THIS plan's dice are still to land: the window in which a plan shows its meter
- * and its "What can happen?". `rollOutcome` on the page follows whichever plan-linked roll
+ * and its "What can happen". `rollOutcome` on the page follows whichever plan-linked roll
  * is on the table, so on its own it brings them back when another plan's roll opens (a
  * counter-propaganda rolls while the plan it answers still owes steps). So a roll that
  * belongs to another plan is not read, and a plan whose choices are committed has landed.

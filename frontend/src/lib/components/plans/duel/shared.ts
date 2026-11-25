@@ -3,6 +3,22 @@
 import type { Asset, DuelStake, DuelBout } from '$lib/api';
 import { assetName } from '../shared';
 
+/** A player's main character: their default duellist. */
+export function mainCharacterOf(assets: Asset[], playerID: number | null): Asset | null {
+	if (playerID == null) return null;
+	return assets.find(a =>
+		a.owner_id === playerID && a.asset_type === 'peer'
+		&& a.is_main_character && !a.is_destroyed) ?? null;
+}
+
+/** Whoever duels for a side: the elected champion, else their main character. Null only
+ *  for a player with no peer at all. */
+export function duelerOf(assets: Asset[], playerID: number | null, champID: number | null): Asset | null {
+	return champID != null
+		? (assets.find(a => a.id === champID) ?? null)
+		: mainCharacterOf(assets, playerID);
+}
+
 export type DuelRes = {
 	duelType: string;
 	phase: string;

@@ -48,7 +48,10 @@ describe('SpreadRumorsPanel consent screen on a mar', () => {
 		expect(body).toContain('Consent needed');
 		expect(body).toContain('also hits');
 		expect(body).toContain('Preparer Main');
-		expect(body).not.toContain('Target Artifact');
+		// The target asset is a fact fixed at preparation: the preparation line says it ("about
+		// Target Artifact"). The consent screen below it is about the main character instead.
+		const consent = body.slice(body.indexOf('Consent needed'));
+		expect(consent).not.toContain('Target Artifact');
 	});
 });
 

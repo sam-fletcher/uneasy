@@ -3,8 +3,8 @@
   repeatable pick from a fixed option list (Seek Answers, Spread Rumors,
   Chronicle Histories, …). Renders a labelled bullet list of each option that
   was picked, with its count. Panels with bespoke completion text (e.g.
-  "Law enacted.") keep their own .choices-applied <p> — this is only for the
-  option-count shape.
+  Propose Decree's "Law enacted.", which now labels its law quote) keep their own —
+  this is only for the option-count shape.
 -->
 <script lang="ts">
 	/** `summary` is a viewer-neutral wording for options whose `label` speaks to

@@ -150,7 +150,7 @@ describe('peaceVoteLabel', () => {
 	const onCost = (warID?: number): RowState => ({ kind: 'await_battle_cost', war_id: warID }) as RowState;
 
 	// A peace vote is the same row state as a payment, so without this the heading
-	// told the voter "Your move — pay the cost of battle".
+	// told the voter "Your move", "Pay the cost of battle".
 	it('says "vote on the peace proposal" while the one war that owes has a proposal open', () => {
 		expect(peaceVoteLabel(onCost(70), [owing(7, 1, [2])], 2)).toBe(PEACE_VOTE_LABEL);
 		expect(PEACE_VOTE_LABEL).toBe('vote on the peace proposal');

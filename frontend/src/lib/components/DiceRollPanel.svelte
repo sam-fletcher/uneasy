@@ -56,7 +56,7 @@
 		/** True when the actor cannot leverage their own assets (Make Demands
 		 *  control_leverage winner has authority). */
 		actorLeverageBlocked?: boolean;
-		/** The open step's heading ("Your move — aid or interfere"). Null where
+		/** The open step's heading ("Your move" over "Aid or interfere"). Null where
 		 *  the surrounding screen already says it (Shake-Up). */
 		heading?: StepHeadingData | null;
 	}
@@ -543,7 +543,8 @@
 				     on shake-up rolls — banked dice aren't spendable there (ruling 3). -->
 				{#if !isShakeUp && (isActor || effectiveIntent != null) && myUnspentBanked.length > 0}
 					<div class="leverage-group">
-						<span class="section-label">Banked dice ({myUnspentBanked.length})</span>
+						<span class="section-label">Banked dice</span>
+						<span class="section-note">{myUnspentBanked.length} unspent, free to spend.</span>
 						<div class="choice-row">
 							{#each myUnspentBanked as b (b.id)}
 								<Chip
@@ -719,9 +720,17 @@
 		flex-direction: column;
 		gap: var(--space-2);
 	}
+	/* The roll step's sub-headings: the same small deep-gold label as every step's
+	   (plans/planPanel.css .choices-header), named once, with any count as a note below. */
 	.section-label {
 		font-size: var(--text-label);
-		color: var(--color-text-faint);
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--color-accent);
+	}
+	.section-note {
+		font-size: var(--text-small);
+		color: var(--color-text-secondary);
 	}
 
 	/* Who has committed what, and where everyone stands: lines with the player's

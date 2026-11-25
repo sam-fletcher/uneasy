@@ -10,6 +10,7 @@ import ResolvingCard from '../ResolvingCard.svelte';
 import StepHeading from '$lib/components/shared/StepHeading.svelte';
 import { STEP_FRAME_KEY, type StepFrame } from './stepFrame';
 import { declarations } from '$lib/components/shared/cssTestKit';
+import { aHeading } from '$lib/stepHeadingTestKit';
 
 /*
  * The Play pane reads as a plan's steps in order: finished steps are one line,
@@ -66,10 +67,28 @@ describe('FinishedStep', () => {
 });
 
 describe('StepHeading', () => {
-	it('is an h2 saying the ask, and records whose move it is', () => {
-		const { body } = render(StepHeading, { props: { heading: { text: 'Your move — the roll', yours: true } } });
-		expect(body).toMatch(/<h2[^>]*>Your move — the roll<\/h2>/);
+	const text = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').replace(/ ([.,])/g, '$1').trim();
+	const alice = { id: 1, display_name: 'alice', token_color: 'lavender', seat_order: 1 } as Player;
+	const bob = { id: 2, display_name: 'bob', token_color: 'peridot', seat_order: 2 } as Player;
+
+	it('is one h2: the who-line above the step, which stands alone', () => {
+		const { body } = render(StepHeading, { props: { heading: aHeading('the roll') } });
+		expect(body).toMatch(/<h2[^>]*>.*Your move.*The roll<\/span>.*<\/h2>/);
 		expect(body).toContain('data-yours="true"');
+		expect(text(body)).toBe('Your move. The roll');
+	});
+
+	it('names the others owed in their colour, with their shape, and reads aloud with commas and "and"', () => {
+		const heading = aHeading('the delay reveal', { yours: false, who: [{ player: alice }, { player: bob }] });
+		const { body } = render(StepHeading, { props: { heading } });
+		expect(text(body)).toBe('Waiting on alice and bob. The delay reveal');
+		// Each name is a labelled PlayerName: the shape first, the colour as a custom property.
+		expect(body.match(/class="[^"]*player-name[^"]*labelled/g)).toHaveLength(2);
+	});
+
+	it('says "also" beside the viewer and "and others" past the cap', () => {
+		const you = aHeading('aid or interfere', { who: [{ player: alice }, { player: bob }], more: true });
+		expect(text(render(StepHeading, { props: { heading: you } }).body)).toBe('Your move · also alice, bob and others. Aid or interfere');
 	});
 
 	it('draws nothing when no one is asked anything', () => {
@@ -125,6 +144,14 @@ describe('ResolvingCard', () => {
 		expect(html).not.toContain('plan-badge');
 	});
 
+	it('carries the facts fixed at preparation in the preparation line, which may wrap', () => {
+		const html = card({ against: snippet("against alice's Seek Answers (row 5)") });
+		expect(plain(html)).toContain("alice prepared Seek Answers against alice's Seek Answers (row 5)");
+		expect(html).toMatch(/class="done-text[^"]*\bwrap\b/);
+		// And with nothing to say it stays the short line, cut with an ellipsis like the rest.
+		expect(card({})).not.toMatch(/class="done-text[^"]*\bwrap\b/);
+	});
+
 	it('quotes the preparer\'s note as a second finished line', () => {
 		const html = card({ plan: plan({ preparation_notes: 'Who holds the holdfast?' }) });
 		expect(plain(html)).toContain('alice: “Who holds the holdfast?”');
@@ -153,7 +180,7 @@ describe('ResolvingCard', () => {
 			{ plan: plan({ preparation_notes: 'A note.' }) },
 			frame({
 				roll: snippet('<section id="roll">THE ROLL</section>'),
-				heading: { text: 'Your move — the next step', yours: true },
+				heading: aHeading('the next step'),
 			}),
 		);
 		const said = plain(html);
@@ -164,21 +191,21 @@ describe('ResolvingCard', () => {
 		};
 		expect(at('alice prepared')).toBeLessThan(at('alice: “A note.”'));
 		expect(at('alice: “A note.”')).toBeLessThan(at('THE ROLL'));
-		expect(at('THE ROLL')).toBeLessThan(at('Your move — the next step'));
-		expect(at('Your move — the next step')).toBeLessThan(at('THE BODY'));
+		expect(at('THE ROLL')).toBeLessThan(at('The next step'));
+		expect(at('The next step')).toBeLessThan(at('THE BODY'));
 	});
 
 	it('puts the panel\'s body in a column of groups, after the frame\'s own lines', () => {
 		const html = card({ plan: plan({ preparation_notes: 'A note.' }) }, frame({
 			roll: snippet('<section id="roll">THE ROLL</section>'),
-			heading: { text: 'Your move — the next step', yours: true },
+			heading: aHeading('the next step'),
 		}));
 		// The body, and only the body, is inside .step-groups: the finished lines, the
 		// roll and the heading keep the frame's own gap.
 		const open = html.indexOf('class="step-groups"');
 		expect(open, 'a .step-groups column').toBeGreaterThan(-1);
 		expect(html.indexOf('THE BODY')).toBeGreaterThan(open);
-		for (const framePart of ['alice prepared', 'THE ROLL', 'Your move — the next step']) {
+		for (const framePart of ['alice prepared', 'THE ROLL', 'The next step']) {
 			expect(html.indexOf(framePart), framePart).toBeLessThan(open);
 		}
 	});
@@ -187,10 +214,10 @@ describe('ResolvingCard', () => {
 		const html = card({}, frame({
 			roll: snippet('<section>THE ROLL</section>'),
 			rollOpen: true,
-			heading: { text: 'Your move — aid or interfere', yours: true },
+			heading: aHeading('aid or interfere'),
 		}));
 		expect(html).toContain('THE ROLL');
-		expect(html).not.toContain('Your move — aid or interfere');
+		expect(html).not.toContain('Aid or interfere');
 	});
 
 	it('draws no heading and no roll outside a PlanPanel (the war drawer)', () => {

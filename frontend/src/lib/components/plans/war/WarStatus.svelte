@@ -221,14 +221,13 @@
 		color: var(--color-text-faint);
 	}
 
-	/* The way in: set off from the sides by a rule, since it is a different job
-	   (a choice to make, not a list to read). */
+	/* The way in: set off from the sides by space alone, since it is a different job
+	   (a choice to make, not a list to read): sub-steps carry no rule between them. */
 	.join {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-3);
 		padding-top: var(--space-4);
-		border-top: 1px solid var(--color-border);
 	}
 	.join-lede,
 	.join-cost {

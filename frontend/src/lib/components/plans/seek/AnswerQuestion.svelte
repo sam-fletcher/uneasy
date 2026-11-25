@@ -53,12 +53,11 @@
 </script>
 
 <div class="plan-form">
-	<p class="choices-header">
-		<PlayerName {players} id={plan.preparer_id} /> asks you a question:
-	</p>
+	<p class="choices-header">A question for you</p>
+	<p class="ft-prompt"><PlayerName {players} id={plan.preparer_id} /> asks:</p>
 	<p class="q-quote"><Quote text={pendingQuestion.question} /></p>
 	<label class="form-label">
-		Your truthful answer:
+		Your truthful answer
 		<textarea rows={3} bind:value={drafts.answerText} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 			placeholder="Answer the question…"></textarea>
 	</label>

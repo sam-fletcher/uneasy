@@ -45,6 +45,9 @@
 	import RowMark from '$lib/components/shared/RowMark.svelte';
 	import StarMark from '$lib/components/shared/StarMark.svelte';
 	import StepHeading from '$lib/components/shared/StepHeading.svelte';
+	import { stepHeading } from '$lib/stepHeading';
+	import SetPiece from '$lib/components/plans/shared/SetPiece.svelte';
+	import QuotedText from '$lib/components/plans/shared/QuotedText.svelte';
 	import DieTile from '$lib/components/plans/shared/DieTile.svelte';
 	import PlayerChips from '$lib/components/plans/PlayerChips.svelte';
 	import WarBand from '$lib/components/plans/war/WarBand.svelte';
@@ -167,6 +170,20 @@
 		token_color: null,
 		seat_order: i + 1,
 	}));
+	// The step heading, derived the way the table derives it, for each state the who-line has.
+	// Ash (id 1) is "you".
+	const asWaitees = (ids: number[], stepLabel: string) => ({
+		waitees: ids.map((playerID) => ({ kind: 'player' as const, playerID })),
+		stepLabel,
+	});
+	const whoStates: [string, ReturnType<typeof stepHeading>][] = [
+		['only you are owed', stepHeading(asWaitees([1], 'aid or interfere'), 1, players)],
+		['one other is owed', stepHeading(asWaitees([3], 'the roll'), 1, players)],
+		['two others', stepHeading(asWaitees([2, 3], 'the delay reveal'), 1, players)],
+		['you and one other', stepHeading(asWaitees([1, 2], 'the delay reveal'), 1, players)],
+		['more than two others', stepHeading(asWaitees([2, 3, 4, 5], 'aid or interfere'), 1, players)],
+		['you and more than two others', stepHeading(asWaitees([1, 2, 3, 4], 'aid or interfere'), 1, players)],
+	];
 	// Ash is "you"; the game is waiting on you and on Mira.
 	const waiting = new Set([1, 4]);
 
@@ -1028,10 +1045,61 @@
 		title="Play steps"
 		blurb="The Play pane reads as a plan's steps in order. Finished steps are one line each, and only the open step is expanded, under a heading that states the current ask. The roll is one of the steps. There are no boxes: a step is a heading and space, and the only things drawn as objects are what you press."
 	>
-		<Cell label="Step heading · your move, then someone else's (the ask is stated in words here and only here)">
+		<Cell label="Step heading · the step alone in deep gold (18px) under a who-line (14px): &quot;Your move&quot; in bright gold, or faint &quot;Waiting on&quot; and the players' names in their colours. At most two names, then &quot;and others&quot;; when you are one of several it names the rest (&quot;also&quot;). It reads aloud as &quot;Waiting on Wren and otto. The delay reveal.&quot;">
+			<div class="step-col sg-col">
+				{#each whoStates as [situation, heading] (situation)}
+					<div class="who-state">
+						<span class="who-state-name">{situation}</span>
+						<StepHeading {heading} />
+					</div>
+				{/each}
+			</div>
+		</Cell>
+		<Cell label="Sub-heading and field label · a sub-heading names one part of the step: 12px, uppercase, letter-spaced, deep gold, with no colon, question mark or count. The sentences under it stay body size; a field's prompt is a 14px secondary label. Sub-steps are told apart by space alone">
+			<div class="step-groups sg-col">
+				<div class="choices-section">
+					<p class="choices-header">Join the council</p>
+					<p class="ft-prompt">Leverage one of your assets to join the debate. It becomes a die you can use in the roll, to help or to interfere.</p>
+					<p class="picker-label">Your un-leveraged assets</p>
+				</div>
+				<div class="choices-section">
+					<p class="choices-header">When will I see you again</p>
+					<p class="ft-prompt">Reveal a die face (1–6) to choose how many rows until the next liaison.</p>
+					<p class="picker-label">Rows until you meet again, or 0 to part ways</p>
+				</div>
+			</div>
+		</Cell>
+		<Cell label="Set piece · the game brings two named pieces face to face: centred, the scene in quotes, each player's name in their colour, the peers in italic deep gold at 18px, the connector a small faint uppercase label. It carries no difficulty line (the meter shows it)">
+			<div class="step-groups sg-col">
+				<SetPiece
+					{players}
+					a={{ playerID: 1, peer: 'Lady Vey' }}
+					b={{ playerID: 2, peer: 'Ser Ott' }}
+					connector="meets"
+					scene="They meet where the river bends, after vespers."
+					label="The meeting"
+				/>
+				<SetPiece {players} a={{ playerID: 1, peer: 'Ser Ott' }} b={{ playerID: 3, peer: 'Dame Orr' }} connector="faces" />
+			</div>
+		</Cell>
+		<Cell label="Quoted player text · what the open step is about is centred under a small deep-gold label with the player's name in colour: 16px, at most 320px wide, in its own quotation marks. Typed text stays left-aligned in its field; a finished step keeps it to one line">
+			<div class="step-groups sg-col">
+				<QuotedText text="No private armies may be raised within the city walls.">
+					{#snippet label()}<PlayerName {players} id={1} /> proposes{/snippet}
+				</QuotedText>
+				<QuotedText
+					text="The Duke’s heir was seen leaving the chapel at midnight, and the priest who let him in has not been seen since."
+					note="How it's spreading: whispered at the market.">
+					{#snippet label()}The rumor{/snippet}
+				</QuotedText>
+			</div>
+		</Cell>
+		<Cell label="The preparation line · carries the facts fixed at preparation, so a resolving plan never points back to a log line (the open step has no &quot;Targeting&quot; line of its own)">
 			<div class="step-col">
-				<StepHeading heading={{ text: 'Your move — aid or interfere', yours: true }} />
-				<StepHeading heading={{ text: 'Waiting on otto — the roll', yours: false }} />
+				<FinishedStep wrap>
+					{#snippet mark()}<LogMark family="plan" />{/snippet}
+					<PlayerName {players} id={3} /> prepared Make Demands against <PlayerName {players} id={1} />'s Seek Answers (row 5)
+				</FinishedStep>
 			</div>
 		</Cell>
 		<Cell label="Finished steps · plain lines with the step's mark; one with more to say opens in place (caret)">
@@ -1078,19 +1146,19 @@
 				</div>
 			</div>
 		</Cell>
-		<Cell label="Groups in a step · .step-groups: 24px between groups, 12px between a group's own lines, and .taken-count after a lead line">
+		<Cell label="Groups in a step · .step-groups: 24px between groups, 12px between a group's own lines, a count after a sub-heading as a plain note">
 			<div class="step-groups sg-col">
 				<div class="choices-section">
-					<p class="choices-header">Your extra Makes <span class="taken-count">· 0 of 2 taken</span></p>
-					<p class="choices-note">Take a Make — pick one.</p>
+					<p class="choices-header">Your extra Makes</p>
+					<p class="choices-note">0 of 2 taken.</p>
 					<div class="chip-row">
 						<Chip>Spread a rumor</Chip>
 						<Chip>Introduce a peer</Chip>
 					</div>
 				</div>
 				<div class="choices-section">
-					<p class="choices-header">Ash insists you take a Mar <span class="taken-count">· 2 mars to settle</span></p>
-					<p class="choices-note">You choose which one.</p>
+					<p class="choices-header">Your Mar</p>
+					<p class="choices-note">Ash insists you take a Mar. 2 mars to settle. You choose which one.</p>
 				</div>
 			</div>
 		</Cell>
@@ -1458,6 +1526,14 @@
 	}
 	/* A specimen that is itself a column (the option list, the group gap): the width of a play column. */
 	.sg-col { width: min(100%, var(--layout-column-min)); }
+	/* One state of the who-line, with its name above it in the page's own faint label. */
+	.who-state { display: flex; flex-direction: column; gap: var(--space-1); }
+	.who-state-name {
+		font-size: var(--text-label);
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--color-text-faint);
+	}
 	.piece-col {
 		width: 100%;
 		min-width: 0;

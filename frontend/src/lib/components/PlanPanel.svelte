@@ -110,7 +110,7 @@
 		 * non-focus viewers. Null until the focus player's first selection.
 		 */
 		preparePlanDraft?: PreparePlanDraft | null;
-		/** The open step's heading ("Your move — …"): the current ask. */
+		/** The open step's heading ("Your move"): the current ask. */
 		heading?: StepHeadingData | null;
 		/** The dice roll, as a step. Drawn by the plan's card, in order. */
 		roll?: Snippet | null;
@@ -379,8 +379,8 @@
 {#if prepEnabled && !needsResolution && !suppressPrep}
 	<div class="prep-section">
 		<!-- Preparing is the open step: its heading is the current ask, for the
-		     focus player ("Your move — prepare a plan, or refresh 2 assets") and for
-		     everyone watching them ("Waiting on otto — …"). -->
+		     focus player ("Your move", "Prepare a plan, or refresh 2 assets") and for
+		     everyone watching them ("Waiting on otto"). -->
 		<StepHeading {heading} />
 		{#if isFocusPlayer && !eligibilityLoaded}
 			<p class="muted">Checking eligibility…</p>

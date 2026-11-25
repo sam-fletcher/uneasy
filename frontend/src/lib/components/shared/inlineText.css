@@ -53,5 +53,12 @@
 .chip.unavailable .player-shape path { fill: currentColor; }
 
 .asset-name { font-style: italic; }
+/* A set piece's peers (plans/shared/SetPiece.svelte): the one place an asset takes
+   a colour of its own, deep gold at the heading size, because the game is staging
+   the moment two named pieces meet. */
+.asset-name.set-piece-peer {
+	color: var(--color-accent);
+	font-size: var(--text-heading);
+}
 
 .quote { font-style: normal; }

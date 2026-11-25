@@ -258,7 +258,7 @@
 
 			{#if isResolving && iHaveIOU && !fest.pendingChallenge && !blockedByOtherRoll}
 				<div class="choices-section">
-					<p class="choices-header">Your hold over the host:</p>
+					<p class="choices-header">Your hold over the host</p>
 					<InsistFlow {plan} {onPlansChanged} />
 				</div>
 			{/if}
@@ -266,7 +266,7 @@
 			{#if centeredNames.length > 0}
 				<div class="choices-section">
 					<p class="choices-header">
-						Available peers to join a retinue:
+						Peers who may join a retinue
 					</p>
 					<ul class="choices-note">
 						{#each centeredNames as name, i (i)}

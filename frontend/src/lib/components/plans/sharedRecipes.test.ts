@@ -47,7 +47,6 @@ const SHARED_ONLY: Record<string, string[]> = {
 	// the class → the only files that may declare a rule for it
 	'step-actions': ['lib/components/shared/actionButton.css'],
 	'step-groups': ['lib/components/plans/planPanel.css'],
-	'taken-count': ['lib/components/plans/planPanel.css'],
 };
 /** Names that must not come back at all: each was replaced by the piece named beside it. */
 const GONE: Record<string, string> = {
@@ -114,12 +113,6 @@ describe('the step\'s button row', () => {
 	it('only the demand overlay stacks: its labels are sentences', () => {
 		const stacking = rows.filter(([f]) => /class="step-actions stacking"/.test(markupOf(join(COMPONENTS, f)))).map(([f]) => f);
 		expect(stacking).toEqual(['plans/demand/TargetPlanDemandOverlay.svelte']);
-	});
-});
-
-describe('the count after a lead line', () => {
-	it.each(['plans/festivity/HostChoosing.svelte', 'plans/festivity/HostPendingMar.svelte'])('%s uses .taken-count', (file) => {
-		expect(markupOf(join(COMPONENTS, file))).toContain('class="taken-count"');
 	});
 });
 

@@ -3,8 +3,8 @@ import { cleanupGameAfterEach, stepHeading, expectWaitingOn } from './helpers';
 import * as sa from './helpers/seek_answers';
 
 // The Play pane reads as a plan's steps, in order: finished steps are one line
-// each, the roll is one of the steps, and the open step's heading ("Your move —
-// …" / "Waiting on otto — …") is the one place the game says what it asks of
+// each, the roll is one of the steps, and the open step's heading (a who-line,
+// "Your move" or "Waiting on otto", over the step alone) is the one place the game says what it asks of
 // whom. This replaced the Waiting On bar and the roll panel that sat below the
 // plan.
 //
@@ -48,18 +48,18 @@ test('the play area reads as the plan\'s steps, in order, under one heading', as
 	const region = (p: typeof alice.page) => p.getByRole('region', { name: 'Dice roll' });
 	await expect(region(alice.page)).toBeVisible();
 	await above(alice.page.getByText('alice prepared Seek Answers'), region(alice.page));
-	// The plan's own body ("What can happen?") comes AFTER the roll, not before it.
-	await above(region(alice.page), alice.page.getByRole('button', { name: 'What can happen?' }));
+	// The plan's own body ("What can happen") comes AFTER the roll, not before it.
+	await above(region(alice.page), alice.page.getByRole('button', { name: 'What can happen' }));
 	// The roll's heading is the heading: exactly one on screen.
 	await expect(alice.page.locator('.step-heading')).toHaveCount(1);
-	await expect(stepHeading(alice.page)).toContainText('call a difficulty vote?');
+	await expect(stepHeading(alice.page)).toContainText('Call a difficulty vote?');
 	await expect(stepHeading(bob.page)).toContainText('Waiting on alice');
 	// No emoji die: the house mark draws it.
 	await expect(alice.page.locator('body')).not.toContainText('🎲');
 
 	// ── Aid and interfere: the dice split into "For" and "Against" ────────────
 	await alice.page.getByRole('button', { name: 'Skip vote' }).click();
-	await expect(stepHeading(bob.page)).toContainText('aid or interfere', { timeout: 10_000 });
+	await expect(stepHeading(bob.page)).toContainText('Aid or interfere', { timeout: 10_000 });
 	await expect(region(bob.page).getByText('Against', { exact: true })).toHaveCount(0); // none yet
 
 	const assets = await sa.listAssets(bob.ctx.request, t.gameID);
@@ -135,7 +135,7 @@ test('a roll open before its plan panel loads keeps the draft when it moves into
 	await bob.page.route('**/_app/immutable/**/*.js', async route => {
 		const res = await route.fetch();
 		const body = await res.text();
-		if (body.includes('What have you learned?')) await gate;
+		if (body.includes('What you learned')) await gate;
 		await route.fulfill({ response: res, body });
 	});
 	await bob.page.goto(`/table/${t.gameID}`);
@@ -145,7 +145,7 @@ test('a roll open before its plan panel loads keeps the draft when it moves into
 	await expect(region).toBeVisible({ timeout: 10_000 });
 	await expect(bob.page.getByText('alice prepared Seek Answers')).toHaveCount(0);
 	await expect(bob.page.locator('.step-heading')).toHaveCount(1);
-	await expect(stepHeading(bob.page)).toContainText('aid or interfere');
+	await expect(stepHeading(bob.page)).toContainText('Aid or interfere');
 
 	// Bob drafts a side.
 	const interfere = region.getByRole('button', { name: 'Interfere', exact: true });

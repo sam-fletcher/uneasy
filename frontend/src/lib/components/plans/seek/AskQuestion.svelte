@@ -52,13 +52,12 @@
 </script>
 
 <div class="plan-form">
-	<p class="choices-header">
-		Ask a player a question ({scene.aqRemaining} remaining)
-	</p>
+	<p class="choices-header">Ask a player a question</p>
+	<p class="choices-note">{scene.aqRemaining} remaining.</p>
 	{#if pendingQuestion != null}
 		<p class="choices-note">
-			Waiting for <PlayerName {players} id={pendingQuestion.target_id} /> to answer
-			{#if pendingQuestion.vetoable}or veto{' '}{/if}{canSubflow ? 'your' : 'the'} question:
+			{canSubflow ? 'Your' : 'The'} question for <PlayerName {players} id={pendingQuestion.target_id} />,
+			{pendingQuestion.vetoable ? 'to answer or veto' : 'to answer'}:
 		</p>
 		<p class="q-quote"><Quote text={pendingQuestion.question} /></p>
 	{:else}
@@ -75,7 +74,7 @@
 			readOnly={!canSubflow || askVetoedTargetID != null}
 		/>
 		<label class="form-label">
-			Your question:
+			Your question
 			<textarea rows={2} bind:value={drafts.aqQuestion} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 				placeholder="Ask a question they must answer truthfully…"></textarea>
 		</label>

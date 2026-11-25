@@ -414,7 +414,7 @@ describe('finale_row_complete', () => {
 // ── A resolving plan names its own open step ─────────────────────────────────
 // The server only knows a plan is resolving. The row state names the plan
 // (plan_id), and the plan says which of its steps is open (plans/stepLabels), so
-// the heading reads "Your move — place the addendum", not "the next step".
+// the heading reads "Your move", "Place the addendum", not "the next step".
 
 describe('a plan\'s own step', () => {
 	const decree = (data: Record<string, unknown>): Plan =>

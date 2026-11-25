@@ -3,12 +3,13 @@ import type { DiceRoll, Plan, PlanType } from '$lib/api';
 import { REGISTRY } from '$lib/components/plans/registry';
 import { PLAN_SHORT } from '$lib/components/plans/shared';
 import { ownRoll, UNKNOWN_STEP, type StepLabelInput } from './stepLabel';
+import { duelBoutLabel } from './stepLabels/propose_duel';
 
 // What each plan calls its open step. The server knows only that a plan is
 // resolving; the plan's own resolution data says which step, so each plan has a
 // pure function for it (plans/stepLabels/*, registered in the registry) and these
 // tests feed each one the data of each of its steps. Every case reads as a heading:
-// "Your move — <label>" and "Waiting on otto — <label>".
+// "Your move", "<label>" and "Waiting on otto", "<label>".
 
 const PLAN_ID = 9;
 const PREPARER = 1;
@@ -539,5 +540,26 @@ describe('ownRoll', () => {
 describe('the unknown step', () => {
 	it('is the one phrase for "the plan cannot tell"', () => {
 		expect(UNKNOWN_STEP).toBe('the next step');
+	});
+});
+
+// The bout: the heading's who-line says who is acting, so the label says which half of the
+// bout is theirs (the panel used to print "alice to declare" / "to respond").
+describe('the duel bout label', () => {
+	const duel = (initiative: number | null) => ({
+		id: 4, plan_type: 'propose_duel', status: 'resolving', preparer_id: 1, target_player_id: 2,
+		resolution_data: JSON.stringify({ duel: { phase: 'bouts', initiative_player_id: initiative } }),
+	}) as never;
+
+	it('says declare for the initiative player and respond for the other duellist', () => {
+		expect(duelBoutLabel(duel(1), [1])).toBe('declare the bout');
+		expect(duelBoutLabel(duel(1), [2])).toBe('respond to the bout');
+		expect(duelBoutLabel(duel(2), [2])).toBe('declare the bout');
+	});
+
+	it('stays "the bout" when it cannot tell (no plan, no initiative, a stand-in)', () => {
+		expect(duelBoutLabel(null, [1])).toBe('the bout');
+		expect(duelBoutLabel(duel(null), [1])).toBe('the bout');
+		expect(duelBoutLabel(duel(1), [9])).toBe('the bout');
 	});
 });

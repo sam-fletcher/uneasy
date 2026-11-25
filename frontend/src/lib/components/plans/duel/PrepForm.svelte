@@ -101,7 +101,7 @@
 			</div>
 		</FormField>
 		<label class="form-label">
-			Location:
+			Location
 			<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 				placeholder="Where will the duel take place?" required></textarea>
 		</label>

@@ -145,9 +145,8 @@
 
 	{#if btRemaining > 0}
 		<div class="plan-form">
-			<p class="choices-header">
-				{scene.mar ? `Break ${scene.mcName}` : 'Break target asset'} ({btRemaining} remaining)
-			</p>
+			<p class="choices-header">{scene.mar ? `Break ${scene.mcName}` : 'Break the target asset'}</p>
+			<p class="choices-note">{btRemaining} remaining.</p>
 			<CardPicker
 				label="Marginalium to tear"
 				items={scene.btMarginaliaAssets}
@@ -185,9 +184,8 @@
 
 	{#if hsRemaining > 0}
 		<div class="plan-form">
-			<p class="choices-header">
-				Hide source ({hsRemaining} remaining)
-			</p>
+			<p class="choices-header">Hide the source</p>
+			<p class="choices-note">{hsRemaining} remaining.</p>
 			<p class="choices-note muted">
 				{#if standingIn}
 					As the Make Demands winner you choose which of <PlayerName {players} id={scene.shelterID} />'s assets hides

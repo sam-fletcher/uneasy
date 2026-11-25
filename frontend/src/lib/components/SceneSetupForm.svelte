@@ -19,7 +19,7 @@
 	of them while filling out the form. It has no box and no tint, since it is
 	only read: the boxes in this form are its controls and its cards.
 
-	The step's own heading ("Your move — set the scene" or "Waiting on otto — set
+	The step's own heading ("Your move", "Set the scene" or "Waiting on otto", "Set
 	the scene") is drawn by the page above this form, so none is drawn here.
 
 	Submit posts to /scenes; on success the parent is responsible for

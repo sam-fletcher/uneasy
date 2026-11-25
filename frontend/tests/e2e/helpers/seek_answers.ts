@@ -137,10 +137,10 @@ export async function actingIDs(api: APIRequestContext, gameID: number): Promise
 /** Alice types her pre-roll narration into the panel and casts; returns the roll. */
 export async function castFromUI(t: Table, narration: string): Promise<RollRow> {
 	const { page } = t.alice;
-	await expect(page.getByText('What have you learned?')).toBeVisible({ timeout: 10_000 });
+	await expect(page.getByText('What you learned')).toBeVisible({ timeout: 10_000 });
 	await page.getByPlaceholder('Where you have been looking').fill(narration);
 	await page.getByRole('button', { name: 'Post & open the roll', exact: true }).click();
-	await expect(page.getByText('What have you learned?')).toHaveCount(0);
+	await expect(page.getByText('What you learned')).toHaveCount(0);
 	// Every table must have the roll before the caller settles it (see expectRollOpen).
 	await expectRollOpen(t.alice.page, t.bob.page, t.carol.page);
 	return activeRoll(t.alice.ctx.request, t.gameID);

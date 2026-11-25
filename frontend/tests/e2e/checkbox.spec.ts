@@ -84,7 +84,7 @@ test('keep it secret: the preparer ticks it by its words; a watcher\'s mirror sh
 	await expect(alice.getByText(/Others won't see the text until you spread it/)).toBeVisible();
 	await alice.getByText('Keep it secret for now').click();
 	await expect(aliceBox).toBeChecked();
-	await expect(alice.getByText('Hide the rumor under:', { exact: true })).toBeVisible();
+	await expect(alice.getByText('Hide the rumor under', { exact: true })).toBeVisible();
 
 	// The watcher's copy follows the draft, but nothing on it can be pressed.
 	const bobBox = bob.getByRole('checkbox', { name: 'Keep it secret for now' });

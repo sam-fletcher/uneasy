@@ -54,7 +54,7 @@
 	<div class="plan-form">
 		{#if prepError}<ErrorText message={prepError} variant="panel" />{/if}
 		<label class="form-label">
-			Research methods and topics:
+			Research methods and topics
 			<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 				placeholder="What are you learning, and how?" required></textarea>
 		</label>

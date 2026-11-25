@@ -142,7 +142,7 @@ test('a mar or an opt-out earns the host a make, and the host spends them as spo
 
 	// The host takes one through the UI: the make is hers, tied to no guest.
 	await alice.getByRole('button', { name: 'Spread a new rumor' }).click();
-	await alice.getByLabel('Rumor text:').fill(RUMOR);
+	await alice.getByLabel('Rumor text').fill(RUMOR);
 	await alice.getByRole('button', { name: 'Take this Make (3 left)' }).click();
 	await expect.poll(async () => (await festivity(g, planID)).host_makes_taken).toEqual(['spread_rumor']);
 	await expect(alice.getByText('1 of 3 taken')).toBeVisible();
@@ -367,7 +367,7 @@ test('the host ends the event only when everything is settled; generic complete 
 		await expect(page.getByRole('button', { name: 'End the event' })).toHaveCount(0);
 		// The open step's heading says the ask. (Not a text match on the words: the closing post
 		// now ends "Next: <who> to set the scene.", which a substring match also hits.)
-		await expect(stepHeading(page)).toContainText('set the scene');
+		await expect(stepHeading(page)).toContainText('Set the scene');
 	}
 	// Nothing further is accepted.
 	await expectStatus(await act(g, 'alice', planID, 'end-event'), 409);
@@ -458,7 +458,7 @@ test('mars the host settles herself: break_self tears her main character; a fall
 	expect(fall.status(), await fall.text()).toBe(200);
 	await expect.poll(async () => (await festivity(g, planID)).centered_asset_ids).toEqual([peerID]);
 	await expectLogContaining(g, planID, 'fell out with their peer **Lord Quill**');
-	await expect(alice.getByText('Available peers to join a retinue:')).toBeVisible();
+	await expect(alice.getByText('Peers who may join a retinue')).toBeVisible();
 	await expect(alice.getByRole('listitem').filter({ hasText: 'Lord Quill' })).toBeVisible();
 
 	// Nobody takes him. Ending the event sends him home broken (torn, not destroyed).

@@ -26,7 +26,7 @@
 
 	let {
 		tabs,
-		heading = 'What can happen?',
+		heading = 'What can happen',
 		defaultTab = '',
 		open = false,
 	}: {

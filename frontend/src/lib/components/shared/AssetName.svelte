@@ -10,6 +10,11 @@
 
       <AssetName name={a.name} />
       <AssetName {assets} id={assetID} />     looked up; "?" if it isn't there
+      <AssetName name={p.name} setPiece />    the set piece's peers: deep gold, 18px
+
+  `setPiece` is the one place an asset takes a colour of its own: a set piece
+  (plans/shared/SetPiece.svelte) puts the two peers it stages in italic deep gold,
+  at the heading size. Everywhere else an asset takes the colour around it.
 -->
 <script lang="ts">
 	import '$lib/components/shared/inlineText.css';
@@ -19,13 +24,15 @@
 		name?: string | null;
 		assets?: Pick<Asset, 'id' | 'name'>[];
 		id?: number | null;
+		/** The deep-gold, heading-size peers of a set piece. */
+		setPiece?: boolean;
 	}
 
-	const { name, assets, id }: Props = $props();
+	const { name, assets, id, setPiece = false }: Props = $props();
 
 	const text = $derived(
 		name ?? (id != null && assets ? assets.find((a) => a.id === id)?.name : undefined) ?? '?',
 	);
 </script>
 
-<em class="asset-name">{text}</em>
+<em class={["asset-name", setPiece && "set-piece-peer"]}>{text}</em>

@@ -150,12 +150,7 @@
 	<!-- While the dice are out the roll is the open step and carries its own heading,
 	     so there is nothing to say until it lands. -->
 	{#if rollOutcome != null && !choicesApplied}
-		<p class="choices-header">
-			Result:
-			<span class="outcome-{rollOutcome}">
-				{rollOutcome === 'make' ? 'Make' : 'Mar'}
-			</span>
-		</p>
+		<p class="choices-header">The take</p>
 		<p class="choices-note">
 			{#if marMayBeSpared}
 				<PlayerName {players} id={winnerID} /> may take {effectiveTake}

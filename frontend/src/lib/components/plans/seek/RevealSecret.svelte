@@ -44,9 +44,8 @@
 </script>
 
 <div class="plan-form">
-	<p class="choices-header">
-		Reveal an asset's secrets ({rsRemaining} remaining)
-	</p>
+	<p class="choices-header">Reveal an asset's secrets</p>
+	<p class="choices-note">{rsRemaining} remaining.</p>
 	<CardPicker
 		label="Asset"
 		items={scene.revealableAssets}

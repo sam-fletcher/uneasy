@@ -172,7 +172,8 @@ describe('the duel tracker', () => {
 			targ: [stake(102, BOB, 12), stake(104, BOB, 14)], mine: [
 				stake(101, ALICE, 11, { hidden_die: 4 }), stake(103, ALICE, 13, { hidden_die: 2 })] });
 		expect(html).not.toContain('stake-line pick');
-		expect(plain(html)).toContain('bob to respond');
+		// Who answers is the step heading's who-line and the public call's own notice.
+		expect(plain(html)).toContain('bob must answer');
 	});
 
 	it('states the public call as an information notice, with the stake it was made on', () => {
@@ -284,9 +285,11 @@ describe('the duel\'s setup: who duels', () => {
 	it('marks the duellists\' names as assets, as every other line that names one does', () => {
 		const body = setup(ALICE, [merrow, vell, spare]);
 		expect(body).toContain('<em class="asset-name">Lady Merrow</em> fights for themselves');
-		expect(body).toContain('Facing <em class="asset-name">Captain Vell</em>');
-		// The bystander's matchup line names both.
-		expect(setup(CAROL, [merrow, vell])).toContain('<em class="asset-name">Lady Merrow</em> vs <em class="asset-name">Captain Vell</em>');
+		// Who faces whom is the panel's set piece, so this step carries no "Facing" or "vs" line of
+		// its own, and a bystander (who has no choice to make here) has no group at all.
+		expect(body).not.toContain('Facing');
+		expect(setup(CAROL, [merrow, vell])).not.toContain(' vs ');
+		expect(setup(CAROL, [merrow, vell])).not.toContain('Who fights for you');
 	});
 
 	it('offers "Send someone else" when there is someone else to send', () => {
@@ -584,7 +587,7 @@ describe('the Make Demands draft', () => {
 	it('gives an option card a title and what it does against THIS target on separate lines', () => {
 		const body = draft(BOB);
 		expect(body).toMatch(/option-title[^>]*>Perform steps<\/span>/);
-		// Said for this plan and its preparer, as the "What can happen?" before the dice says it.
+		// Said for this plan and its preparer, as the "What can happen" before the dice says it.
 		expect(body).toMatch(/option-desc[^>]*>Pick the make or mar options for alice once they have rolled\.</);
 		expect(body).not.toContain('Submit the target plan');
 		// Control leverage is already taken, so it is not offered again.
@@ -602,7 +605,7 @@ describe('the Make Demands draft', () => {
 		expect(card(rumors, 'Keep assets')).toContain('Take any asset the rumor takes, in place of alice.');
 	});
 
-	it('shows a card that would do nothing as locked, saying so in the same words as the "What can happen?"', () => {
+	it('shows a card that would do nothing as locked, saying so in the same words as the "What can happen"', () => {
 		const body = draft(BOB);
 		const keepAssets = card(body, 'Keep assets');
 		expect(keepAssets).toContain('aria-disabled="true"');

@@ -1,6 +1,6 @@
 // stepLabel.ts
-// What a plan calls the step it is on, for the open step's heading ("Your move —
-// <label>" / "Waiting on otto — <label>"; see lib/stepHeading.ts).
+// What a plan calls the step it is on, for the open step's heading: the step alone,
+// capitalised, under the who-line ("Waiting on otto" / "Your move"; see lib/stepHeading.ts).
 //
 // The server knows only that a plan is resolving (row-state kind `plan_resolving`),
 // not which of the plan's own steps it is on. The plan's resolution data knows, so
@@ -10,14 +10,16 @@
 // and can't disagree; the label is right before a lazily-loaded panel has arrived
 // (a panel is its own chunk); and it can be unit-tested without mounting anything.
 //
-// WORDING. A label is a lower-case phrase that finishes BOTH sentences, so it names
-// the step and never speaks to the reader:
+// WORDING. A label is a lower-case phrase naming the step; the heading capitalises it
+// and sets it under the who-line, so it never has to finish a sentence:
 //
-//     Your move — place the addendum
-//     Waiting on otto — place the addendum
+//     Your move                    Waiting on otto
+//     Place the addendum           Place the addendum
 //
-// "what have you learned?" would fail for the watcher. It never names the plan: the
-// title bar and the card's first line ("otto prepared Seek Answers") already do.
+// It is still the same words for every viewer and never speaks to the reader
+// ("what have you learned?" would be wrong for the watcher), so what one player
+// reads is what every other player reads. It never names the plan: the title bar
+// and the card's first line ("otto prepared Seek Answers") already do.
 // When several things are owed at once and no one of them is THE step, it names
 // what they have in common ("carry out the picks"), not the first of them.
 

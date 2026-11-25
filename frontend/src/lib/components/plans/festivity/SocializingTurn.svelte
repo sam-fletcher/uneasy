@@ -220,11 +220,9 @@
 	{:else if myEffectiveOutcome != null}
 		{@const opts = myEffectiveOutcome === 'make' ? MAKE_OPTS : MAR_OPTS}
 		<p class="choices-header">
-			Result:
 			<span class="outcome-{myEffectiveOutcome}">
 				{myEffectiveOutcome === 'make' ? 'Make' : 'Mar'}
-			</span>
-			— pick one option:
+			</span> options
 		</p>
 		<FormField label="Pick one option">
 			<div class="chip-row">
@@ -244,7 +242,7 @@
 
 		{#if pickedChoice === 'spread_rumor' || pickedChoice === 'rumor_about_you'}
 			<label class="form-label">
-				Rumor text:
+				Rumor text
 				<textarea rows={2} bind:value={rumorText} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
 					placeholder="What does the rumor say?"></textarea>
 			</label>

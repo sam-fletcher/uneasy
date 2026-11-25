@@ -91,9 +91,9 @@
 <fieldset class="resolve-mirror-wrap choices-section"
 	class:resolve-mirror={!isActor} disabled={!isActor}>
 	<p class="choices-header">
-		Result: <span class="outcome-{rollOutcome}">
+		<span class="outcome-{rollOutcome}">
 			{rollOutcome === 'make' ? 'Make' : 'Mar'}
-		</span>
+		</span> options
 	</p>
 	<p class="choices-note">
 		{#if rollOutcome === 'mar'}

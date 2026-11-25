@@ -7,7 +7,7 @@ import { MIRROR, mirrorOf } from './mirrorMatchers';
 // A demand's difficulty used to be the dice panel's bare figure, and its four options were
 // described only once the draft began. Before the dice land everyone now sees how hard
 // the roll is and why (the target plan's own difficulty, plus the gap in power), and a
-// "What can happen?" that says what each option does against this target.
+// "What can happen" that says what each option does against this target.
 
 const ADA = 1; // demands
 const BEA = 2; // prepared the target plan
@@ -65,22 +65,24 @@ describe('Make Demands: the difficulty before the dice', () => {
 		for (const o of ['make', 'mar'] as const) expect(textOf(renderMD({ seat: CYR, outcome: o }))).not.toContain('1 easy');
 	});
 
-	it('leaves the "Targeting" line where it was, at the top of the step', () => {
-		const t = textOf(renderMD({ seat: CYR }));
-		expect(t.indexOf('Targeting: Seek Answers by bea')).toBeGreaterThan(-1);
-		expect(t.indexOf('Targeting: Seek Answers by bea')).toBeLessThan(t.indexOf('Difficulty 5'));
+	it('says what the demand targets in the preparation line, not as a lead line in the open step', () => {
+		const t = textOf(renderMD({ seat: CYR })).replace(/\s+'s/g, "'s");
+		expect(t).not.toContain('Targeting');
+		const at = t.search(/prepared Make Demands against bea's Seek Answers \(row \d+\)/);
+		expect(at, 'the preparation line carries the target').toBeGreaterThan(-1);
+		expect(at).toBeLessThan(t.indexOf('Difficulty 5'));
 	});
 });
 
-describe('Make Demands: "What can happen?"', () => {
-	const toggle = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?What can happen\?/;
+describe('Make Demands: "What can happen"', () => {
+	const toggle = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?What can happen/;
 
 	it('is a collapsed row for everyone before the dice land', () => {
 		for (const seat of [ADA, BEA, CYR]) expect(renderMD({ seat })).toMatch(toggle);
 	});
 
 	it('is gone once the dice have landed: the draft\'s cards carry the same descriptions', () => {
-		for (const o of ['make', 'mar'] as const) expect(renderMD({ seat: CYR, outcome: o })).not.toContain('What can happen?');
+		for (const o of ['make', 'mar'] as const) expect(renderMD({ seat: CYR, outcome: o })).not.toContain('What can happen');
 	});
 });
 
@@ -104,7 +106,7 @@ describe('Make Demands: the draft, as a watcher sees it', () => {
 		expect(body).toMatch(MIRROR);
 		const t = textOf(mirrorOf(body));
 		for (const title of ['Control leverage', 'Keep or change target', 'Keep assets', 'Perform steps']) expect(t).toContain(title);
-		// The same per-target lines the actor's cards carry (and the "What can happen?" before the dice).
+		// The same per-target lines the actor's cards carry (and the "What can happen" before the dice).
 		expect(t).toContain('Choose how many of bea’s assets go onto their roll.');
 		expect(t).toContain('No effect here: Seek Answers isn’t aimed at anything a demand could redirect.');
 		expect(t).toContain('No effect here: Seek Answers gives its preparer no assets to keep.');
