@@ -17,7 +17,9 @@ separately) or its ids passed down, not a one-line swap. The places found:
 - **`SimultaneousRevealInput`:** its participants have only `display_name`, so the reveal list and the
   "waiting on" names are plain. It needs the roster, or seats on the participants.
 - **`warName` in `WarBand`, `WarName` and `WarSheet`:** a war's name is built from player names.
-- **`plans/stepHeading.ts` wording:** leave this to the Round 6 piece, which colours names in step headings.
+
+The step heading's who-line is done: the Round 6 piece colours its names, as `PlayerName` components. A step
+*label* (the heading under it) is a plain phrase and names no one.
 
 Keep to the table: names in their colour (no shape inside a sentence), assets italic in the colour around
 them, "you" and "your" plain, and the control's colour inside a button or chip.
