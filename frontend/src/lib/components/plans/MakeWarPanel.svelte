@@ -25,15 +25,14 @@
 	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import Quote from '$lib/components/shared/Quote.svelte';
 	import './planPanel.css';
-	import { onMount } from 'svelte';
-	import { useWindowEvents } from '$lib/useWindowEvents';
+		import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
 	import {
 		ApiError,
 		getWarState,
 		type WarStateResponse, type WarParticipantInfo,
 	} from '$lib/api';
-	import { warPanelHidden } from '$lib/warGate';
+	import { warCanExist, warPanelHidden } from '$lib/warGate';
 	import { useSettledInPlay } from './war/sheetContext';
 	import { playerName, parseResolutionData, finaleSlotSpent } from './shared';
 	import FinishedStep from './shared/FinishedStep.svelte';
@@ -70,6 +69,9 @@
 
 	const planMW = $derived(plan ? (parseResolutionData(plan).make_war ?? {}) : {});
 	const delayRevealID = $derived(planMW.delay_reveal_id ?? null);
+	// The war's row is created in the same step that writes its id here (OnPrepare),
+	// so until the id is on the plan there is nothing for war-state to find.
+	const warID = $derived(planMW.war_id ?? null);
 
 	// Delay-reveal threshold inputs. The slot at stake is the DECLARER's — a
 	// collapse onto row 13 spends theirs, whoever else submitted a high face.
@@ -78,6 +80,14 @@
 
 	async function refreshWar() {
 		if (!plan) return;
+		// Don't ask for a war that cannot exist yet: the server's 404 is the right
+		// answer, but the browser prints a console error for every 4xx, so a normal
+		// state looked like a fault. See lib/warGate.ts (warCanExist).
+		if (!warCanExist(plan)) {
+			war = null;
+			warError = '';
+			return;
+		}
 		try {
 			war = await getWarState(plan.id);
 			warError = '';
@@ -96,13 +106,17 @@
 	}
 
 	useWindowEvents(WAR_EVENTS, () => { refreshWar(); });
-	onMount(() => { if (isWarView) refreshWar(); });
 
-	// Re-fetch when the plan changes.
-	let lastPlanID = $state<number | null>(null);
+	// Fetch on mount and whenever the plan, or the war id on it, changes. The id
+	// is part of the key because a plan can be shown a moment before its
+	// resolution_data carries it, and that arrival is what makes the fetch worth
+	// making.
+	let lastKey = $state<string | null>(null);
 	$effect(() => {
-		if (isWarView && plan && plan.id !== lastPlanID) {
-			lastPlanID = plan.id;
+		if (!isWarView || !plan) return;
+		const key = `${plan.id}:${warID ?? ''}`;
+		if (key !== lastKey) {
+			lastKey = key;
 			refreshWar();
 		}
 	});

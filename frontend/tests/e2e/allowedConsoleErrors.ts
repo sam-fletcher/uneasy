@@ -70,13 +70,6 @@ export const ALLOWED_CONSOLE_ERRORS: readonly AllowedConsoleError[] = [
 		item: 'demand-prepared-plan-id',
 	},
 	{
-		spec: 'public_record.spec.ts',
-		test: 'a war the server stored as "make"',
-		match: /status of 404 .* @ \S+\/api\/plans\/\d+\/war-state$/,
-		reason: 'Bug: a Make War plan shown before its war exists makes the page ask for war-state, which answers 404 by design.',
-		item: 'make-war-state-404',
-	},
-	{
 		// The guard's own canary (tests/e2e/fixtures.spec.ts): an allow-listed line must not fail a test.
 		spec: 'fixtures.spec.ts',
 		test: 'a console.error the allow-list names',
