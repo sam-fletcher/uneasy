@@ -38,6 +38,9 @@
 	import RollPhase from './duel/RollPhase.svelte';
 	import { duelerOf, type DuelRes } from './duel/shared';
 	import SetPiece from './shared/SetPiece.svelte';
+	import FinishedStep from './shared/FinishedStep.svelte';
+	import LogMark from '../LogMark.svelte';
+	import AssetName from '$lib/components/shared/AssetName.svelte';
 
 	import type { PlanPanelProps } from './types';
 
@@ -147,13 +150,33 @@
 
 	// The Make Demands winner still to settle the opponent: the duel's first step waits.
 	const aimSettler = $derived(plan ? pendingAimSettler(plan, plans) : null);
+
+	// Setup is over once the duel is in its bouts, its roll or done.
+	const setupOver = $derived(['bouts', 'roll', 'done'].includes(duelRes.phase));
+	const preparerDueler = $derived(plan ? duelerOf(assets, plan.preparer_id, duelRes.prepChampID) : null);
+	const targetDueler = $derived(plan ? duelerOf(assets, plan.target_player_id, duelRes.targChampID) : null);
 </script>
+
+{#snippet duelSide(playerID: number | null, peer: string | null)}
+	<PlayerName {players} id={playerID} />{#if peer != null}'s <AssetName name={peer} />{/if}
+{/snippet}
 
 {#if mode === 'prep'}
 	<PrepForm {ctx} />
 
 {:else if plan}
 	<ResolvingCard {plan} {players} error={duelStateError}>
+		<!-- Setup is a finished step once the bouts begin, and carries what it settled: the
+		     pairing, as plain text (the set piece is for the setup step itself). Owner
+		     ruling 2026-11-25. -->
+		{#snippet finished()}
+			{#if setupOver}
+				<FinishedStep>
+					{#snippet mark()}<LogMark family="asset" />{/snippet}
+					Stakes set: {@render duelSide(plan.preparer_id, preparerDueler?.name ?? null)} faces {@render duelSide(plan.target_player_id, targetDueler?.name ?? null)}
+				</FinishedStep>
+			{/if}
+		{/snippet}
 		{#snippet against()}against <PlayerName {players} id={plan.target_player_id} />{#if duelRes.duelType === 'arms' || duelRes.duelType === 'wits'}{' '}· {duelRes.duelType === 'wits' ? 'a trial of wits' : 'a duel of arms'}{/if}{/snippet}
 		<TargetPlanDemandOverlay {plan} {plans} {players} {assets} {currentPlayerID}
 			ownStakeLaid={myStakes.length > 0} />

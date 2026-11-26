@@ -45,9 +45,13 @@
 		    a custom version in the body (e.g. Spread Rumors' quoted rumor, which
 		    must not show a secret rumor's draft as though it were stated). */
 		showNotes?: boolean;
+		/** Finished steps a plan adds after the preparation line and its notes: a step the
+		    plan has settled whose outcome the later steps carry (Propose Duel's pairing).
+		    Pass one <FinishedStep> per line. */
+		finished?: Snippet;
 		children: Snippet;
 	}
-	let { plan, players, error = '', showNotes = true, against, children }: Props = $props();
+	let { plan, players, error = '', showNotes = true, against, finished, children }: Props = $props();
 
 	const frame = useStepFrame();
 	const f = $derived(frame?.() ?? null);
@@ -105,6 +109,8 @@
 				</FinishedStep>
 			{/if}
 		{/if}
+
+		{#if finished}{@render finished()}{/if}
 
 		{#if f?.roll}{@render f.roll()}{/if}
 	</div>

@@ -878,6 +878,12 @@ boundaries, deep gold for headings, 18px for the step heading), which is why it 
 carries no difficulty line: the meter shows that. Make War's declaration and Make Introductions'
 newcomer are candidates, not built.
 
+**A set piece shows in its own step only.** Later steps carry what it settled as plain text in the
+finished line of the step that settled it, drawn by `ResolvingCard` (its `finished` snippet): Propose
+Duel's bouts and final roll show "Stakes set: alice's *Ser Ott* faces bob's *Dame Orr*" among the
+finished lines (names through `<PlayerName>` and `<AssetName>`, no set-piece styling). Finished
+lines are where what an earlier step settled is carried (owner ruling, 2026-11-25).
+
 **Player-written text the step is about is centred** (`plans/shared/QuotedText.svelte`): the
 decree in debate, the rumor, the law being written. A small deep-gold label names it and the
 player, whose name is in their colour ("alice proposes", "The rumor"); under it the words are
