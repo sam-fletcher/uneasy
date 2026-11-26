@@ -59,13 +59,21 @@
 	// Drafts and real centered peers as one list — see options.ts.
 	const centerPeerCandidates = $derived(centeredPeerCards(fest, assets, plan.game_id));
 
-	const hostName = $derived(playerName(players, plan.preparer_id));
-
 	// Begin the draft for this plan (a different plan starts fresh). Untracked:
 	// begin() reads the draft's own key.
 	$effect.pre(() => {
 		const planID = plan.id;
 		untrack(() => draft.begin(planID));
+	});
+
+	// The draft outlives a duel, which can change the centre under it: the peer picked
+	// may have been taken by someone else. Drop a pick that is no longer on offer (the
+	// server would refuse it anyway). Writes only when stale, so it settles at once.
+	$effect(() => {
+		const onOffer = centerPeerCandidates.map(a => a.id);
+		untrack(() => {
+			if (draft.assetID != null && !onOffer.includes(draft.assetID)) draft.assetID = null;
+		});
 	});
 
 	let hostPickerBusy = $state(false);
@@ -127,8 +135,12 @@
 	}
 </script>
 
+<!-- "Your" to the host; their name, in their colour, with 's to a stand-in. A snippet so
+     the space after the call survives. -->
+{#snippet owner()}{#if amHost}Your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if}{/snippet}
+
 <div class="choices-section">
-	<p class="choices-header">{amHost ? 'Your' : `${hostName}'s`} extra Makes</p>
+	<p class="choices-header">{@render owner()} extra Makes</p>
 	<p class="choices-note">{taken} of {earned} taken.</p>
 	{#if remaining > 0 && blockedByOtherRoll}
 		<p class="choices-note muted">

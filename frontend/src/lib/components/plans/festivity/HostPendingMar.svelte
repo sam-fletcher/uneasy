@@ -58,8 +58,6 @@
 
 	// The host, for copy that would say "you" to the host and must not say it to a stand-in.
 	const hostName = $derived(playerName(players, plan.preparer_id));
-	// "you" for the host, the host named for a stand-in.
-	const them = $derived(amHost ? 'you' : hostName);
 	const marOpts = $derived(amHost ? MAR_OPTS : standInMarOpts(hostName));
 
 	// The draft lives outside this component (see the header); begin it for this
@@ -91,6 +89,21 @@
 		key === 'disagreement' && hostPeers.length === 0
 			? (amHost ? 'You have no peers' : `${hostName} has no peers`)
 			: undefined;
+
+	// The draft outlives a duel, and a duel can change the board under it: the peer
+	// picked may have been taken or lost, the marginalia torn. Drop a pick that no
+	// longer matches the current lists (the server would refuse it anyway); what is
+	// still valid stays. Writes only when something is stale, so it settles at once.
+	$effect(() => {
+		const peerIDs = hostPeers.map(a => a.id);
+		const marginaliaIDs = hostMC.flatMap(a => (a.marginalia ?? []).filter(m => !m.is_torn).map(m => m.id));
+		const lockedPick = draft.picked != null && lockReason(draft.picked) != null;
+		untrack(() => {
+			if (lockedPick) draft.picked = null;
+			if (draft.assetID != null && !peerIDs.includes(draft.assetID)) draft.assetID = null;
+			if (draft.marginaliaID != null && !marginaliaIDs.includes(draft.marginaliaID)) draft.marginaliaID = null;
+		});
+	});
 
 	let busy = $state(false);
 	let error = $state('');
@@ -130,11 +143,20 @@
 	}
 </script>
 
+<!-- The host in template text: "you" to the host, their name (in their colour, drawn by
+     PlayerName and never typed by hand) to a stand-in. Snippets, so the words around a
+     call keep their spaces. Names inside a string prop (an OptionCard's title, an
+     emptyMessage, a lock reason) can't hold a component and stay plain text. -->
+{#snippet them()}{#if amHost}you{:else}<PlayerName {players} id={plan.preparer_id} />{/if}{/snippet}
+{#snippet subject()}{#if amHost}You{:else}<PlayerName {players} id={plan.preparer_id} />{/if}{/snippet}
+{#snippet choose()}{#if amHost}You choose which one{:else}You choose for <PlayerName {players} id={plan.preparer_id} />{/if}{/snippet}
+{#snippet owner()}{#if amHost}Your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if}{/snippet}
+
 {#if total > 0}
 	<div class="choices-section">
-		<p class="choices-header">{amHost ? 'Your Mar' : `${hostName}'s Mar`}</p>
+		<p class="choices-header">{@render owner()} Mar</p>
 		<p class="ft-prompt">
-			<PlayerName {players} id={insisterID} /> insists {them} take{amHost ? '' : 's'} a Mar.
+			<PlayerName {players} id={insisterID} /> insists {@render them()} take{amHost ? '' : 's'} a Mar.
 			{#if total > 1}{total} mars to settle.{/if}
 		</p>
 
@@ -144,7 +166,7 @@
 			</p>
 		{:else}
 			<p class="choices-note muted">
-				{amHost ? 'You choose which one' : `You choose for ${hostName}`} — pick one from the Mar list.
+				{@render choose()} — pick one from the Mar list.
 			</p>
 			<div class="option-list">
 				{#each marOpts as o (o.key)}
@@ -162,13 +184,13 @@
 
 			{#if draft.picked === 'rumor_about_you'}
 				<label class="form-label">
-					The rumor about {them}
+					The rumor about {@render them()}
 					<textarea rows={2} bind:value={draft.rumor} class="form-textarea"
 						maxlength={TEXT_LIMITS.LONG_TEXT} placeholder="What does the rumor say?"></textarea>
 				</label>
 			{:else if draft.picked === 'accept_duels'}
 				<p class="choices-note muted">
-					{amHost ? 'You' : hostName} must accept any duel challenge for the rest of the event.
+					{@render subject()} must accept any duel challenge for the rest of the event.
 				</p>
 			{:else if draft.picked === 'break_self'}
 				{#if canBreak}
@@ -185,7 +207,7 @@
 					{#if breakWarn}<Notice tone="warning">{breakWarn}</Notice>{/if}
 				{:else}
 					<p class="choices-note muted">
-						{amHost ? 'You have' : `${hostName} has`} nothing left to tear — pass the break.
+						{@render subject()} {amHost ? 'have' : 'has'} nothing left to tear — pass the break.
 					</p>
 				{/if}
 			{:else if draft.picked === 'disagreement'}
