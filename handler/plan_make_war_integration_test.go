@@ -764,6 +764,57 @@ func TestMakeWarHTTP_PeaceVote_NamesTheVoters(t *testing.T) {
 	require.Contains(t, post.Body, "@@"+strconv.FormatInt(ally, 10)+"|", "names the rejecter")
 }
 
+// TestMakeWarHTTP_PeaceVote_AcceptIsLogged: an accepting vote posts a line naming
+// the voter and the proposer, as a rejection does. It used to post nothing, so a
+// returning player could not see who had agreed so far. Pressing Accept twice (or
+// the proposer accepting their own terms again) must not post a second line.
+func TestMakeWarHTTP_PeaceVote_AcceptIsLogged(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+
+	// A third participant so the first accept leaves the vote open.
+	allyIdx := (prepIdx + 2) % len(h.tg.Players)
+	war, err := h.q.GetWarByOriginPlan(ctx, planID)
+	require.NoError(t, err)
+	require.NoError(t, h.q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
+		WarID: war.ID, PlayerID: h.tg.Players[allyIdx].ID, Side: game.WarSideDeclarer, JoinedAtRow: warRow,
+	}))
+	prep, enemy := h.tg.Players[prepIdx].ID, h.tg.Players[enemyIdx].ID
+	h.jumpToRow(warRow + 1)
+
+	code, body := h.post(prepIdx, warRoute(planID, "propose-peace"), map[string]any{"terms": "Withdraw to the old border."})
+	require.Equalf(t, http.StatusOK, code, "propose-peace: %v", body)
+	proposalID := int64(body["proposal_id"].(float64))
+	vote := map[string]any{"proposal_id": proposalID, "accepted": true}
+
+	// The proposer's own acceptance comes with the proposal; it is not a second line.
+	code, body = h.post(prepIdx, warRoute(planID, "vote-peace"), vote)
+	require.Equalf(t, http.StatusOK, code, "proposer re-accepts: %v", body)
+	require.False(t, anyContains(warSystemPosts(t, h.q, h.tg.Game.ID), "accepted"), "the proposer's own acceptance is not logged again")
+
+	code, body = h.post(enemyIdx, warRoute(planID, "vote-peace"), vote)
+	require.Equalf(t, http.StatusOK, code, "vote-peace accept: %v", body)
+	require.Equal(t, "open", body["status"], "the ally has not voted, so the proposal stays open")
+
+	post := findWarPost(t, h.q, h.tg.Game.ID, "accepted")
+	require.Contains(t, post.Body, "peace terms")
+	require.NotNil(t, post.RowNumber)
+	require.Equal(t, warRow+1, *post.RowNumber, "anchored to the row being played, not the war's row")
+	require.Contains(t, post.Body, "@@"+strconv.FormatInt(enemy, 10)+"|", "names the voter")
+	require.Contains(t, post.Body, "@@"+strconv.FormatInt(prep, 10)+"|", "names the proposer")
+
+	code, body = h.post(enemyIdx, warRoute(planID, "vote-peace"), vote)
+	require.Equalf(t, http.StatusOK, code, "vote-peace accept again: %v", body)
+	count := 0
+	for _, p := range warSystemPosts(t, h.q, h.tg.Game.ID) {
+		if strings.Contains(p, "accepted") {
+			count++
+		}
+	}
+	require.Equal(t, 1, count, "a repeated accept must not post a second line")
+}
+
 // TestMakeWarHTTP_PeaceVote_NamesEveryoneOwedAcrossWars: the override for a war
 // under proposal must not REPLACE the acting set — the trap the audit found in a
 // sibling plan, where an override named whoever was newest and dropped everyone
