@@ -59,6 +59,11 @@ async function openRetinue(page: Page, name: string) {
 	await page.getByRole('button', { name: new RegExp(`^View ${name}'s retinue`) }).click();
 	const sheet = page.getByRole('dialog');
 	await expect(sheet.locator('.sheet-title')).toBeVisible();
+	// The sheet slides up over 200ms (RetinueSheet.svelte). Measure it mid-slide
+	// and a 44px control reads 43.99994: the box comes out of a transformed
+	// float32 matrix, so it is a hair short even though the CSS says 44px. That
+	// failed the nightly on 2026-11-26. Wait for the entrance to finish first.
+	await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
 	return sheet;
 }
 
