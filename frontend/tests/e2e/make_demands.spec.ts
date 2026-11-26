@@ -203,6 +203,12 @@ async function leverageHeld(f: H.MDFixture): Promise<number> {
 	return cast.roll.id;
 }
 
+/** Whether the target plan has stored the winner's decision (the flag the roll's hold waits on). */
+async function decisionStored(f: H.MDFixture, flag: 'demand_leverage_finalized' | 'demand_retarget_finalized'): Promise<boolean> {
+	const p = await H.planOf(f, f.targetID);
+	return JSON.parse(p.resolution_data ?? '{}')[flag] === true;
+}
+
 async function rollOf(f: H.MDFixture) {
 	return (await H.call(f.api.alice, 'get', `/api/tables/${f.gameID}/rolls/active`)).roll;
 }
@@ -244,6 +250,28 @@ test('control leverage: "leverage none" is offered to the winner alone and is a 
 	const after = (await H.call(f.api.alice, 'get', `/api/tables/${f.gameID}/assets`)).assets as { owner_id: number; is_leveraged: boolean }[];
 	expect(after.filter(a => a.owner_id === f.ids.alice && a.is_leveraged)).toEqual([]);
 	await expect.poll(() => H.postsText(f)).toContain('bob leveraged none of their assets');
+});
+
+// A winner holding the roll resolves it with their Ready if the server lets them, and so skips the
+// very decision the roll was held for. The server refuses it; the roll panel shows the decision
+// they owe where the button would be.
+test('a held winner cannot ready before deciding: the roll panel names the decision and the server refuses the ready', async ({ browser }) => {
+	const f = await H.seedMD({ target: 'seek_answers' });
+	const rollID = await leverageHeld(f);
+	const { alice, bob } = await H.openPages(browser, f);
+
+	await expect(bob.getByText('The roll waits for your Make Demands choice: how many of alice’s assets go onto the roll.')).toBeVisible();
+	// The preparer's roll panel is the ordinary one.
+	await expect(alice.getByText('Make Demands choice')).toHaveCount(0);
+
+	const early = await f.api.bob.post(`/api/rolls/${rollID}/ready`, { data: { is_ready: true } });
+	expect(early.status()).toBe(409);
+	expect((await rollOf(f)).result).toBeNull();
+
+	await bob.getByRole('button', { name: 'Leverage none — let the roll fail' }).click();
+	await expect.poll(() => decisionStored(f, 'demand_leverage_finalized')).toBe(true);
+	// Decided: the reminder goes, and the ordinary Ready/Pass is theirs again.
+	await expect(bob.getByText('Make Demands choice')).toHaveCount(0);
 });
 
 test('control leverage against a plan with no roll of the preparer\'s own is a dud: greyed in the draft, named a dud afterwards, refused, and it holds nothing up', async ({ browser }) => {
@@ -523,6 +551,9 @@ test('overlay: once the dice have landed, the leverage form is gone', async ({ b
 	const rollID = await leverageHeld(f);
 	const { bob } = await H.openPages(browser, f);
 	await bob.getByRole('button', { name: 'Leverage none — let the roll fail' }).click();
+	// The click returns before the decision reaches the server, and bob's own ready is refused until
+	// it has: wait for it to land, so the readies below are the ones that resolve the roll.
+	await expect.poll(() => decisionStored(f, 'demand_leverage_finalized')).toBe(true);
 	for (const n of H.PLAYERS) await H.call(f.api[n], 'post', `/api/rolls/${rollID}/ready`, { is_ready: true });
 	await expect.poll(async () => (await rollOf(f)).result).not.toBeNull();
 	await expect(bob.getByRole('button', { name: 'Leverage none — let the roll fail' })).toHaveCount(0);
@@ -533,6 +564,7 @@ test('overlay: once the dice have landed, the retarget form is gone — the serv
 	const rollID = await retargetHeld(f);
 	const { bob } = await H.openPages(browser, f);
 	await bob.getByRole('button', { name: 'Keep the current target' }).click();
+	await expect.poll(() => decisionStored(f, 'demand_retarget_finalized')).toBe(true);
 	for (const n of H.PLAYERS) await H.call(f.api[n], 'post', `/api/rolls/${rollID}/ready`, { is_ready: true });
 	await expect.poll(async () => (await rollOf(f)).result).not.toBeNull();
 	const late = await f.api.bob.post(`/api/plans/${f.targetID}/demand-retarget`, { data: { keep: true } });

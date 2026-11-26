@@ -5,6 +5,7 @@ import {
 	choicesCommitted,
 	demandWinnersFromPlan,
 	activeDemandAgainst,
+	heldRollDecisions,
 	resolutionActorID,
 	playerName,
 	assetName,
@@ -514,5 +515,59 @@ describe('resolutionActorID', () => {
 
 	it('is the perform_steps winner once a demand has been made', () => {
 		expect(resolutionActorID(target, [target, demand(3)])).toBe(3);
+	});
+});
+
+// ── heldRollDecisions ────────────────────────────────────────────────────────
+
+describe('heldRollDecisions', () => {
+	const demandWith = (winners: Record<string, number>) => plan({
+		id: 5, plan_type: 'make_demands', targeted_plan_id: 100, status: 'resolved', result: 'make',
+		resolution_data: JSON.stringify({
+			make_demands: { draft_choices: Object.entries(winners).map(([option, player_id]) => ({ player_id, option })) },
+		}),
+	});
+	const WINNER = 2;
+	const target = (type: Plan['plan_type'], rd: object = {}) =>
+		plan({ id: 100, plan_type: type, preparer_id: 1, status: 'resolving', result: null, resolution_data: JSON.stringify(rd) });
+
+	it('names the leverage decision a control_leverage winner still owes', () => {
+		const t = target('spread_propaganda');
+		expect(heldRollDecisions(t, [demandWith({ control_leverage: WINNER }), t], WINNER)).toEqual(['control_leverage']);
+	});
+
+	it('names both when one player won both options', () => {
+		const t = target('spread_rumors');
+		const d = demandWith({ control_leverage: WINNER, keep_or_change_target: WINNER });
+		expect(heldRollDecisions(t, [d, t], WINNER)).toEqual(['control_leverage', 'keep_or_change_target']);
+	});
+
+	it('holds nothing once the decision is stored', () => {
+		const t = target('spread_rumors', { demand_leverage_finalized: true, demand_retarget_finalized: true });
+		const d = demandWith({ control_leverage: WINNER, keep_or_change_target: WINNER });
+		expect(heldRollDecisions(t, [d, t], WINNER)).toEqual([]);
+	});
+
+	it('holds nothing for the plan\u2019s preparer, a bystander, or a dud option', () => {
+		const t = target('spread_propaganda');
+		const d = demandWith({ control_leverage: 1, keep_or_change_target: WINNER });
+		expect(heldRollDecisions(t, [d, t], 1)).toEqual([]);
+		expect(heldRollDecisions(t, [d, t], 3)).toEqual([]);
+		// keep_or_change_target has no aim on Spread Propaganda, so it holds no roll.
+		expect(heldRollDecisions(t, [d, t], WINNER)).toEqual([]);
+	});
+
+	it('holds no roll on a plan with none of the preparer\u2019s own, or whose aim settles first', () => {
+		for (const type of ['host_festivity', 'propose_duel', 'clandestinely_liaise'] as const) {
+			const t = target(type);
+			const d = demandWith({ control_leverage: WINNER, keep_or_change_target: WINNER });
+			expect(heldRollDecisions(t, [d, t], WINNER), type).toEqual([]);
+		}
+	});
+
+	it('holds nothing with no made demand against the plan', () => {
+		const t = target('spread_propaganda');
+		expect(heldRollDecisions(t, [t], WINNER)).toEqual([]);
+		expect(heldRollDecisions(t, [t], null)).toEqual([]);
 	});
 });

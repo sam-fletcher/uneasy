@@ -97,7 +97,7 @@ import { join } from 'node:path';
 type Stage = 'decide_vote' | 'voting' | 'leverage' | 'resolved';
 
 function panel(
-	over: { stage?: Stage; currentPlayerID?: number; dice?: DiceRollDie[]; participants?: RollParticipant[]; outcome?: 'make' | 'mar' | null; heading?: StepHeading | null } = {},
+	over: { stage?: Stage; currentPlayerID?: number; dice?: DiceRollDie[]; participants?: RollParticipant[]; outcome?: 'make' | 'mar' | null; heading?: StepHeading | null; heldDecisions?: string[] } = {},
 ): string {
 	const { body } = render(DiceRollPanel, {
 		props: {
@@ -116,6 +116,7 @@ function panel(
 			players,
 			playerNameMap,
 			heading: over.heading ?? null,
+			heldDecisions: over.heldDecisions ?? [],
 		},
 	});
 	return body.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ');
@@ -207,5 +208,32 @@ describe('DiceRollPanel as a step', () => {
 		const html = panel();
 		expect(html).toMatch(/class="plain-list roster[^"]*"/);
 		expect(html).not.toContain('class="chip" style');
+	});
+});
+
+// A Make Demands winner holding the roll owes a decision first. Their Ready used to
+// resolve the roll with the decision unmade, so the server now refuses it, and the
+// panel gives them the reminder instead of a button that would only be refused.
+describe('DiceRollPanel for a Make Demands winner holding the roll', () => {
+	const held = ['how many of wren’s assets go onto the roll'];
+
+	it('shows the decision they owe in place of Ready and Pass', () => {
+		const html = panel({ currentPlayerID: 1, heldDecisions: held });
+		expect(html).toContain('The roll waits for your Make Demands choice: how many of wren’s assets go onto the roll.');
+		expect(html).not.toMatch(/action-btn primary/);
+		expect(html).not.toMatch(/>\s*Pass\s*</);
+		// And no line sending them to pass, which they cannot do yet.
+		expect(html).not.toContain('or pass');
+	});
+
+	it('joins two decisions held by one winner', () => {
+		const html = panel({ currentPlayerID: 1, heldDecisions: [...held, 'keep or change who the plan is aimed at'] });
+		expect(html).toContain('how many of wren’s assets go onto the roll and keep or change who the plan is aimed at');
+	});
+
+	it('leaves everyone else their Pass button', () => {
+		const html = panel({ currentPlayerID: 3 });
+		expect(html).not.toContain('Make Demands choice');
+		expect(html).toMatch(/action-btn primary"[^>]*>\s*Pass\s*</);
 	});
 });

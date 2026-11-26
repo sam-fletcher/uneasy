@@ -398,3 +398,117 @@ func TestPlanLifecycle_MakeDemands_ControlLeverage_InertAgainstFestivity(t *test
 	code, body = h.post(hostIdx, rollPath(rollID, "leverage"), map[string]any{"asset_id": hostAsset})
 	require.Equalf(t, http.StatusOK, code, "host leverages their own asset: %v", body)
 }
+
+// A Make Demands winner who holds the target's roll (control_leverage or
+// keep_or_change_target) is seeded unready so the roll cannot resolve before they
+// decide. Their own ready used to be accepted all the same, and resolved the roll
+// with the decision never made. The server refuses it until the decision is
+// stored, and accepts it after.
+//
+// The winner is given a die to commit again once the window is set up, so that
+// finalizing does not ready them by itself: the ready that follows the decision is
+// then the only thing left holding the roll, and it must be allowed.
+func TestPlanLifecycle_MakeDemands_HeldWinnerCannotReadyBeforeDeciding(t *testing.T) {
+	cases := []struct {
+		name     string
+		option   string
+		planType model.PlanType
+		decide   func(h *planLifecycle, planID int64, winnerIdx int) (int, map[string]any)
+		finished func(rd *ResolutionData) bool
+	}{
+		{
+			name:     "control_leverage",
+			option:   game.DemandOptionControlLeverage,
+			planType: model.PlanSpreadPropaganda,
+			decide: func(h *planLifecycle, planID int64, winnerIdx int) (int, map[string]any) {
+				return h.post(winnerIdx, demandLeveragePath(planID), map[string]any{"asset_ids": []int64{}})
+			},
+			finished: func(rd *ResolutionData) bool { return rd.DemandLeverageFinalized },
+		},
+		{
+			name:     "keep_or_change_target",
+			option:   game.DemandOptionKeepOrChangeTarget,
+			planType: model.PlanSpreadRumors,
+			decide: func(h *planLifecycle, planID int64, winnerIdx int) (int, map[string]any) {
+				return h.post(winnerIdx, demandRetargetPath(planID), map[string]any{"keep": true})
+			},
+			finished: func(rd *ResolutionData) bool { return rd.DemandRetargetFinalized },
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPlanLifecycle(t, 3)
+			ctx := context.Background()
+			plan, roll, _, winnerIdx, _ := setupDemandPreRollWindowOn(t, h, tc.option, tc.planType)
+			winnerID := h.tg.Players[winnerIdx].ID
+
+			// Hand the winner something to commit, so the roll waits on their ready too.
+			assets, err := h.q.ListAssetsByOwner(ctx, winnerID)
+			require.NoError(t, err)
+			for _, a := range assets {
+				require.NoError(t, h.q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{ID: a.ID, IsLeveraged: false}))
+			}
+
+			// Before the decision: refused, still unready, roll still open.
+			code, body := h.post(winnerIdx, rollPath(roll.ID, "ready"), map[string]any{"is_ready": true})
+			require.Equalf(t, http.StatusConflict, code, "a held winner's ready before deciding: %v", body)
+			wp, err := h.q.GetParticipant(ctx, dbgen.GetParticipantParams{RollID: roll.ID, PlayerID: winnerID})
+			require.NoError(t, err)
+			assert.False(t, wp.IsReady, "the refused ready must not be stored")
+			rl, err := h.q.GetDiceRollByID(ctx, roll.ID)
+			require.NoError(t, err)
+			require.True(t, rollIsOpen(&rl), "the roll must still be waiting for the decision")
+
+			// The decision lands; they still hold dice, so the roll waits on their ready.
+			code, body = tc.decide(h, plan.ID, winnerIdx)
+			require.Equalf(t, http.StatusOK, code, "the decision: %v", body)
+			after, err := h.q.GetPlanByID(ctx, plan.ID)
+			require.NoError(t, err)
+			rd := loadResolutionData(after.ResolutionData)
+			require.True(t, tc.finished(&rd), "the decision is stored")
+			rl, err = h.q.GetDiceRollByID(ctx, roll.ID)
+			require.NoError(t, err)
+			require.True(t, rollIsOpen(&rl), "a winner with dice to commit still has to ready")
+
+			// After the decision, their ready is accepted and resolves the roll.
+			code, body = h.post(winnerIdx, rollPath(roll.ID, "ready"), map[string]any{"is_ready": true})
+			require.Equalf(t, http.StatusOK, code, "a decided winner's ready: %v", body)
+			rl, err = h.q.GetDiceRollByID(ctx, roll.ID)
+			require.NoError(t, err)
+			assert.False(t, rollIsOpen(&rl), "the roll resolves once the decided winner is ready")
+		})
+	}
+}
+
+// The auto-ready sweep readies a player who commits their last die. For a held
+// winner that would be the same gap as an explicit ready, so the sweep leaves
+// them unready until the decision is stored.
+func TestPlanLifecycle_MakeDemands_HeldWinnerCommittingTheirLastDieStaysHeld(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	ctx := context.Background()
+	plan, roll, _, winnerIdx, _ := setupDemandPreRollWindow(t, h, game.DemandOptionControlLeverage)
+	winnerID := h.tg.Players[winnerIdx].ID
+
+	// Exactly one asset left to commit: committing it leaves the winner with no dice.
+	last := h.seedPeer(winnerIdx, "The winner's last die")
+	require.NoError(t, h.q.SetAssetLeveraged(ctx, dbgen.SetAssetLeveragedParams{ID: last, IsLeveraged: false}))
+
+	code, body := h.post(winnerIdx, rollPath(roll.ID, "intent"), map[string]any{"intent": "aid"})
+	require.Equalf(t, http.StatusOK, code, "intent: %v", body)
+	code, body = h.post(winnerIdx, rollPath(roll.ID, "leverage"), map[string]any{"asset_id": last})
+	require.Equalf(t, http.StatusOK, code, "the winner commits their last die: %v", body)
+
+	wp, err := h.q.GetParticipant(ctx, dbgen.GetParticipantParams{RollID: roll.ID, PlayerID: winnerID})
+	require.NoError(t, err)
+	assert.False(t, wp.IsReady, "the sweep must not ready a winner who has not decided")
+	rl, err := h.q.GetDiceRollByID(ctx, roll.ID)
+	require.NoError(t, err)
+	require.True(t, rollIsOpen(&rl), "the roll still waits for the decision")
+
+	// Deciding releases them: no dice left, so the sweep now readies them and the roll resolves.
+	code, body = h.post(winnerIdx, demandLeveragePath(plan.ID), map[string]any{"asset_ids": []int64{}})
+	require.Equalf(t, http.StatusOK, code, "the decision: %v", body)
+	rl, err = h.q.GetDiceRollByID(ctx, roll.ID)
+	require.NoError(t, err)
+	assert.False(t, rollIsOpen(&rl), "the roll resolves once the winner has decided")
+}

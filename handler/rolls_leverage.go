@@ -252,6 +252,16 @@ func SetReady(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+		// A Make Demands winner holding this roll (control_leverage or
+		// keep_or_change_target) is seeded unready so the roll cannot resolve
+		// before they decide. Their ready would resolve it with the decision
+		// unmade, so refuse it until the decision is stored; the finalizing
+		// route (demand-leverage / demand-retarget) readies them itself.
+		if body.IsReady && rollDemandBlockersPending(ctx, s.Q, roll)[player.ID] {
+			respondErr(w, http.StatusConflict,
+				"you hold this roll as a Make Demands winner: make your demand decision first")
+			return
+		}
 		if !body.IsReady {
 			can, err := playerCanCommit(ctx, s.Q, roll.GameID, player.ID)
 			if err != nil {
