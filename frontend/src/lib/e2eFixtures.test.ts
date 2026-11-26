@@ -184,15 +184,12 @@ describe('the console.error allow-list', () => {
 		expect(wide.map(a => String(a.match))).toEqual([]);
 	});
 
-	it("allows the Make War 404 only for the one public_record test that shows a war before it exists", () => {
+	it("allows no test to see the Make War war-state 404: the panel no longer asks before its war exists", () => {
 		const LINE = 'Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8090/api/plans/222/war-state';
+		// public_record.spec.ts had an entry for this until MakeWarPanel stopped fetching early.
 		const test = { spec: 'public_record.spec.ts', title: 'Events: a war the server stored as "make" is not shown as a Make' };
-		expect(isAllowedConsoleError(LINE, test)).toBe(true);
-		expect(isAllowedConsoleError(LINE, { ...test, title: 'Events: a plan is a 44px line that opens Chat' })).toBe(false);
-		expect(isAllowedConsoleError(LINE, { spec: 'make_war.spec.ts', title: test.title })).toBe(false);
-		// Only the 404, only on war-state: not a 500 there, not a 404 on a plan.
-		expect(isAllowedConsoleError(LINE.replace('404 (Not Found)', '500 (Internal Server Error)'), test)).toBe(false);
-		expect(isAllowedConsoleError(LINE.replace('/war-state', ''), test)).toBe(false);
+		expect(isAllowedConsoleError(LINE, test)).toBe(false);
+		expect(isAllowedConsoleError(LINE, { spec: 'make_war.spec.ts', title: 'any Make War test' })).toBe(false);
 	});
 
 	it("pins the cross-spec canary's line: allowed for chat's failed-send test, and nowhere else", () => {

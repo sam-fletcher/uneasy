@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	activeWarPlans, dedupeWars, keepOpenWar, nameWarInTakeover, PEACE_VOTE_LABEL, peaceVoteLabel, SETTLE_WARS_LABEL,
-	warGateActive, warGatePlans, warPanelHidden,
+	warCanExist, warGateActive, warGatePlans, warPanelHidden,
 } from './warGate';
 import type { Plan, RowState, WarStateResponse } from '$lib/api';
 
@@ -332,5 +332,21 @@ describe('dedupeWars', () => {
 		const out = dedupeWars([war(7, { status: 'active' }), war(8), war(7, { status: 'ended' })]);
 		expect(out.map(w => w.origin_plan_id)).toEqual([7, 8]);
 		expect(out[0].status).toBe('ended');
+	});
+});
+
+describe('warCanExist', () => {
+	const withData = (mw: object | null) =>
+		plan(1, { resolution_data: JSON.stringify(mw ? { make_war: mw } : {}) } as Partial<Plan>);
+
+	it('is false until the plan carries the war id, so the panel does not ask for a war that is not there', () => {
+		expect(warCanExist(withData(null))).toBe(false);
+		expect(warCanExist(withData({ enemy_player_ids: [2] }))).toBe(false);
+		expect(warCanExist(withData({ war_id: null }))).toBe(false);
+		expect(warCanExist(null)).toBe(false);
+	});
+
+	it('is true once the war id is on the plan', () => {
+		expect(warCanExist(withData({ war_id: 7 }))).toBe(true);
 	});
 });

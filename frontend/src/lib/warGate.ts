@@ -18,6 +18,7 @@
 // a component's `{#if}` chain.
 
 import type { Plan, RowState, WarStateResponse } from '$lib/api';
+import { parseMakeWarData } from '$lib/plans/resolutionData/make_war';
 
 /** Row-state kinds whose gate is a Make War obligation the war panel can
  *  discharge: an unpaid cost of battle, or an unredeemed surrender claim.
@@ -196,4 +197,17 @@ export function warPanelHidden(plan: Plan | null | undefined, war: WarStateRespo
 		&& war != null
 		&& war.status === 'ended'
 		&& war.open_claims.length === 0;
+}
+
+/**
+ * Can this Make War plan have a war row yet? Only once its `resolution_data`
+ * carries the war's id: preparing the plan creates the war and writes the id in
+ * one step (OnPrepare). Asking before that gets a 404 from `war-state`, which the
+ * panel treats as "no war yet" but the browser prints as a console error.
+ *
+ * Kept off the response's shape on purpose: answering 200 with an empty body
+ * instead would be read by a tab left open across a deploy as a war.
+ */
+export function warCanExist(plan: Plan | null | undefined): boolean {
+	return parseMakeWarData(plan).war_id != null;
 }
