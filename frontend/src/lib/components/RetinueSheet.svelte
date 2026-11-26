@@ -1,7 +1,9 @@
 <!--
   THE sheet. A raised surface, rounded on its top corners, that rises over the
   screen with a scrim behind it and a soft shadow (the only shadow in the app).
-  Dismissed via ESC, phone Back, backdrop tap, or close button.
+  Dismissed via ESC, phone Back, backdrop tap, close button, or — when it is a
+  bottom sheet — a swipe down ($lib/sheetSwipe). While it is open the page
+  behind it can't be pulled to refresh (overscroll-behavior, below).
 
   Put a <h3 class="sheet-title"> first in the body (modalShell.css) and the
   sheet's content after it. Sheets never nest: opening one from inside another
@@ -18,12 +20,31 @@
   Anywhere with no host (the profile page, the landing page) it covers the
   viewport: a bottom sheet on a phone and a centred dialog from two columns up.
 -->
+<script module lang="ts">
+	// How many open sheets are holding the page's overscroll shut. A count, not
+	// a flag, because a hand-off (one sheet closing as another opens in the same
+	// click) can run the new sheet's setup before the old one's teardown.
+	let overscrollLocks = 0;
+	function lockPageOverscroll(): () => void {
+		overscrollLocks++;
+		document.documentElement.style.overscrollBehaviorY = 'none';
+		return () => {
+			overscrollLocks--;
+			if (overscrollLocks <= 0) {
+				overscrollLocks = 0;
+				document.documentElement.style.removeProperty('overscroll-behavior-y');
+			}
+		};
+	}
+</script>
+
 <script lang="ts">
 	import '$lib/components/shared/modalShell.css';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 	import { useSheetHost } from '$lib/sheetHost';
+	import { swipeToDismiss } from '$lib/sheetSwipe';
 	import { tableLayout } from '$lib/tableLayout.svelte';
 
 	let {
@@ -46,6 +67,16 @@
 	// these are dialogs at every width, so they take part on desktop too.
 	dismissOnBack(() => open, () => onClose());
 
+	// Stop the browser's pull-to-refresh taking a downward drag while a sheet is
+	// open. `.sheet-body { overscroll-behavior: contain }` keeps a scrolling body
+	// from chaining to the page, but Chrome doesn't trap the overscroll of a body
+	// too short to scroll, so the page itself is told not to overscroll either.
+	// Runs on open and tears down on close or destroy.
+	$effect(() => {
+		if (!open) return;
+		return lockPageOverscroll();
+	});
+
 	onMount(() => {
 		window.addEventListener('keydown', onKeyDown);
 		return () => window.removeEventListener('keydown', onKeyDown);
@@ -64,6 +95,20 @@
 		document.body.appendChild(node);
 		return { destroy: () => node.remove() };
 	}
+
+	// ── Swipe down to dismiss ─────────────────────────────────────────────
+	// Only a bottom sheet can be dragged away: every sheet on a phone, and a
+	// hosted sheet (over a column) at any width. The unhosted centred dialog
+	// from two columns up is a dialog, not a sheet, so it is left alone.
+	// Matches the `.scope:not(.hosted)` breakpoint rule in the styles below.
+	const draggable = () => tableLayout.mode === 'phone' || hostBox !== null;
+	let sheetEl = $state<HTMLElement>();
+	let scopeEl = $state<HTMLElement>();
+	const swipeOptions = () => ({
+		enabled: draggable,
+		onClose,
+		scrim: () => scopeEl?.querySelector<HTMLElement>('.backdrop') ?? null,
+	});
 
 	// ── Which column to cover ─────────────────────────────────────────────
 	const sheetHost = useSheetHost();
@@ -108,6 +153,7 @@
 	     It passes touches through; its two children take them. -->
 	<div
 		use:portal
+		bind:this={scopeEl}
 		class="scope"
 		class:hosted={hostBox !== null}
 		style:left={hostBox ? `${hostBox.left}px` : undefined}
@@ -116,7 +162,13 @@
 		style:height={hostBox ? `${hostBox.height}px` : undefined}
 	>
 		<div class="modal-backdrop backdrop" onclick={onClose} role="presentation"></div>
-		<div class="sheet" role="dialog" aria-modal="true">
+		<div
+				class="sheet"
+				role="dialog"
+				aria-modal="true"
+				bind:this={sheetEl}
+				use:swipeToDismiss={swipeOptions()}
+			>
 			<div class="sheet-header">
 				<button class="modal-close close" onclick={onClose} aria-label="Close">
 					<svg
@@ -192,6 +244,9 @@
 	.sheet-body {
 		padding: var(--space-2) var(--space-4) var(--space-5);
 		overflow-y: auto;
+		/* A scroll that reaches the end stops here instead of carrying on to the
+		   page, where on a phone it would pull-to-refresh the whole app. */
+		overscroll-behavior: contain;
 		min-height: 0;
 	}
 
