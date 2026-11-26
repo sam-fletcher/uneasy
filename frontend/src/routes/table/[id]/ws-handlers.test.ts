@@ -187,6 +187,20 @@ describe('single-plan refetch ordering', () => {
 	beforeEach(() => { vi.stubGlobal('window', { dispatchEvent: vi.fn() }); });
 	afterEach(() => { vi.unstubAllGlobals(); });
 
+	// demand.prepared carries the whole plan ({ plan }), not { plan_id }. Reading
+	// plan_id fetched /api/plans/undefined on every client for every demand
+	// prepared. Both senders (an ordinary demand and the counter-demand synthesis)
+	// send plan.prepared with the same plan, so the event needs no fetch at all.
+	it('demand.prepared, whose payload is a plan, fetches no plan', async () => {
+		const plan = makePlan({ id: 42, plan_type: 'make_demands' });
+		const ctx = makeCtx();
+
+		handleWSMessage(ctx, { type: EventTypes.DemandPrepared, payload: { plan } });
+		await flush();
+
+		expect(getPlanMock).not.toHaveBeenCalled();
+	});
+
 	it('a refetch that predates plan.resolved cannot roll the plan back', async () => {
 		const resolving = makePlan({ id: 42, status: 'resolving' });
 		const ctx = makeCtx({ plans: [resolving] });
