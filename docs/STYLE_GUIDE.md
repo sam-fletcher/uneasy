@@ -739,8 +739,9 @@ more; `/dev/styleguide` shows every state.
   `.option-list` is the column they sit in.
 - **Checkboxes** (`checkbox.css`, `Checkbox.svelte`). There are **no plain browser checkboxes** in
   the app: every tick-box is the one the asset cards draw, and `shared/checkboxGuard.test.ts`
-  fails on a native `<input type="checkbox">` or `type="radio"` anywhere else. The box is 24px,
-  with the neutral control border, the raised-twice fill and the control corner; **ticked is the
+  fails on a native `<input type="checkbox">` or `type="radio"` anywhere else. The box is 24px
+  everywhere, the marginalia rows of an open asset card included (the card sets no size of its
+  own), with the neutral control border, the raised-twice fill and the control corner; **ticked is the
   2px bright gold border with no fill, plus the success tick** from `ToneMark`. The row is the
   control: the box, the words beside it and, under the words, an explanation in secondary text,
   as a tap row (44px at least; tapping anywhere ticks it). **Say what ticking does in words on
@@ -1028,10 +1029,13 @@ draws the step's heading above both ("Your move" or "Waiting on otto" over "Set 
 scene"), so neither draws one.
 
 - **A small heading, then words, not a panel.** The prompt, Where, When, Who else is here,
-  Location and Present are each a label (12px, capitals, secondary) with the group's content
-  under it. The prompt's words are step text (16px, main colour). There is no box, wash or
-  rule around any of it; the step gap (16px) separates the groups and 8px separates a label
-  from what it heads. A label is secondary, since the game's gold belongs to the step's heading.
+  Location and Present are each the step sub-heading (`.choices-header` from `planPanel.css`:
+  12px, capitals, letter-spaced, deep gold; see "Play steps") with the group's content under it.
+  Neither scene file restyles it. A field's own prompt, where one is written, is the 14px
+  secondary label (`.picker-label`); the scene's fields carry theirs as an `aria-label` and a
+  placeholder, so none is drawn. The prompt's words are step text (16px, main colour). There is
+  no box, wash or rule around any of it; the step gap (16px) separates the groups and 8px
+  separates a sub-heading from what it heads.
 - **Controls come from the recipes.** The six durations are compact `Chip`s (three to a line
   on a phone, wrapping without a width query); a place and a time can also be typed, in
   a 44px field on the raised surface with the control border and 16px type. A typed place
