@@ -27,6 +27,7 @@
 	import { getPushState, enablePush, onPushPermissionChange, type PushState } from '$lib/push';
 	import PushBlockedHelp from '$lib/components/shared/PushBlockedHelp.svelte';
 	import ChecklistRow from '$lib/components/shared/ChecklistRow.svelte';
+	import HelpDisclosure from '$lib/components/shared/HelpDisclosure.svelte';
 	import TableRoster from '$lib/components/shared/TableRoster.svelte';
 	import HelpContent from '../HelpContent.svelte';
 	import HelpGlyph from '../HelpGlyph.svelte';
@@ -268,14 +269,13 @@
 		     defaultOpen: the primer's body is a whole tabbed sub-panel, and
 		     open it pushed the two rows below it a screen and a half down —
 		     burying the notifications row, which is the one item here that
-		     makes asynchronous play work. Its gold title is what marks it as
-		     the invitation now. No persistence either way. -->
-		<ChecklistRow
+		     makes asynchronous play work. It is an explainer, so it is the one
+		     shared explainer row (the "?", the title in main text; its gold
+		     title went in Round 7, 2026-11-25: the "?" is what says it).
+		     No persistence either way. -->
+		<HelpDisclosure
 			title="Read the two-minute primer"
 			subtitle="New here? A skim is enough for now."
-			glyph="help"
-			tone="primary"
-			action="expand"
 			id="lobby-primer-body"
 		>
 			<p class="primer-cue">
@@ -284,7 +284,7 @@
 				> in the top-right corner.
 			</p>
 			<HelpContent {onFeedback} />
-		</ChecklistRow>
+		</HelpDisclosure>
 
 		{#if pushChip}
 			<ChecklistRow

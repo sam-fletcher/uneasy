@@ -13,8 +13,8 @@
   does, and that is a house rule (D1, docs/STYLE_GUIDE.md "Layout &
   interaction"):
 
-      ▾ caret   expands in place   (action='expand')
-      › arrow   opens a panel elsewhere (action='navigate')
+      ⌄ chevron down, flips up when open   expands in place   (action='expand')
+      › chevron right                       opens a panel elsewhere (action='navigate')
       nothing   nothing to do      (action='none')
 
   A caret over something that opens a sheet is a lie, so pick by what happens,
@@ -140,8 +140,10 @@
 <!-- Two flags, not one: `open` is the expander's state and turns the caret;
      `has-body` is whether anything is rendered under the head, and moves the
      closing rule from under the head to under the body. A blocker
-     (action='none' + a body) is never "open" but always needs that. -->
-<section class="checklist-row" class:open class:has-body={bodyShown} data-tone={tone}>
+     (action='none' + a body) is never "open" but always needs that, so
+     `.disclosure` here means "a row with a body under it", the recipe the
+     moving line comes from, not only an expanding row. -->
+<section class="checklist-row disclosure" class:open class:has-body={bodyShown} data-tone={tone}>
 	{#if action === 'expand'}
 		<button
 			type="button"
@@ -164,7 +166,7 @@
 		</div>
 	{/if}
 	{#if bodyShown}
-		<div class="row-body" id={action === 'expand' ? id : undefined}>
+		<div class="row-body disclosure-body" id={action === 'expand' ? id : undefined}>
 			{@render children?.()}
 		</div>
 	{/if}
@@ -179,8 +181,8 @@
 	/* .tap-row (tapRow.css) owns the 44px line, the rule under it and the
 	   hover and focus states. */
 	/* A row and its body share one closing rule: it moves from under the head
-	   to under the body, so the two read as one entry. */
-	.checklist-row.has-body .row-head { border-bottom-color: transparent; }
+	   to under the body, so the two read as one entry (.disclosure in
+	   tapRow.css). */
 
 	/* ── Row tones ────────────────────────────────────────────────────────
 	   A tone colours TEXT, never a border or a wash (a notice is a mark and
@@ -204,7 +206,7 @@
 		color: var(--color-text-secondary);
 		flex: none;
 	}
-	/* The circled "?" — HelpDisclosure's mark, and the reason this row exists. */
+	/* The circled "?" in deep gold — the explainer's mark (HelpDisclosure). */
 	.row-glyph.help { color: var(--color-accent); }
 	.row-text {
 		flex: 1;
@@ -229,8 +231,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-2);
-		border-bottom: 1px solid var(--color-border);
-		padding: var(--space-2) 0 var(--space-3);
 	}
 	/* The one piece of the caller's prose this file does reach: the gap above
 	   owns the vertical rhythm, so a stray browser margin on a paragraph the

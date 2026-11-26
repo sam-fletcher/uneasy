@@ -100,23 +100,19 @@ describe('ChecklistRow — row furniture', () => {
 	});
 });
 
-describe('HelpDisclosure — its own tappable row', () => {
-	it('draws its head as the shared tap row, with a caret and no box', () => {
+describe('HelpDisclosure — the explainer row', () => {
+	it('is a ChecklistRow: the shared tap row head, a down chevron and no box of its own', () => {
 		const { body: html } = render(HelpDisclosure, {
 			props: { title: 'How the rankings work', id: 'rankings-help-body', children: body() },
 		});
-		expect(html).toMatch(/class="tap-row help-head[^"]*"/);
+		expect(html).toMatch(/class="tap-row row-head"/);
 		expect(html).toContain('data-kind="caret"');
-		const css = styleOf(readFileSync(join(__dirname, 'HelpDisclosure.svelte'), 'utf8'));
-		const boxy = declarations(css).filter(
-			(d) =>
-				/^(background|box-shadow|outline|border-radius)/.test(d.prop) ||
-				(/^border/.test(d.prop) && !/^border-bottom(-color)?$/.test(d.prop))
-		);
-		expect(boxy).toEqual([]);
+		// It draws nothing of its own: no <style> block to hold a box or a fill.
+		const source = readFileSync(join(__dirname, 'HelpDisclosure.svelte'), 'utf8');
+		expect(source).not.toMatch(/<style/);
 	});
 
-	it('is an expanding help row, shut by default', () => {
+	it('is an expanding help row with the "?" at its start, shut by default', () => {
 		const { body: html } = render(HelpDisclosure, {
 			props: { title: 'How the prologue works', id: 'prologue-help-body', children: body() },
 		});
@@ -126,17 +122,15 @@ describe('HelpDisclosure — its own tappable row', () => {
 		expect(html).not.toContain('body text');
 	});
 
-	it('passes tone and defaultOpen through (the lobby primer)', () => {
+	it('passes defaultOpen through (the lobby primer)', () => {
 		const { body: html } = render(HelpDisclosure, {
 			props: {
 				title: 'Read the two-minute primer',
 				id: 'lobby-primer-body',
-				tone: 'primary',
 				defaultOpen: true,
 				children: body(),
 			},
 		});
-		expect(html).toContain('data-tone="primary"');
 		expect(html).toContain('aria-controls="lobby-primer-body"');
 		expect(html).toContain('body text');
 	});
@@ -180,14 +174,15 @@ describe('ChecklistRow — house rules that are easy to lose', () => {
 		for (const d of toned) expect(d.prop, d.selector).toBe('color');
 	});
 
-	it('a row has one mark size: the leading glyph slot matches the end mark', () => {
+	it('the end mark is 20px in secondary text, a size up from the leading glyph slot', () => {
 		const slot = declarations(styleOf(source)).filter((d) => d.selector === '.row-glyph');
-		const mark = declarations(styleOf(readFileSync(join(__dirname, 'RowMark.svelte'), 'utf8'))).filter(
-			(d) => d.selector === '.row-mark'
-		);
+		const mark = declarations(styleOf(rowMark)).filter((d) => d.selector === '.row-mark');
 		const val = (ds: { prop: string; value: string }[], p: string) => ds.find((d) => d.prop === p)?.value;
-		expect(val(slot, 'width')).toBe(val(mark, 'width'));
-		expect(val(slot, 'height')).toBe(val(mark, 'height'));
+		// Round 7: the mark is the only thing that says a row can be pressed, so
+		// it is bigger and stronger than the 16px kind glyph at the other end.
+		expect(val(mark, 'width')).toBe('20px');
+		expect(val(mark, 'color')).toBe('var(--color-text-secondary)');
+		expect(val(slot, 'width')).toBe('16px');
 	});
 
 	it('a deadline row is one colour: its title and its state word are both the warning colour', () => {

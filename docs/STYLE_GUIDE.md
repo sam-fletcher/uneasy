@@ -603,27 +603,41 @@ Rules:
 - Disabled-but-tappable: prefer `aria-disabled` + an explanation on tap
   over `disabled`, so mobile users can discover *why* (see Make Demands
   eligibility).
-- **A caret expands here; an arrow takes you somewhere.** The mark on the
-  right of a row states what tapping it does
-  (`adr/LOBBY_AND_CHECKLIST_PLAN.md` D1):
+- **A chevron down expands here; a chevron right takes you somewhere.** The mark
+  on the right of a row states what tapping it does
+  (`adr/LOBBY_AND_CHECKLIST_PLAN.md` D1, reworked in Round 7, 2026-11-25):
 
   | mark | meaning | examples |
   |---|---|---|
-  | `▾` caret | expands in place | primer, notifications, an inline form |
-  | `›` arrow | opens a panel elsewhere | tones, "shore up at-risk assets" |
+  | `⌄` caret: a chevron pointing down, flipping up (a 180° turn) when open | expands in place | primer, notifications, a finished line's detail, a folded plan in the chat |
+  | `›` arrow: a chevron pointing right | opens a panel elsewhere | tones, a Public Record line, a war |
   | none | nothing to do | a completed item |
 
   Tones are the case that produced the rule: they live in a sheet, so there
-  is nothing to inline and a caret would be a lie. The caret is the house
-  filled triangle (see **Motion & the deck** — the app has no chevrons
-  *among expanders*); the arrow is deliberately the one chevron, sized
-  larger, because the two must never be mistaken for each other at phone
-  size. Both are drawn by `shared/RowMark.svelte` (from paths, not typed ▾
-  and › characters, which came from a different font on every platform).
+  is nothing to inline and a caret would be a lie. Both marks are one stroked
+  chevron (`M6 9l6 6 6-6` for the caret, rotated for the arrow's `›`), so they
+  differ by direction alone: down and up mean *here*, right means
+  *elsewhere*. The first caret was a filled triangle that turned right when
+  shut, which pointed the way `›` does and blurred the two. Both are **20px in
+  secondary text**, because the mark is the only thing that says a row can be
+  pressed. They are drawn by `shared/RowMark.svelte` (from paths, not typed
+  characters, which came from a different font on every platform).
   `shared/ChecklistRow.svelte` picks the mark from its `action` prop, so use
   it rather than hand-rolling a row. A tappable row has **no box**: it is a
   44px line marked by its caret or arrow, with a thin rule beneath (see
   Recipes).
+
+- **A disclosure is a row, alone or in a list, with no box and no fill** (at
+  rest or open). Its closing line sits under the row while it is shut and
+  **moves under the revealed content when it opens**, so the line is what marks
+  where the open content ends. A lone disclosure is a list of one row. The
+  recipe is `.disclosure` / `.has-body` / `.disclosure-body` in `tapRow.css`
+  (`ChecklistRow`, `HelpDisclosure`, `FinishedStep`, a folded span in the chat,
+  the Prologue's category rows and a claim's steps all use it). Nothing changes
+  fill on open; the hover lift and the focus ring stay. A boxed **game piece**
+  that expands (an asset card, a Prologue tile) keeps its box: the piece is the
+  box, and its caret is the same mark. A control that opens a floating menu (the
+  chat's "Speaking as" picker) is a box with a caret, not a disclosure row.
 
   **Roles are named, not worn.** A player's role never rides on their seat as
   a title — the roster carries identity and state (colour, **You**, online,
@@ -656,7 +670,7 @@ Reuse before writing new CSS — these live in
 | `optionCard.css` + `OptionCard.svelte` | **the** option card: one choice as a full-width row with a title, a sentence and optionally a level. A control, so the neutral control border. Selected = 2px bright gold border, no fill, and a tick. Locked = a hairline and faint words, with the reason under the sentence |
 | `checkbox.css` + `Checkbox.svelte` | **the** checkbox: the asset card's drawn box (24px, control border, a gold border and tick when ticked) with the words beside it and an optional explanation under them, in a tap row. There are no plain browser checkboxes; a test fails on one |
 | `tapRow.css` | **the** tappable row: a 44px line with a rule beneath, no box |
-| `RowMark.svelte` | the caret (expands in place) and the arrow (opens elsewhere) at the end of a tappable row |
+| `RowMark.svelte` | the caret (a chevron down that flips up: expands in place) and the arrow (a chevron right: opens elsewhere) at the end of a tappable row, 20px in secondary text |
 | `Notice.svelte` | **the** notice: a mark and coloured text, no box or tint |
 | `PlayerShape.svelte` | a player's shape in their colour: the five seat shapes, 12px and up |
 | `ClockMark.svelte` | the waiting glyph: bright gold for you, secondary for anyone else the game waits on |
@@ -676,7 +690,7 @@ Reuse before writing new CSS — these live in
 | `ChecklistRow.svelte` | **the** checklist/disclosure row: glyph · title+subtitle · state word · caret-or-arrow, with an optional body. A `tapRow.css` row, so no box. Used by the lobby's *While you wait* and the prologue's closing stage; `action` picks the affordance (see the caret rule above) |
 | `TableRoster.svelte` | who's at the table, as plain lines: the seat's shape, **You** for the current player, a clock on whoever the game waits on (bright gold on you), an arrow when the row is tappable — and no role tags, see **Roles are named, not worn** below. Caller owns the heading, the count, per-row `trailing` content and the lobby's invite chair |
 | `ErrorText.svelte` | **the** way an error reaches the screen — see **Errors** below |
-| `HelpDisclosure.svelte` | the collapsible "? How X works" panel: a `tapRow.css` row with the help mark and a caret, and its body below. **The** way step-local rules reach a play screen — see **Local help** below |
+| `HelpDisclosure.svelte` | **the** explainer row: the deep-gold "?" at the start, the title in main text, a caret, and the body below. A `ChecklistRow` with the help glyph. "What can happen?", the Prologue's help rows, the scene-setup help, the lobby primer and the Shake-Up intro are all this one component — see **Local help** below |
 | `WeightMeter.svelte` | a prologue card's value as the house segmented meter (1–4). Takes the raw card value, never a pre-computed weight |
 | `components/table/*` | **the table page's frame** (a folder, not one piece): `TableTitleBar` (Home, the title, Help), `PlayerRow` (a shape and a name per player, with the clock and the at-risk mark), `ConnectionNotice` (the strip that says the live connection is down, between the player row and the panes), `ShellColumn` (a pane's column, which sheets cover), `PaneTabs` and `RecordTabs` (the tab bar and the Events / Laws / Rumors chips), `PaneName` and `PaneMarks` (a column's name and the marks it shares with its tab), and `TonesSheet`. Which panes show, which tabs and which marks are pure functions in `panes.ts` |
 | `LogMark.svelte`† | the house SVG marks (14 chat-log families + `chat`, `clock`, `war`); also the ranking mark on the Public Record, the mobile chat bar's icon, and the closing stage's at-risk row — see **Log marks** below. The newer marks have a component of their own that adds the size, colour rule and label |
@@ -809,7 +823,7 @@ all on `/dev/styleguide` under "Play steps":
 | `lib/stepHeading.ts` | the wording, pure and tested. It reads the same derivation as the clocks on the player row (`lib/waitingOn.ts`), so the two can't disagree |
 | `plans/shared/SetPiece.svelte`, `plans/shared/QuotedText.svelte` | the two centred pieces of an open step: the set piece (two named pieces face to face) and the player-written text the step is about. Both are described below |
 | `lib/plans/stepLabel.ts`, `lib/plans/stepLabels/*` | what each plan calls the step it is on: one pure function per plan, registered in `plans/registry.ts` and read by `waitingOn.ts` through the row state's `plan_id`. The server knows only that a plan is resolving; the plan's own data says which step. A plan that can't tell says "the next step" |
-| `plans/shared/FinishedStep.svelte` | a step that is over, as one line with its mark. With a `detail` it is a tappable row with a caret that opens in place |
+| `plans/shared/FinishedStep.svelte` | a step that is over, as one line with its mark. With a `detail` it is a disclosure row: the caret flips and the closing line moves under the detail |
 | `plans/shared/DieTile.svelte` | one die: a 44px game piece whose edge is its owner's colour. The die mark before it is rolled, its face after; cancelled and repeated dice are dashed, never faded |
 | `plans/shared/stepFrame.ts` | the context `PlanPanel` gives the plan's card, so the roll slots in between the finished steps and the open one |
 | `plans/shared/headingSlot.ts` | who draws the heading. The page draws it at the top by default, so no state is left without one; a card, the preparation step or an open roll **claims** it while it draws it in its own open step |
@@ -910,7 +924,7 @@ and on `/dev/styleguide` under "The war band":
 
 | piece | what it is |
 |---|---|
-| `WarBand.svelte` | the band: the barbute, the war's name in red, "under way" or "planned", and the arrow (it opens a sheet; the caret expands in place). A 44px raised button with a red border and no red fill |
+| `WarBand.svelte` | the band: the barbute, the war's name in red, "under way" or "planned", and the arrow (it opens a sheet; the down-pointing caret expands in place). A 44px raised button with a red border and no red fill |
 | `WarBands.svelte` | one band per live war, and the sheet the pressed one opens. The open sheet is kept as a plan id and cleared when its war leaves the list, so a war that ends under it closes it for good |
 | `WarSheet.svelte` | the shell's sheet with a title in war's red and the barbute, a line on when the war began and what being in it costs, then the panel |
 | `WarName.svelte` | the war's name as a plain label, where no band names it: the delay vote, a claim left by a war that has just ended, and each panel when two wars owe at once |
@@ -965,17 +979,19 @@ off the first screen. Live in three places today: the prologue's choosing and
 ANY-spending steps (`prologue/PrologueHelp.svelte` holds both bodies) and
 scene setup.
 
-`HelpDisclosure` draws its own head from the shared row recipes: `tapRow.css`
-for the 44px line and `RowMark` for the caret, with the help mark at its start.
-It no longer wraps `ChecklistRow`. Its API is unchanged, plus `tone` and
-`defaultOpen` pass-throughs. Change the recipe in `tapRow.css` or `RowMark`,
-which both rows use, rather than restyling one row alone.
+`HelpDisclosure` is a `ChecklistRow` (`action="expand"`, `glyph="help"`), so the
+row, its caret, the closing line that moves under the body and the lack of any
+box or fill are the shared recipe, drawn once. **Every explainer is this one
+component**: the "?" in deep gold says "how this works" before the words are
+read, and matches the Help button's "?". Its title is main text (the lobby
+primer's gold title went in Round 7; the "?" says it now). A disclosure that
+is not an explainer keeps its own kind glyph, or none; a test fails if a row
+asks `ChecklistRow` for the "?" directly. `Buffet` ("What can happen?") wraps
+it. Change the recipe in `tapRow.css` or `RowMark`, which every row uses.
 
-The lobby is the one place `HelpContent` is mounted **inside a row** — a
-`ChecklistRow`, not a `HelpDisclosure`, because the two help surfaces keep
-their separate jobs: what the lobby offers is the whole-game primer, opened
-by default, not the rules of one step. Don't reach for `HelpDisclosure` just
-because you want that shape.
+The lobby primer is the same component, with a `subtitle` ("New here? A skim is
+enough for now.") and a body that is the whole-game `HelpContent` rather than
+one step's rules.
 
 - **Give it a unique `id`.** It's the `aria-controls` target and two
   disclosures can be mounted at once.
@@ -1225,8 +1241,9 @@ One chronology, no threads. What each thing in it looks like is decided by what 
   the barbute in war red** in place of the flag (`markForCode` sends `plan.make_war`
   to the `war` family), and a Make War plan's header does too.
 - **A plan's resolution, and a scene, fold** (`chat/SpanHeader.svelte`): one header
-  row, the only part drawn as a control (a `tapRow.css` row with a caret), and its
-  lines indented behind a thin `--color-border` rule, never a card. The header
+  row, the only part drawn as a control (a `tapRow.css` disclosure row with a caret), and its
+  lines indented behind a thin `--color-border` rule, never a card. Open, the
+  line under the header moves to the foot of the span. The header
   carries the family mark, the name, the preparer's shape (plans only), a status
   word and the caret. The status word is "Resolving" while it runs; once it ends,
   Make (green) or Mar (red), or "Fell through" / "No effect" in plain text; Make War

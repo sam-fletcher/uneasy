@@ -20,7 +20,9 @@
 -->
 <script lang="ts">
 	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import RowMark from '$lib/components/shared/RowMark.svelte';
 	import '$lib/components/shared/actionButton.css';
+	import '$lib/components/shared/tapRow.css';
 	import '$lib/components/shared/statusText.css';
 	import '$lib/components/shared/modalShell.css';
 	import '$lib/components/shared/trackCode.css';
@@ -39,7 +41,7 @@
 	import AssetCreationForm from '../AssetCreationForm.svelte';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import { assetTypeLabel, stealPreview, trackCode, trackLabel } from '$lib/prologue/choosing';
-	import { deriveClaimSteps } from '$lib/prologue/claimSteps';
+	import { deriveClaimSteps, toggleStep } from '$lib/prologue/claimSteps';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import { dismissOnBack } from '$lib/dismissOnBack.svelte';
 
@@ -256,8 +258,10 @@
 		claimBlockedReason = '';
 	});
 
-	function openStep(key: string) {
-		openStepKey = key;
+	// Pressing the open step shuts it (null = all collapsed is a state the form
+	// already allows), so the up chevron on the open step means what it says.
+	function pressStep(key: string) {
+		openStepKey = toggleStep(openStepKey, key);
 	}
 
 	/** The step the Next button should jump to from `key`: the next incomplete
@@ -364,13 +368,13 @@
 						step.kind === 'card'
 							? cardSlots.find(s => cardStepKey(s.suit, s.value) === step.key)
 							: null}
-					<section class="step" class:open={isOpen} class:done={step.complete}>
+					<section class="step disclosure" class:open={isOpen} class:done={step.complete} class:has-body={isOpen}>
 						<button
 							type="button"
-							class="step-header"
+							class="tap-row step-header"
 							aria-expanded={isOpen}
-							aria-controls={`step-body-${idx}`}
-							onclick={() => openStep(step.key)}
+							aria-controls={isOpen ? `step-body-${idx}` : undefined}
+							onclick={() => pressStep(step.key)}
 						>
 							<span class="step-marker">{step.complete ? '✓' : idx + 1}</span>
 							{#if cardSlot}
@@ -380,11 +384,12 @@
 							{#if !isOpen && step.complete}
 								<span class="step-summary">{step.summary}</span>
 							{/if}
+							<span class="step-mark"><RowMark kind="caret" open={isOpen} /></span>
 						</button>
 
 						{#if isOpen}
 							{@const nextStep = nextIncompleteAfter(step.key)}
-							<div class="step-body" id={`step-body-${idx}`}>
+							<div class="step-body disclosure-body" id={`step-body-${idx}`}>
 								{#if step.kind === 'asset'}
 									<AssetCreationForm
 										{gameID}
@@ -483,15 +488,14 @@
 		line-height: 1.4;
 	}
 
-	.step-ledger { display: flex; flex-direction: column; gap: 0.5rem; }
+	/* The steps are a list of disclosure rows (tapRow.css): a hairline between
+	   them, no box and no fill, and the line under an open step moves under its
+	   form. */
+	.step-ledger { display: flex; flex-direction: column; }
 
-	.step {
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-	}
 	.step.take {
-		padding: 0.65rem 0.75rem;
+		border-bottom: 1px solid var(--color-border);
+		padding: 0.65rem 0;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
@@ -506,15 +510,8 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.65rem 0.75rem;
-		min-height: 44px;
-		background: none;
-		border: none;
-		text-align: left;
 		color: var(--color-text);
-		font-family: inherit;
 		font-size: 0.9rem;
-		cursor: pointer;
 	}
 	.step.done:not(.open) .step-header { color: var(--color-text-muted); }
 	.step-marker {
@@ -547,8 +544,9 @@
 		font-size: 0.85rem;
 	}
 	.step.take .step-summary { white-space: normal; }
+	/* Pushed to the far end whether or not a summary sits before it. */
+	.step-mark { display: inline-flex; margin-left: auto; }
 
-	.step-body { padding: 0 0.75rem 0.75rem; }
 	.step-next {
 		display: flex;
 		justify-content: flex-end;

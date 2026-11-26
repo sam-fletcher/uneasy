@@ -8,7 +8,7 @@ order: 50
 - the shared pieces PR merges.
 
 - **Status words** such as "Set aside" and the checklist states become small uppercase secondary text. Violet goes.
-- **Groups** lose their boxes; game pieces keep theirs.
+- **Groups** lose their boxes; game pieces keep theirs. (The disclosure rows of the Prologue (the three category rows, a claim's steps, the standing card) already lost theirs in the disclosure-rows PR.)
 - **Files:** `phases/PrologueView.svelte`, `phases/prologue/*`, `phases/ClaimChoiceModal.svelte`, `shared/WeightMeter.svelte`, `shared/trackCode.css`.
 
 **Done when:** the PR has screenshots at 375px of each Prologue stage, compared against the signed-off mockups.

@@ -342,7 +342,10 @@ describe('tapRow.css', () => {
 	});
 
 	it('draws no border but the rule beneath, and fills only on hover', () => {
-		const props = declarations(tap).filter((d) => /^border/.test(d.prop) && d.prop !== 'border-radius');
+		// The disclosure recipe (below) moves that same rule; it adds no new border.
+		const props = declarations(tap).filter(
+			(d) => /^border/.test(d.prop) && d.prop !== 'border-radius' && !d.selector.includes('.disclosure')
+		);
 		expect(props.map((d) => d.prop).sort()).toEqual(['border', 'border-bottom']);
 		expect(props.find((d) => d.prop === 'border')!.value).toBe('0');
 		const fills = declarations(tap).filter((d) => d.prop === 'background' && d.value !== 'none');
@@ -392,10 +395,14 @@ describe('RowMark', () => {
 		const arrow = render(RowMark, { props: { kind: 'arrow' } }).body;
 		expect(caret).toContain('data-kind="caret"');
 		expect(arrow).toContain('data-kind="arrow"');
-		// A filled triangle against a stroked chevron: never mistaken for each other.
-		expect(caret).toContain('fill="currentColor"');
-		expect(arrow).toContain('stroke="currentColor"');
-		expect(arrow).not.toContain('fill="currentColor"');
+		// Both are stroked chevrons, told apart by direction: down (here) against
+		// right (elsewhere). A filled ▸ once pointed the way › does and blurred them.
+		expect(caret).toContain('d="M6 9l6 6 6-6"');
+		expect(arrow).toContain('d="M9 5.5l6.5 6.5L9 18.5"');
+		for (const b of [caret, arrow]) {
+			expect(b).toContain('stroke="currentColor"');
+			expect(b).not.toContain('fill="currentColor"');
+		}
 	});
 
 	it('is decoration, and draws from paths rather than typed characters', () => {
@@ -406,17 +413,23 @@ describe('RowMark', () => {
 		}
 	});
 
-	it('a caret says which way it faces', () => {
+	it('a caret says which way it faces, and the chevron flips by half a turn when open', () => {
 		expect(render(RowMark, { props: { kind: 'caret', open: true } }).body).toMatch(/class="[^"]*\bopen\b/);
 		expect(render(RowMark, { props: { kind: 'caret' } }).body).not.toMatch(/class="[^"]*\bopen\b/);
+		const style = styleOf(readFileSync(join(__dirname, 'RowMark.svelte'), 'utf8'));
+		const flip = declarations(style).find((d) => d.selector === '.caret.open' && d.prop === 'transform');
+		expect(flip?.value).toBe('rotate(180deg)');
+		// Shut it is unturned: it points down as drawn.
+		expect(declarations(style).filter((d) => d.selector === '.caret' && d.prop === 'transform')).toEqual([]);
 	});
 
-	it('is one fixed size, 16px, and takes no size prop', () => {
+	it('is one fixed size, 20px in secondary text, and takes no size prop', () => {
 		const style = styleOf(readFileSync(join(__dirname, 'RowMark.svelte'), 'utf8'));
 		const mark = declarations(style).filter((d) => d.selector === '.row-mark');
 		const val = (p: string) => mark.find((d) => d.prop === p)?.value;
-		expect(val('width')).toBe('16px');
-		expect(val('height')).toBe('16px');
+		expect(val('width')).toBe('20px');
+		expect(val('height')).toBe('20px');
+		expect(val('color')).toBe('var(--color-text-secondary)');
 		expect(render(RowMark, { props: { kind: 'arrow', size: 40 } as never }).body).not.toContain('40px');
 	});
 });

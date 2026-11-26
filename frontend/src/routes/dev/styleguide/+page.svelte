@@ -32,6 +32,7 @@
 	import BarbuteMark from '$lib/components/shared/BarbuteMark.svelte';
 	import Checkbox from '$lib/components/shared/Checkbox.svelte';
 	import ChecklistRow from '$lib/components/shared/ChecklistRow.svelte';
+	import HelpDisclosure from '$lib/components/shared/HelpDisclosure.svelte';
 	import Chip from '$lib/components/shared/Chip.svelte';
 	import ClockMark from '$lib/components/shared/ClockMark.svelte';
 	import DieMark from '$lib/components/shared/DieMark.svelte';
@@ -612,7 +613,7 @@
 				<span class="with-dot">Chat <NewDot /></span>
 				<NewDot />
 			</Cell>
-			<Cell label="RowMark · caret (shut, open) expands; arrow opens elsewhere">
+			<Cell label="RowMark · 20px: caret (shut, open) expands here; arrow opens elsewhere">
 				<RowMark kind="caret" />
 				<RowMark kind="caret" open />
 				<RowMark kind="arrow" />
@@ -832,9 +833,49 @@
 	<Section
 		id="rows"
 		title="Rows"
-		blurb="A tappable row is a plain line with a hairline beneath it. Its caret or arrow is the only sign that it can be pressed; there is no box and no fill. A caret expands in place, an arrow opens something elsewhere, and neither means there is nothing to do."
+		blurb="A tappable row is a plain line with a hairline beneath it. Its mark is the only sign that it can be pressed; there is no box and no fill. A chevron pointing down (up when open) expands in place; a chevron pointing right opens something elsewhere. A disclosure's line sits under the row while it is shut and moves under the content when it opens, so the line shows where the open content ends."
 	>
 		<div class="specimens wide">
+			<Cell label="Disclosure · shut, then open: the line moves under the content, nothing is filled">
+				<div class="list">
+					<ChecklistRow id="sg-dis-shut" title="Shut: the line is under the row" action="expand">
+						<p class="muted-text">Not shown.</p>
+					</ChecklistRow>
+					<ChecklistRow id="sg-dis-open" title="Open: the line is under this" action="expand" defaultOpen>
+						<p class="muted-text">The content, and then the line.</p>
+					</ChecklistRow>
+				</div>
+			</Cell>
+			<Cell label="The two marks side by side: opens here (⌄, flips up) and opens elsewhere (›)">
+				<div class="list">
+					<ChecklistRow id="sg-mark-here" title="Opens here" action="expand" />
+					<ChecklistRow title="Opens elsewhere" action="navigate" />
+				</div>
+			</Cell>
+			<Cell label="HelpDisclosure · the explainer: the deep-gold ? and the title in main text, shut and open">
+				<div class="list">
+					<HelpDisclosure id="sg-help-shut" title="What can happen?">
+						<p class="muted-text">Not shown.</p>
+					</HelpDisclosure>
+					<HelpDisclosure id="sg-help-open" title="How the rankings work" defaultOpen>
+						<p class="muted-text">What the step does, in a line or two.</p>
+					</HelpDisclosure>
+				</div>
+			</Cell>
+			<Cell label="FinishedStep · a finished line with a detail opens the same way">
+				<div class="list">
+					<FinishedStep>
+						{#snippet mark()}<DieMark label="a die" />{/snippet}
+						Rolled a make
+						{#snippet detail()}The dice, and the line under them.{/snippet}
+					</FinishedStep>
+					<FinishedStep open>
+						{#snippet mark()}<DieMark label="a die" />{/snippet}
+						Rolled a make
+						{#snippet detail()}The dice, and the line under them.{/snippet}
+					</FinishedStep>
+				</div>
+			</Cell>
 			<Cell label="ChecklistRow · expands (shut, open), opens elsewhere, nothing to do">
 				<div class="list">
 					<ChecklistRow

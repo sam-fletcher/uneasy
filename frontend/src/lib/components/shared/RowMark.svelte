@@ -2,26 +2,28 @@
   RowMark.svelte — the mark at the end of a tappable row. Two marks, two
   meanings, and they must never be mistaken for each other:
 
-      kind="caret"   a filled triangle: tapping EXPANDS the row in place.
-                     `open` says which way it faces (down when open, right
-                     when shut), and it turns between the two.
-      kind="arrow"   a stroked chevron: tapping OPENS SOMETHING ELSEWHERE (a
-                     sheet, another pane, a table). It is deliberately drawn
-                     larger and thinner than the caret.
+      kind="caret"   a chevron that points DOWN: tapping EXPANDS the row in
+                     place. `open` flips it to point up (a 180° turn), so the
+                     direction says which way the row will go next.
+      kind="arrow"   a chevron that points RIGHT (›): tapping OPENS SOMETHING
+                     ELSEWHERE (a sheet, another pane, a table).
+
+  Down and up mean "here"; right means "elsewhere". The first version drew the
+  caret as a filled triangle that turned right when shut, which pointed the
+  same way as the arrow and blurred the two (Round 7, 2026-11-25).
 
   A row with nothing to do carries neither. Pick by what happens, never by how
   important the row is: a caret on a row that opens a sheet is a lie.
 
-  Both are drawn from paths, not typed as ▾ and ›: the typed characters came
-  from a different font on every platform, so their weight and size varied.
-  Always 16px: the same size as the glyph slot at the start of a row, so a row
-  has one mark size. Faint by default, because the mark is a hint and the row's
-  text is the content; a parent can recolour it with `color`.
+  Both are stroked paths, not typed as ▾ and ›: the typed characters came from
+  a different font on every platform, so their weight and size varied. Always
+  20px and secondary text colour: the mark is the only thing that says a row
+  can be pressed, so it has to be seen. A parent can recolour it with `color`.
 -->
 <script lang="ts">
 	interface Props {
 		kind: 'caret' | 'arrow';
-		/** Caret only: true faces down (expanded), false faces right (shut). */
+		/** Caret only: true points up (expanded), false points down (shut). */
 		open?: boolean;
 	}
 
@@ -35,43 +37,39 @@
 	data-kind={kind}
 	aria-hidden="true"
 >
-	{#if kind === 'caret'}
-		<svg viewBox="0 0 24 24" fill="currentColor">
-			<path d="M5 8h14l-7 9z" />
-		</svg>
-	{:else}
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
+	<svg
+		viewBox="0 0 24 24"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="2"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+	>
+		{#if kind === 'caret'}
+			<path d="M6 9l6 6 6-6" />
+		{:else}
 			<path d="M9 5.5l6.5 6.5L9 18.5" />
-		</svg>
-	{/if}
+		{/if}
+	</svg>
+
 </span>
 
 <style>
 	.row-mark {
 		display: inline-flex;
 		flex: none;
-		width: 16px;
-		height: 16px;
-		color: var(--color-text-faint);
+		width: 20px;
+		height: 20px;
+		color: var(--color-text-secondary);
 	}
 	.row-mark svg {
 		display: block;
 		width: 100%;
 		height: 100%;
 	}
-	/* A shut caret faces right; opening swings it down. */
-	.caret {
-		transform: rotate(-90deg);
-		transition: transform 0.15s ease;
-	}
-	.caret.open { transform: rotate(0); }
+	/* A shut caret points down; opening flips it to point up. */
+	.caret { transition: transform 0.15s ease; }
+	.caret.open { transform: rotate(180deg); }
 	/* Reduced motion removes the travel, not the feedback: the caret still
 	   changes direction, it just doesn't turn on the way. */
 	@media (prefers-reduced-motion: reduce) {

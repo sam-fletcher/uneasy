@@ -793,7 +793,12 @@
 			{@const isExpanded = isSceneExpanded(item)}
 			{@const plan = item.resolvingPost ? planInfoFor(item.planID) : null}
 			{@const banner = item.startPost ? item.startPost.body : 'Scene in progress (earlier posts not loaded)'}
-			<div class="scene-group span" class:plan-scene={item.resolvingPost != null}>
+			<div
+				class="scene-group span"
+				class:plan-scene={item.resolvingPost != null}
+				class:disclosure={!live}
+				class:has-body={isExpanded && !live}
+			>
 				<!-- A plan-scene folds its resolution span in rather than nesting two
 				     containers (hierarchy-plan S3): the header is the plan's (its mark,
 				     name, preparer, status) and the scene's own banner becomes the first
@@ -817,10 +822,11 @@
 					expanded={isExpanded}
 					locked={live}
 					unread={item.unreadCount > 0}
+					aria-controls={isExpanded && !live ? `span-body-scene-${item.sceneID}` : undefined}
 					onclick={() => toggleSceneExpanded(item)}
 				/>
 				{#if plan || data?.prompt || (data && data.participants.length > 0) || isExpanded || item.outcomePost}
-					<div class="span-body">
+					<div class="span-body" id={`span-body-scene-${item.sceneID}`}>
 						{#if plan && item.resolvingPost}
 							<div
 								class="scene-banner"
@@ -856,7 +862,7 @@
 		{:else if item.kind === 'plan-group'}
 			{@const isExpanded = isPlanExpanded(item)}
 			{@const plan = planInfoFor(item.planID)}
-			<div class="plan-group span">
+			<div class="plan-group span disclosure" class:has-body={isExpanded && item.items.length > 0}>
 				<!-- Unlike a live scene (which the server confirms is still running, and
 				     so locks open), an open span may equally mean the window was truncated
 				     before the terminal post — so it stays foldable. It carries a caret
@@ -874,10 +880,11 @@
 					expanded={isExpanded}
 					caret={item.items.length > 0}
 					unread={item.unreadCount > 0}
+					aria-controls={isExpanded && item.items.length > 0 ? `span-body-plan-${item.planID}` : undefined}
 					onclick={() => togglePlanExpanded(item)}
 				/>
 				{#if (isExpanded && item.items.length > 0) || item.outcomePost}
-					<div class="span-body">
+					<div class="span-body" id={`span-body-plan-${item.planID}`}>
 						{#if isExpanded}
 							{#each item.items as inner (inner.key)}
 								{@render feedEntry(inner, inScene)}
@@ -1416,6 +1423,17 @@
 	.span {
 		display: flex;
 		flex-direction: column;
+	}
+
+	/* An open span is a disclosure (tapRow.css): the line under the header moves
+	   to the foot of the span, so the line marks where the open lines end. The
+	   body's hanging rule runs down to it and meets it, so the body takes the
+	   foot's breathing room as its own padding rather than leaving a gap. */
+	.span.has-body {
+		border-bottom: 1px solid var(--color-border);
+	}
+	.span.has-body > .span-body {
+		padding-bottom: var(--space-3);
 	}
 
 	.span-body {

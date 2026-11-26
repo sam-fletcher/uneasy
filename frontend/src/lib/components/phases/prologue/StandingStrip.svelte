@@ -16,6 +16,8 @@
 <script lang="ts">
 	import '$lib/components/shared/trackCode.css';
 	import TrackBoard from './TrackBoard.svelte';
+	import RowMark from '$lib/components/shared/RowMark.svelte';
+	import '$lib/components/shared/tapRow.css';
 	import type { Player, PlayerCardRow, Ranking, CommittedHeart, TrackDone, PrologueTrack } from '$lib/api';
 	import { computeFinalSlots, openRanksForCount } from '$lib/prologue/refund';
 	import { trackCode } from '$lib/prologue/choosing';
@@ -84,21 +86,24 @@
 	);
 </script>
 
-<section class="standing">
-	<!-- The whole row is the control, matching the other two expandables on
-	     this page (.sheet-header and the help disclosure, both full-width
-	     buttons). It used to be a div whose only interactive part was the
-	     83.5px toggle — 21% of a 391.6px row — with the "Your standing" label
-	     sitting outside the target entirely. -->
+<section class="standing disclosure" class:has-body={boardOpen}>
+	<!-- The whole row is the control, as on the page's other disclosures
+	     (.sheet-header and the help row, both full-width tap rows). It used to
+	     be a div whose only interactive part was the 83.5px toggle — 21% of a
+	     391.6px row — with the "Your standing" label sitting outside the
+	     target entirely. -->
 	<button
 		type="button"
-		class="standing-head"
+		class="tap-row standing-head"
 		aria-expanded={boardOpen}
 		aria-controls={boardOpen ? 'standing-board' : undefined}
 		onclick={() => (boardOpen = !boardOpen)}
 	>
 		<span class="standing-label">Your standing</span>
-		<span class="standing-toggle">{boardOpen ? 'hide board' : 'full board'} ▾</span>
+		<span class="standing-toggle">
+			{boardOpen ? 'hide board' : 'full board'}
+			<RowMark kind="caret" open={boardOpen} />
+		</span>
 	</button>
 
 	<!-- Suppressed while the board is open: the board's own "ANY still in hand"
@@ -154,13 +159,17 @@
 </section>
 
 <style>
+	/* A disclosure (tapRow.css), not a box: the row at the top opens the full
+	   board at the foot. The strip sits between the two, so the closing line is
+	   the one under the whole unit (this border) rather than under the head: it
+	   is under the strip while shut and under the board when open. The head's
+	   own line is therefore switched off below. */
 	.standing {
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 0.5rem 0.7rem;
+		border-bottom: 1px solid var(--color-border);
+		padding: 0.5rem 0;
 
 		/* The board's column metrics, set here because this is the one place
 		   the two have to agree: .standing-row is the board's header row, so
@@ -172,35 +181,20 @@
 		--board-gutter: 0.95rem;
 		--board-col-gap: 0.4rem;
 	}
-	/* 0.75rem of text, but a 44px tap box: the min-height grows the target and
-	   the matching negative block margin keeps the head row exactly 18px tall,
-	   unchanged from when only the toggle carried this (the same idiom as the
-	   header's member pills). The negative INLINE margin is the part that makes
-	   the whole row the target — it bleeds back out through the card's 0.7rem
-	   padding so the tappable area runs edge to edge. The downward bleed lands
-	   on the Esteem micro-track, which isn't interactive — and a mis-tap there
-	   opens the board, i.e. the detail view of the thing tapped. */
+	/* 0.75rem of text, but a 44px tap box (the .tap-row floor): the
+	   min-height grows the target and the matching negative block margin keeps
+	   the head row exactly 18px tall, unchanged from when only the toggle
+	   carried this (the same idiom as the header's member pills). The card has
+	   no side padding now, so the row already runs edge to edge. The downward
+	   bleed lands on the Esteem micro-track, which isn't interactive — and a
+	   mis-tap there opens the board, i.e. the detail view of the thing tapped.
+	   Hover and the focus ring are tapRow.css's. */
 	.standing-head {
-		display: flex;
-		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
-		width: calc(100% + 1.4rem);
-		min-height: 44px;
 		margin-block: -13px;
-		margin-inline: -0.7rem;
-		padding: 0 0.7rem;
-		background: none;
-		border: none;
-		border-radius: 8px;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.standing-head:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: -2px;
+		padding: 0;
+		border-bottom: 0;
 	}
 	/* Parchment rather than the usual muted grey for a section label: the row
 	   below is now uppercase too, and at 0.68rem/0.62rem two muted uppercase
@@ -213,7 +207,10 @@
 		letter-spacing: 0.1em;
 	}
 	.standing-toggle {
-		color: var(--color-accent);
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		color: var(--color-text-secondary);
 		font-size: 0.75rem;
 		flex: none;
 	}
