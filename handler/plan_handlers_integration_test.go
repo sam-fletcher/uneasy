@@ -197,7 +197,7 @@ func TestSpreadRumors_RejectsNoTarget(t *testing.T) {
 	assert.NotEmpty(t, errMsg)
 }
 
-func TestSpreadRumors_RejectsNoNotes(t *testing.T) {
+func TestSpreadRumors_AcceptsNoNotes(t *testing.T) {
 	pool := openTestDB(t)
 	q := dbgen.New(pool)
 	tg := newTestGame(t, q, 2)
@@ -221,7 +221,7 @@ func TestSpreadRumors_RejectsNoNotes(t *testing.T) {
 		TargetAssetID: &asset.ID,
 	}
 	_, errMsg := srHandler{}.ValidatePreparation(ctx, vc)
-	assert.NotEmpty(t, errMsg)
+	assert.Empty(t, errMsg, "an open rumor may be left unwritten at preparation (stated at the pre-roll)")
 }
 
 func TestSpreadRumors_AcceptsWithTargetAndNotes(t *testing.T) {

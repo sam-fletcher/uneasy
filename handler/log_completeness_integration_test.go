@@ -384,23 +384,6 @@ func TestLog_ProposeDecree_AmendmentAddendumAndFinalLawAreQuoted(t *testing.T) {
 		"the enactment post carries the assembled law, rider included")
 }
 
-func TestLog_ProposeDecree_BlankAddendumIsStillAnnounced(t *testing.T) {
-	h := newPlanLifecycle(t, 3)
-	plan := pdPrepareAndResolve(t, h, 2)
-	pd := pdData(t, h, plan.ID)
-	sigIdx := pdPlayerIdx(t, h, *pd.SignatoryID)
-	roll := pdCallRoll(t, h, plan.ID, sigIdx)
-	h.forceRoll(roll.ID, "mar", roll.Difficulty-1)
-	pd = pdData(t, h, plan.ID)
-	for _, amenderID := range pd.AmendmentOrder {
-		code, body := h.post(pdPlayerIdx(t, h, amenderID), planPath(plan.ID, "skip-amend"), nil)
-		require.Equalf(t, http.StatusOK, code, "skip: %v", body)
-	}
-	code, body := h.post(sigIdx, planPath(plan.ID, "set-addendum"), map[string]any{"connector": "", "addendum": ""})
-	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
-	logWith(t, h, h.mark(sigIdx), "without an addendum")
-}
-
 // ── Spread Rumors ────────────────────────────────────────────────────────────
 
 // srTakeRequest drives Spread Rumors (preparer = focus, victim = next player)

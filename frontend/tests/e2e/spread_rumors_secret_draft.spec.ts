@@ -42,10 +42,10 @@ test("a rumor's text is never sent to a watcher: typed first, ticked after, or u
 
 	const aliceBox = alice.getByRole('textbox', { name: 'Rumor', exact: true });
 	const carolBox = carol.getByRole('textbox', { name: 'Rumor', exact: true });
-	const writing = carol.getByText('alice is writing the rumor.');
+	const writing = carol.getByText('alice is preparing the rumor.');
 	const keptSecret = carol.getByText('Kept secret for now. Only alice can read it.');
 
-	// Typing an open rumor: carol is told it is being written, and is given no box to read it in.
+	// Typing an open rumor: carol is told it is being prepared, and is given no box to read it in.
 	await aliceBox.fill(RUMOR);
 	await alice.waitForTimeout(800); // a draft is sent 150ms after the last change
 	await expect(writing).toBeVisible({ timeout: 10_000 });

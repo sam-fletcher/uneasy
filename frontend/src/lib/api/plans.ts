@@ -631,18 +631,17 @@ export function skipAmend(planID: number): Promise<PlanEcho> {
 
 /**
  * Propose Decree — the signatory places their addendum: an "and"/"but"
- * connector plus optional free text. This is a required blocking step; pass a
- * blank addendum (and omit the connector) to place an empty rider. The
- * connector is required only when addendum text is provided.
+ * connector plus free text. Both are required: the book puts the law in force
+ * "after the signatory adds an addendum" (p.47), and the server refuses a blank.
  */
 export function setAddendum(
 	planID: number,
 	addendum: string,
-	connector?: 'and' | 'but',
+	connector: 'and' | 'but',
 ): Promise<PlanEcho> {
 	return apiFetch(`/plans/${planID}/set-addendum`, {
 		method: 'POST',
-		body: JSON.stringify({ addendum, connector: connector ?? '' }),
+		body: JSON.stringify({ addendum, connector }),
 	});
 }
 

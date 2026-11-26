@@ -179,7 +179,7 @@ func TestProposeDecree_MarStaysOpenUntilTheLawIsEnacted(t *testing.T) {
 		require.Equalf(t, http.StatusOK, code, "amend: %v", body)
 	}
 	code, body := h.post(preparerIdx, "/api/plans/"+strconv.FormatInt(plan.ID, 10)+"/set-addendum",
-		map[string]any{"connector": "", "addendum": ""})
+		map[string]any{"connector": "and", "addendum": "so be it"})
 	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
 
 	assert.Equal(t, model.PlanResolving, mustPlan(t, h, plan.ID).Status,

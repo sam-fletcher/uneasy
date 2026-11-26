@@ -253,9 +253,19 @@ test('make: the signatory\'s addendum, then the preparer names the resource; the
 	expect((await act(g, 'alice', planID, 'amend-decree', { text: 'x' })).status()).toBe(409);
 	expect(await lawCount(g)).toBe(1); // the seed's sample law only: nothing enacted yet
 
+	// The addendum is required (book p.47): a blank is refused, and the button waits for text.
+	expect((await act(g, 'alice', planID, 'set-addendum', { connector: 'and', addendum: '  ' })).status()).toBe(400);
+	await expect(alice.getByRole('button', { name: 'Place addendum' })).toBeDisabled();
+	// Set SHOTS=<dir> to keep a screenshot of the step as the signatory and as a watcher.
+	if (process.env.SHOTS) {
+		for (const page of [alice, bob]) await page.setViewportSize({ width: 375, height: 1800 });
+		await alice.screenshot({ path: `${process.env.SHOTS}/decree-addendum-alice.png`, fullPage: true });
+		await bob.screenshot({ path: `${process.env.SHOTS}/decree-addendum-bob.png`, fullPage: true });
+	}
+
 	// The addendum, through the form: pick "but", write the rider.
 	await alice.getByRole('button', { name: 'but', exact: true }).click();
-	await alice.getByPlaceholder('a simple phrase. (optional)').fill('salt is exempt');
+	await alice.getByPlaceholder('a simple phrase.').fill('salt is exempt');
 	await alice.getByRole('button', { name: 'Place addendum' }).click();
 
 	// Now the preparer enacts; the others wait on her. The enact button stays
@@ -371,7 +381,7 @@ test('mar: the council amends lowest power first, one at a time; the law is enac
 	await bob.getByRole('button', { name: 'Leave unchanged' }).click();
 
 	// bob signs: an addendum, then alice enacts — on a mar there's no resource form.
-	await bob.getByPlaceholder('a simple phrase. (optional)').fill('the Queen consents');
+	await bob.getByPlaceholder('a simple phrase.').fill('the Queen consents');
 	await bob.getByRole('button', { name: 'Place addendum' }).click();
 	await expect(alice.getByText('The law above takes effect (no resource on a mar).')).toBeVisible();
 	await expectHeading(carol, 'Waiting on alice. Enact the law');
@@ -444,7 +454,7 @@ test('monarch: the crown-bearer signs and sits on the council even at the lowest
 	await expect(carol.getByText('The addendum', { exact: true })).toBeVisible();
 	await expectHeading(alice, 'Waiting on carol. Place the addendum');
 	expect((await act(g, 'alice', planID, 'set-addendum', { connector: 'and', addendum: 'alice signs' })).status()).toBe(403);
-	await carol.getByPlaceholder('a simple phrase. (optional)').fill('by the crown\'s leave');
+	await carol.getByPlaceholder('a simple phrase.').fill('by the crown\'s leave');
 	await carol.getByRole('button', { name: 'Place addendum' }).click();
 	await expect(alice.getByRole('button', { name: 'Enact the law' })).toBeVisible();
 	await actOK(g, 'alice', planID, 'enact-law', { resource_name: 'Crown Charter', resource_marginalia: ['Sealed in wax'] });

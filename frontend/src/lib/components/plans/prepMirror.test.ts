@@ -176,7 +176,7 @@ describe("Spread Rumors: a watcher never sees the rumor's text as it is typed", 
 	// The preparer's draft is read by the whole table, and a rumor's text may become a secret
 	// (the box can be ticked after it is typed), so the draft never carries it. A watcher's
 	// mirror says what is going on where the text box would be: the rumor is kept secret, or
-	// the preparer is writing it. Either way an empty box would read as an unwritten rumor.
+	// the preparer is preparing it. Either way an empty box would read as an unwritten rumor.
 	// The lines are read straight from the draft, so they are in these renders even though
 	// what a mirror copies from it in an effect is not.
 	const SECRET_DRAFT = { filter_owner_id: TARGET, target_asset_id: 11, keep_secret: true, secret_asset_id: 10 };
@@ -190,23 +190,23 @@ describe("Spread Rumors: a watcher never sees the rumor's text as it is typed", 
 		expect(html).not.toContain('<textarea');
 	});
 
-	it('is told an open rumor is being written, and by whom, instead of being shown a text box', () => {
+	it('is told an open rumor is being prepared, and by whom, instead of being shown a text box', () => {
 		const html = render_(BYSTANDER, OPEN_DRAFT);
-		expect(text(html)).toContain('alice is writing the rumor.');
+		expect(text(html)).toContain('alice is preparing the rumor.');
 		expect(text(html)).not.toContain('Kept secret');
 		expect(html).not.toContain('<textarea');
 	});
 
 	it('is told the same while the preparer has not started the form', () => {
 		const html = render_(BYSTANDER, null);
-		expect(text(html)).toContain('alice is writing the rumor.');
+		expect(text(html)).toContain('alice is preparing the rumor.');
 		expect(html).not.toContain('<textarea');
 	});
 
 	it("the preparer's own form keeps its text box and shows neither line", () => {
 		const html = render_(PREPARER, null);
 		expect(html).toContain('<textarea');
-		expect(text(html)).not.toContain('is writing the rumor');
+		expect(text(html)).not.toContain('is preparing the rumor');
 		expect(text(html)).not.toContain('Kept secret for now. Only');
 	});
 });

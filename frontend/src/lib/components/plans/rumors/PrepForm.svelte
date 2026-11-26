@@ -1,6 +1,7 @@
 <!-- Rumors/PrepForm.svelte
   Prep: target asset (any asset at the table) + the rumor text (a DRAFT, and
-  optionally kept secret for now).
+  optionally kept secret for now). An open rumor's text may be left blank and stated
+  at the pre-roll; a secret one needs its words.
 
   The rumor's text never goes into the live draft (lib/plans/prepDraft.ts): the draft
   is read by the whole table as it is typed, and the box that keeps the rumor secret
@@ -97,7 +98,10 @@
 	async function submitPrep() {
 		if (prepBusy) return;
 		if (prepTargetAssetID == null) { prepError = 'Pick the asset the rumor is about.'; return; }
-		if (!prepNotes.trim()) { prepError = 'Describe the rumor.'; return; }
+		// An open rumor may be left unwritten: it is stated at the pre-roll (book p.59;
+		// rulings, Spread Rumors, 2026-11-26). A secret one always has words, so the
+		// server refuses it blank too.
+		if (prepKeepSecret && !prepNotes.trim()) { prepError = 'Write the rumor you are keeping secret.'; return; }
 		if (prepKeepSecret && prepSecretAssetID == null) {
 			prepError = 'Pick one of your assets to hide the rumor under.'; return;
 		}
@@ -176,7 +180,7 @@
 				{#if mirrorKeptSecret}
 					Kept secret for now. Only <PlayerName {players} id={ctx.focusPlayerID} /> can read it.
 				{:else}
-					<PlayerName {players} id={ctx.focusPlayerID} /> is writing the rumor.
+					<PlayerName {players} id={ctx.focusPlayerID} /> is preparing the rumor.
 				{/if}
 			</p>
 		{:else}
@@ -185,7 +189,7 @@
 				<textarea rows={3} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
 					placeholder={prepKeepSecret
 						? 'Write the rumor — only you will see it until you spread it.'
-						: 'What are people starting to say?'}></textarea>
+						: 'What are people starting to say? You can leave it until the roll.'}></textarea>
 			</label>
 		{/if}
 
@@ -217,8 +221,8 @@
 		{#if !readOnly}
 			<div class="form-actions">
 				<button class="action-btn primary" onclick={submitPrep}
-					disabled={prepBusy || prepTargetAssetID == null || !prepNotes.trim()
-						|| (prepKeepSecret && prepSecretAssetID == null)}>
+					disabled={prepBusy || prepTargetAssetID == null
+						|| (prepKeepSecret && (!prepNotes.trim() || prepSecretAssetID == null))}>
 					{prepBusy ? '…' : 'Prepare Plan'}
 				</button>
 			</div>

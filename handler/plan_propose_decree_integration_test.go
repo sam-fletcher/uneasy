@@ -243,7 +243,7 @@ func TestProposeDecree_Enact_CreatesNamedResource(t *testing.T) {
 
 	// Signatory (here the preparer/Monarch) places the addendum first.
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
-	code, body := h.post(preparerIdx, addPath, map[string]any{"connector": "", "addendum": ""})
+	code, body := h.post(preparerIdx, addPath, map[string]any{"connector": "and", "addendum": "so be it"})
 	require.Equalf(t, http.StatusOK, code, "set-addendum: %v", body)
 
 	// No resource exists before enactment.
@@ -341,10 +341,10 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 	code, body = h.post(preparerIdx, completePath, nil)
 	require.Equalf(t, http.StatusConflict, code, "complete should block pre-addendum: %v", body)
 
-	// Signatory places a blank addendum (allowed — required step, optional text).
+	// Signatory places the addendum (required on a mar as on a make).
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
-	code, body = h.post(sigIdx, addPath, map[string]any{"connector": "", "addendum": ""})
-	require.Equalf(t, http.StatusOK, code, "blank addendum: %v", body)
+	code, body = h.post(sigIdx, addPath, map[string]any{"connector": "and", "addendum": "so be it"})
+	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
 
 	// The preparer enacts (no resource on a mar); this auto-resolves the plan.
 	pdEnact(t, h, plan.ID, "")
@@ -357,7 +357,8 @@ func TestProposeDecree_Mar_AmendChainThenAddendum(t *testing.T) {
 	require.NotEmpty(t, laws, "a law row should still be created on a mar")
 	law := laws[len(laws)-1]
 	assert.Equal(t, "Amended body v2", law.Text, "final body is the last amender's text")
-	assert.Nil(t, law.Addendum, "blank addendum leaves the rider empty")
+	require.NotNil(t, law.Addendum)
+	assert.Equal(t, "and so be it", *law.Addendum, "the rider is the connector and the addendum")
 	assert.Equal(t, assetsBefore, pdResourceCount(t, h), "a marred decree creates NO resource asset")
 }
 
@@ -468,7 +469,7 @@ func TestProposeDecree_Make_ResourceOwnedByPreparer(t *testing.T) {
 	// Signatory places the addendum; the preparer then enacts and names the
 	// resource (which is owned by the preparer, not the signatory).
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
-	code, body := h.post(sigIdx, addPath, map[string]any{"connector": "", "addendum": ""})
+	code, body := h.post(sigIdx, addPath, map[string]any{"connector": "and", "addendum": "so be it"})
 	require.Equalf(t, http.StatusOK, code, "set-addendum: %v", body)
 	pdEnact(t, h, plan.ID, "The Spoils")
 
@@ -530,7 +531,7 @@ func TestProposeDecree_SkipAmend_AdvancesChain(t *testing.T) {
 
 	// Chain complete: signatory addenda, preparer enacts (auto-resolves).
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
-	code, body = h.post(pdPlayerIdx(t, h, *pd.SignatoryID), addPath, map[string]any{"connector": "", "addendum": ""})
+	code, body = h.post(pdPlayerIdx(t, h, *pd.SignatoryID), addPath, map[string]any{"connector": "and", "addendum": "so be it"})
 	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
 	pdEnact(t, h, plan.ID, "")
 
@@ -589,7 +590,7 @@ func TestProposeDecree_Waitees_NamesSignatoryAndAmenders(t *testing.T) {
 	h.assertWaitees("addendum", model.RowStatePlanResolving, sigID)
 
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
-	code, body = h.post(pdPlayerIdx(t, h, sigID), addPath, map[string]any{"connector": "", "addendum": ""})
+	code, body = h.post(pdPlayerIdx(t, h, sigID), addPath, map[string]any{"connector": "and", "addendum": "so be it"})
 	require.Equalf(t, http.StatusOK, code, "addendum: %v", body)
 
 	// Addendum placed → the preparer enacts the law (which auto-completes).
@@ -654,7 +655,7 @@ func TestProposeDecree_DebateGate(t *testing.T) {
 	// The law is enacted only after the signatory's addendum and the preparer's
 	// enact-law.
 	addPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/set-addendum"
-	code, body = h.post(pdPlayerIdx(t, h, sigID), addPath, map[string]any{"connector": "", "addendum": ""})
+	code, body = h.post(pdPlayerIdx(t, h, sigID), addPath, map[string]any{"connector": "and", "addendum": "so be it"})
 	require.Equalf(t, http.StatusOK, code, "set-addendum: %v", body)
 	pdEnact(t, h, plan.ID, "Tax relief fund")
 	laws, err := h.q.ListLaws(context.Background(), h.tg.Game.ID)
@@ -935,9 +936,9 @@ func TestProposeDecree_PerformStepsSkipsThirdPartyRoles(t *testing.T) {
 
 	// set-addendum is the SIGNATORY's role — a third party here — so the winner
 	// cannot sign; only the signatory may.
-	code, _ = h.post(demanderIdx, addPath, map[string]any{"connector": "", "addendum": ""})
+	code, _ = h.post(demanderIdx, addPath, map[string]any{"connector": "and", "addendum": "so be it"})
 	require.Equal(t, http.StatusForbidden, code, "the winner cannot sign a third-party signatory's addendum")
-	code, body := h.post(sigIdx, addPath, map[string]any{"connector": "", "addendum": ""})
+	code, body := h.post(sigIdx, addPath, map[string]any{"connector": "and", "addendum": "so be it"})
 	require.Equalf(t, http.StatusOK, code, "the third-party signatory signs as themselves: %v", body)
 
 	// enact-law IS the preparer's role: the preparer is locked out; the winner enacts.
@@ -949,4 +950,65 @@ func TestProposeDecree_PerformStepsSkipsThirdPartyRoles(t *testing.T) {
 	resolved, err := h.q.GetPlanByID(ctx, plan.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.PlanResolved, resolved.Status, "enact-law auto-resolves the marred decree")
+}
+
+// The signatory's addendum is required, on a make and on a mar: the book puts the
+// law in force "after the signatory adds an addendum" (p.47; rulings, Propose
+// Decree, owner 2026-11-26). A blank is refused with a 400, and refusing it
+// changes nothing: no addendum is recorded and nothing is logged, so the
+// signatory can still write one.
+func TestProposeDecree_Addendum_BlankIsRefused(t *testing.T) {
+	for _, outcome := range []string{makeOutcome, marOutcome} {
+		t.Run(outcome, func(t *testing.T) {
+			h := newPlanLifecycle(t, 3)
+			ctx := context.Background()
+
+			var plan dbgen.Plan
+			var sigIdx int
+			resource := "" // a make names the resource its law creates; a mar creates none
+			if outcome == makeOutcome {
+				// The Monarch prepares and signs; nobody outranks them.
+				plan = pdPrepareAndResolve(t, h, 0)
+				sigIdx = h.preparerIdxFor(plan.ID)
+				resource = "Salt Tax"
+				pdDeclineRemaining(t, h, plan.ID)
+				roll := pdCallRoll(t, h, plan.ID, sigIdx)
+				h.forceRoll(roll.ID, makeOutcome, roll.Difficulty)
+			} else {
+				plan = pdPrepareAndResolve(t, h, 2)
+				pd := pdData(t, h, plan.ID)
+				sigIdx = pdPlayerIdx(t, h, *pd.SignatoryID)
+				roll := pdCallRoll(t, h, plan.ID, sigIdx)
+				h.forceRoll(roll.ID, marOutcome, roll.Difficulty-1)
+				for _, amenderID := range pdData(t, h, plan.ID).AmendmentOrder {
+					code, body := h.post(pdPlayerIdx(t, h, amenderID), planPath(plan.ID, "skip-amend"), nil)
+					require.Equalf(t, http.StatusOK, code, "skip-amend: %v", body)
+				}
+			}
+
+			for name, req := range map[string]map[string]any{
+				"blank":                  {"connector": "", "addendum": ""},
+				"blank with a connector": {"connector": "and", "addendum": ""},
+				"only spaces":            {"connector": "but", "addendum": "   \n "},
+				"text with no connector": {"connector": "", "addendum": "salt is exempt"},
+			} {
+				code, body := h.post(sigIdx, planPath(plan.ID, "set-addendum"), req)
+				assert.Equalf(t, http.StatusBadRequest, code, "%s must be refused: %v", name, body)
+			}
+			pd := pdData(t, h, plan.ID)
+			assert.False(t, pd.AddendumPlaced, "a refused addendum places nothing")
+			assert.False(t, anyContains(gamePostBodies(t, h), "placed the signatory's addendum"), "a refused addendum logs nothing")
+
+			// The step is still open: a real addendum goes through and the law is enacted with it.
+			code, body := h.post(sigIdx, planPath(plan.ID, "set-addendum"),
+				map[string]any{"connector": "but", "addendum": "salt is exempt"})
+			require.Equalf(t, http.StatusOK, code, "a written addendum: %v", body)
+			pdEnact(t, h, plan.ID, resource)
+			laws, err := h.q.ListLaws(ctx, h.tg.Game.ID)
+			require.NoError(t, err)
+			require.NotEmpty(t, laws)
+			require.NotNil(t, laws[len(laws)-1].Addendum)
+			assert.Equal(t, "but salt is exempt", *laws[len(laws)-1].Addendum)
+		})
+	}
 }

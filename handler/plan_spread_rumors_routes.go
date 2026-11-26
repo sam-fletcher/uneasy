@@ -195,6 +195,11 @@ func stashSecretRumor(
 	gameID, preparerID, secretAssetID int64,
 	plan *dbgen.Plan,
 ) (*dbgen.Asset, error) {
+	// A secret always has words: only an open rumor may be left unwritten at
+	// preparation (book p.59; rulings, Spread Rumors, owner 2026-11-26).
+	if plan.PreparationNotes == nil || strings.TrimSpace(*plan.PreparationNotes) == "" {
+		return nil, httpErr(http.StatusBadRequest, "a secret rumor needs its text: write the rumor, or leave it open")
+	}
 	secretAsset, err := q.GetAssetByID(ctx, secretAssetID)
 	if err != nil || secretAsset.GameID != gameID || secretAsset.OwnerID != preparerID || secretAsset.IsDestroyed {
 		return nil, httpErr(http.StatusBadRequest, "secret asset must be one of your own intact assets")
