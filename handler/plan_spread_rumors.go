@@ -8,7 +8,9 @@ package handler
 //   - Any other asset:            preparer's rank on the esteem track
 //
 // Preparing: target_asset_id required; preparation_notes holds the rumor text —
-// a DRAFT (principle 2). It may be kept secret for now (text in a Secret).
+// a DRAFT (principle 2) that may be left blank for an open rumor (stated at the
+// pre-roll instead). It may be kept secret for now (text in a Secret), and then
+// the text is required.
 //
 // Pre-roll: OnResolve parks the plan with no roll. The preparer states the rumor
 // and how it is spreading via sr-cast-roll, which posts that narration publicly,
@@ -102,9 +104,12 @@ func (srHandler) ValidatePreparation(ctx context.Context, v *ValidationContext) 
 	if asset.IsDestroyed {
 		return nil, "spread_rumors cannot target a destroyed asset"
 	}
-	if v.Notes == "" && !v.KeptSecret {
-		return nil, "spread_rumors requires preparation_notes with the rumor text"
-	}
+	// No check on v.Notes: an open rumor may be left unwritten at preparation. The
+	// book asks for the text at preparation only "if you'd like to keep it secret
+	// for now" (p.59); otherwise it is stated at the pre-roll, which still demands
+	// it (sr-cast-roll). A secret rumor needs its words, and that is checked where
+	// the secret is made (stashSecretRumor). (Rulings, Spread Rumors, owner
+	// 2026-11-26.)
 	return nil, ""
 }
 

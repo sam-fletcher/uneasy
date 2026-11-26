@@ -139,8 +139,11 @@ func validatePlanPreparation(
 	// Preparation notes are required for every plan — they're the only
 	// fiction-side trace some plans leave on the public record, and the
 	// system-post log includes them verbatim. Enforced centrally here so
-	// handlers don't each repeat the check.
-	if strings.TrimSpace(notes) == "" {
+	// handlers don't each repeat the check. The one exception is an OPEN Spread
+	// Rumors rumor, which is stated at the pre-roll instead (book p.59; rulings,
+	// Spread Rumors, owner 2026-11-26); a secret one is refused blank where its
+	// secret is made (stashSecretRumor).
+	if planType != model.PlanSpreadRumors && strings.TrimSpace(notes) == "" {
 		return preparePlanValidation{
 			Status: http.StatusBadRequest,
 			ErrMsg: "preparation notes are required",

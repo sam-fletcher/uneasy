@@ -207,6 +207,68 @@ func TestSpreadRumors_PreRoll_SecretRumorBecomesPublicWhenStated(t *testing.T) {
 	}
 }
 
+// An open rumor may be left unwritten at preparation: the book asks for the text
+// then only "if you'd like to keep it secret for now" (p.59; rulings, Spread
+// Rumors, owner 2026-11-26). It is stated at the pre-roll, which still requires
+// it, and a make spreads that stated rumor.
+func TestSpreadRumors_OpenRumorMayBePreparedBlankAndIsStatedAtThePreRoll(t *testing.T) {
+	for _, blank := range []*string{nil, new(""), new("   ")} {
+		h := newPlanLifecycle(t, 3)
+		ctx := context.Background()
+		prepIdx := h.focusPlayerIdx()
+		subject := h.seedPeer((prepIdx+1)%3, "the Duchess")
+		plan := h.prepare(PreparePlanRequest{
+			PlanType: model.PlanSpreadRumors, TargetAssetID: &subject, PreparationNotes: blank,
+		})
+		assert.True(t, anyContains(gamePostBodies(t, h), "there's a rumor brewing about"),
+			"the prepared line names the subject without a rumor to quote")
+
+		h.jumpToRow(*plan.RowNumber)
+		require.Nil(t, h.resolve(plan.ID), "the plan parks at its pre-roll")
+
+		// The pre-roll still requires the rumor: a blank draft is no rumor.
+		code, body := h.post(prepIdx, srPath(plan.ID, "sr-cast-roll"), map[string]any{"rumor": "", "how": "In every ear."})
+		assert.Equalf(t, http.StatusBadRequest, code, "the rumor is still required before the roll: %v", body)
+		_, err := h.q.GetDiceRollByPlanID(ctx, &plan.ID)
+		require.Error(t, err, "a refused cast opens nothing")
+
+		roll := srCast(t, h, plan.ID, "The Duchess was never born at all.")
+		assert.True(t, anyContains(h.playerPosts(), "The Duchess was never born at all."))
+		h.forceRoll(roll.ID, makeOutcome, 0)
+		h.makeChoice(plan.ID, makeOutcome, []string{})
+		rumors, err := h.q.ListRumors(ctx, h.tg.Game.ID)
+		require.NoError(t, err)
+		require.Len(t, rumors, 1)
+		assert.Equal(t, "The Duchess was never born at all.", rumors[0].Text, "the stated rumor is what spreads")
+	}
+}
+
+// A secret always has words: only an OPEN rumor may be left unwritten. A blank
+// secret rumor is refused, and the refusal prepares nothing.
+func TestSpreadRumors_SecretRumorStillNeedsItsText(t *testing.T) {
+	for _, blank := range []*string{nil, new(""), new("   ")} {
+		h := newPlanLifecycle(t, 3)
+		ctx := context.Background()
+		prepIdx := h.focusPlayerIdx()
+		holder := h.seedPeer(prepIdx, "Brutus")
+		subject := h.seedPeer((prepIdx+1)%3, "the Duchess")
+		plansBefore, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
+		require.NoError(t, err)
+
+		code, body := h.post(prepIdx, "/api/tables/"+itoa(h.tg.Game.ID)+"/prepare-plan", PreparePlanRequest{
+			PlanType: model.PlanSpreadRumors, TargetAssetID: &subject, PreparationNotes: blank, SecretAssetID: &holder,
+		})
+		assert.Equalf(t, http.StatusBadRequest, code, "a blank secret rumor must be refused: %v", body)
+
+		plansAfter, err := h.q.ListPlansByGame(ctx, h.tg.Game.ID)
+		require.NoError(t, err)
+		assert.Len(t, plansAfter, len(plansBefore), "the refusal prepares no plan")
+		secrets, err := h.q.ListSecretsByAsset(ctx, holder)
+		require.NoError(t, err)
+		assert.Empty(t, secrets, "and hides no secret")
+	}
+}
+
 // ── (e) is gloating ──────────────────────────────────────────────────────────
 
 func TestSpreadRumors_Make_RevealSourceIsGloatingNotAttribution(t *testing.T) {
@@ -635,7 +697,7 @@ func TestSpreadRumors_ValidatePreparation_ChecksTheTargetAsset(t *testing.T) {
 	assert.NotEmpty(t, validate(foreign.ID, false, "a rumor"), "another game's asset")
 	assert.NotEmpty(t, validate(destroyed, false, "a rumor"), "a destroyed asset")
 	assert.NotEmpty(t, validate(missing, false, "a rumor"), "an asset that does not exist")
-	assert.NotEmpty(t, validate(living, false, ""), "a fresh prepare still needs the text")
+	assert.Empty(t, validate(living, false, ""), "an open rumor may be left unwritten at preparation")
 	assert.Empty(t, validate(living, true, ""), "a settled secret rumor has no note by design")
 
 	// And through the real route.
