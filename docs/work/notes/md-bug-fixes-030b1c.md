@@ -36,7 +36,7 @@ The owner's two readings are recorded in the private rulings (Make Demands).
 Against this worktree's code (private database `uneasy_claude_md_bug_fixes_030b1c`, own server on :8163):
 
 - `make check-fast`: passes (Go lint and unit, svelte-check, Vitest 2390, tracker check).
-- `make test-integration`: full suite on the private database (see the PR for the result).
+- `make test-integration`: full suite on the private database. One failure, an older Waiting On duel test (`TestWaitingOn_ProposeDuel_…`) that pinned the old seating; I rewrote it to the new reading and re-ran the duel tests (`TestWaitingOn_ProposeDuel|TestProposeDuel`), which pass. The full suite was not run again after that one edit.
 - Each new test was shown failing without its fix:
   - `ws-handlers.test.ts` › "demand.prepared, whose payload is a plan, fetches no plan": one
     `getPlan` call with the fix reverted.
