@@ -88,7 +88,7 @@ describe('the form', () => {
 			const html = draw({ readOnly });
 			expect(html).toContain('How to set a good scene');
 			// The row is the one control a watcher can operate: it is not disabled.
-			const head = html.match(/<button[^>]*class="tap-row help-head[^"]*"[^>]*>/)![0];
+			const head = html.match(/<button[^>]*class="tap-row row-head"[^>]*>/)![0];
 			expect(head).not.toContain('disabled');
 		}
 	});
