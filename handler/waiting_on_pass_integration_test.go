@@ -168,10 +168,11 @@ func TestWaitingOn_ProposeDecree_PerformStepsWinnerIsNamed(t *testing.T) {
 
 // ── Propose Duel ─────────────────────────────────────────────────────────────
 
-// TestWaitingOn_ProposeDuel_PerformStepsWinnerHoldsThePreparersSeat: the winner
-// declares the preparer's bouts, so while the preparer's seat is up the bar names
-// the winner; the target's seat is never transferred, so it names the target.
-func TestWaitingOn_ProposeDuel_PerformStepsWinnerHoldsThePreparersSeat(t *testing.T) {
+// TestWaitingOn_ProposeDuel_PerformStepsWinnerNeverHoldsASeat: the bouts come
+// before the duel's roll and perform-steps is post-roll only (owner, 2026-11-26),
+// so the bar names the duellists themselves throughout the bouts, with a
+// perform-steps demand in place or not, and the winner's bout move is refused.
+func TestWaitingOn_ProposeDuel_PerformStepsWinnerNeverHoldsASeat(t *testing.T) {
 	h := newPlanLifecycle(t, 5)
 
 	prepIdx0 := h.focusPlayerIdx()
@@ -191,12 +192,15 @@ func TestWaitingOn_ProposeDuel_PerformStepsWinnerHoldsThePreparersSeat(t *testin
 	h.assertWaitees("before the demand: the preparer declares", model.RowStateAwaitDuelBout, prepID)
 
 	h.seedMadeDemand(demIdx, planID, game.DemandOptionWinners{game.DemandOptionPerformSteps: demID})
-	h.assertWaitees("the winner declares for the preparer", model.RowStateAwaitDuelBout, demID)
+	h.assertWaitees("with the demand: still the preparer", model.RowStateAwaitDuelBout, prepID)
 
 	stake := firstUnresolvedStakeID(t, h, planID, prepID)
 	code, body := h.post(demIdx, duelRoute(planID, "bout-declare"),
 		map[string]any{"stake_id": stake, "declaration": "high"})
-	require.Equalf(t, http.StatusOK, code, "winner declares: %v", body)
+	require.Equalf(t, http.StatusForbidden, code, "the winner has no seat: %v", body)
+	code, body = h.post(prepIdx, duelRoute(planID, "bout-declare"),
+		map[string]any{"stake_id": stake, "declaration": "high"})
+	require.Equalf(t, http.StatusOK, code, "the preparer declares: %v", body)
 	h.assertWaitees("the target responds as themselves", model.RowStateAwaitDuelBout, targID)
 }
 
