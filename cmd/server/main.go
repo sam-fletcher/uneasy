@@ -589,6 +589,13 @@ func setupFrontend(r *chi.Mux, devMode bool, viteURL string, warm func()) error 
 	// does its own compression, which is why this only ever bit in production.
 	compress := chimiddleware.Compress(compressLevel)
 	static := compress(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Team-only pages under /dev/ stay out of search results. Set from the
+		// request path before the SPA fallback below rewrites it, so every
+		// /dev/ path gets the header, including ones that serve index.html.
+		// Crawlers read the header without running the page's own meta tag.
+		if strings.HasPrefix(req.URL.Path, "/dev/") {
+			w.Header().Set("X-Robots-Tag", "noindex")
+		}
 		// SPA fallback: if the requested path doesn't exist in the embed,
 		// serve index.html so client-side routing can take over.
 		path := strings.TrimPrefix(req.URL.Path, "/")

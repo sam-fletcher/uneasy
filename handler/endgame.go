@@ -50,8 +50,9 @@ const (
 // last vote lands. That is the point — this route is not the escape hatch the
 // audit cut.
 //
-// Delete it once the vote has run in a real game and it proves unnecessary. The
-// PhaseMainEvent guard stays.
+// It stays for good, not as a stopgap: nothing on the normal path needs it, and
+// it exists only to unstick a game whose ending mode went wrong through a bug.
+// The PhaseMainEvent guard stays.
 func SetEndgameMode(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		game, ok := requireFacilitator(w, r, s.Q)
