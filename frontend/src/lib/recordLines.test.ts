@@ -71,8 +71,8 @@ describe('planStatusWord', () => {
 			});
 
 			it(`${type} still says "Resolving" while it is the plan being played`, () => {
-				// "Resolving" is where the table is, not an outcome. See
-				// docs/work/questions/record-war-liaise-resolving.md.
+				// "Resolving" is where the table is, not an outcome, so a war or a
+				// liaison keeps it while it is played (owner ruling, 2026-11-26).
 				expect(planStatusWord(plan(type, 'resolving', null))?.text).toBe('Resolving');
 			});
 		}

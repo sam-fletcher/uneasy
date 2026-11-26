@@ -30,8 +30,7 @@ export interface StatusWord {
  * show an outcome word, whatever the column says.
  *
  * "Resolving" is not an outcome, only where the table is, so it still shows while
- * one of them is the plan being played. (docs/work/questions/record-war-liaise-resolving.md
- * asks whether the owner wants even that gone.)
+ * one of them is the plan being played (owner ruling, 2026-11-26).
  */
 const NO_OUTCOME_WORD = new Set<Plan['plan_type']>(['make_war', 'clandestinely_liaise']);
 
