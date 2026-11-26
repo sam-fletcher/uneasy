@@ -150,10 +150,11 @@ export function demandOptionLine(opt: DemandOption, planType: PlanType, target: 
 			// A plan with no roll of its preparer's own has no "once they have rolled".
 			if (planType === 'clandestinely_liaise') return `Make the liaison’s choices in ${target}’s place, and move it on.`;
 			if (planType === 'host_festivity') return `Make the host’s choices in ${target}’s place, including when the event ends.`;
-			// The stand-in takes the preparer's seat in the bouts (the stakes were laid before, and
-			// the stand-in does not lay them), and the claim on a make. The target's seat is never moved.
+			// The bouts come before the duel's roll, so the preparer plays them; the stand-in
+			// starts once it has resolved, choosing which staked assets a make takes. The target's
+			// seat is never moved [RULINGS, Make Demands: perform-steps is post-roll only].
 			if (planType === 'propose_duel') {
-				return `Play ${target}’s side of the bouts, with the stakes they laid, and make the claim after a make. A mar’s claim stays with the plan’s own target.`;
+				return `Choose which staked assets a make takes, in ${target}’s place, once the duel’s roll has landed. ${target} still plays the bouts. A mar’s claim stays with the plan’s own target.`;
 			}
 			// Propose Decree has no options to pick: the stand-in enacts the law, and places the
 			// addendum when the preparer is the signatory (a signatory who is someone else keeps it).

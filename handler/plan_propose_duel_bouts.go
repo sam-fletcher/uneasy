@@ -23,17 +23,16 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		// The bouts come AFTER the stakes are rolled, so they are post-roll
-		// resolution steps: a Make Demands perform_steps winner drives the
-		// preparer's seat (declaring/responding with the preparer's stakes), while
-		// the target duellist keeps their own seat. seat keys initiative, stake
-		// ownership, and the bout's combatant identity.
-		seat, hasSeat := pduelEffectiveSeat(r.Context(), deps.Q, plan, player.ID)
-		if !hasSeat {
-			respondErr(w, http.StatusForbidden,
-				"only duellists (or a demand's perform-steps winner) may declare bouts")
+		// The bouts come BEFORE the duel's roll (the book resolves the duel "as
+		// though each player rolled dice they won in the bouts", p.60), and a Make
+		// Demands perform_steps win is post-roll only, so the preparer plays them
+		// and the winner has no seat here [owner, 2026-11-26; RULINGS, Make
+		// Demands]. The winner's choices start once the roll resolves (make-choice).
+		if !pduelIsParticipant(plan, player.ID) {
+			respondErr(w, http.StatusForbidden, "only the duellists may declare bouts")
 			return
 		}
+		seat := player.ID
 
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureDuel()
@@ -117,9 +116,7 @@ func pduelBoutDeclareHandler(deps *PlanDeps) http.HandlerFunc {
 		// The declaration is spoken aloud at the table (rules: "Player with
 		// initiative selects a staked asset and declares 'high' or 'low'"), so
 		// it belongs in the shared record alongside the bout's resolution. The
-		// declarer is named by SEAT, matching the bout row and the resolved-bout
-		// posts below: under a Make Demands perform_steps win the preparer is
-		// still the combatant, whoever is driving them.
+		// declarer is named as the bout row records them.
 		pduelLog(ctx, deps, plan, model.SeverityDefault, fmt.Sprintf(
 			"Bout %d — %s opens with %s, calling %s. %s must answer.",
 			boutNumber, playerDisplayName(ctx, deps.Q, seat),
@@ -149,14 +146,13 @@ func pduelBoutRespondHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		// A perform_steps winner drives the preparer's seat; the target keeps
-		// theirs. seat keys the responder check and stake ownership below.
-		seat, hasSeat := pduelEffectiveSeat(r.Context(), deps.Q, plan, player.ID)
-		if !hasSeat {
-			respondErr(w, http.StatusForbidden,
-				"only duellists (or a demand's perform-steps winner) may respond")
+		// Bouts are the duellists' own, even under a perform_steps demand (see
+		// pduelBoutDeclareHandler).
+		if !pduelIsParticipant(plan, player.ID) {
+			respondErr(w, http.StatusForbidden, "only the duellists may respond")
 			return
 		}
+		seat := player.ID
 
 		resData := loadResolutionData(plan.ResolutionData)
 		state := resData.EnsureDuel()

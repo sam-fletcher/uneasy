@@ -244,13 +244,13 @@ describe('Make Demands, against each target', () => {
 			expect(t).not.toContain('options');
 		});
 
-		it('Propose Duel: the stand-in plays the preparer\'s side of the bouts with the stakes already laid, and claims after a make', () => {
+		it('Propose Duel: the preparer still plays the bouts; the stand-in chooses the claim after the roll', () => {
 			const t = line('propose_duel');
-			expect(t).toContain('side of the bouts');
-			expect(t).toContain('the stakes they laid');
-			expect(t).toContain('claim after a make');
-			// It does not stake (staking comes before the roll): "choose the stakes" would read as that.
-			expect(t).not.toMatch(/Choose the stakes/i);
+			expect(t).toContain('bea still plays the bouts');
+			expect(t).toContain('once the duel’s roll has landed');
+			expect(t).toContain('which staked assets a make takes, in bea’s place');
+			// The stand-in does not play a side of the bouts: they come before the roll.
+			expect(t).not.toMatch(/side of the bouts/i);
 		});
 
 		it('keeps a mar with the plan\'s own target where that target chooses it: exchange, rumors, duel', () => {

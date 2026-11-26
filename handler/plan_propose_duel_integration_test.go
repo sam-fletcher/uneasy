@@ -815,81 +815,86 @@ func TestProposeDuelHTTP_RejectsNonStakedAndOverBudget(t *testing.T) {
 	require.True(t, c.IsLeveraged, "unclaimed stake should still be leveraged")
 }
 
-// TestProposeDuelHTTP_PerformStepsWinnerDrivesPreparerSeat proves a Make Demands
-// perform_steps win transfers the PREPARER's side of the bouts to the winner:
-// they declare/respond with the preparer's stakes (and the bout records the
-// preparer as the combatant), the preparer is locked out of their own seat, and
-// the winner cannot usurp the TARGET duellist's seat — that third party responds
-// as themselves.
-func TestProposeDuelHTTP_PerformStepsWinnerDrivesPreparerSeat(t *testing.T) {
+// TestProposeDuelHTTP_PerformStepsWinnerStartsAfterTheRoll pins the owner's
+// 2026-11-26 reading: the bouts come BEFORE the duel's roll, and a Make Demands
+// perform_steps win is post-roll only, so the preparer still plays every bout and
+// the winner's choices start once the roll has resolved. Until then the winner is
+// refused each bout route and Waiting On names the duellists, never the winner;
+// after the roll the winner (not the preparer) makes the claim on a make.
+//
+// The target sits at esteem rank 4 and stakes three against the preparer's one,
+// and the preparer sweeps for a result of 2: the claim is a real pick (2 of 3),
+// so the duel waits for it instead of applying itself.
+func TestProposeDuelHTTP_PerformStepsWinnerStartsAfterTheRoll(t *testing.T) {
 	h := newPlanLifecycle(t, 5)
 	ctx := context.Background()
 
-	prepIdx := h.focusPlayerIdx()
-	targIdx := (prepIdx + 1) % 5
-	demIdx := (prepIdx + 2) % 5
+	prepIdx0 := h.focusPlayerIdx()
+	targIdx := (prepIdx0 + 1) % 5
+	demIdx := (prepIdx0 + 2) % 5
+	winnerID := h.tg.Players[demIdx].ID
 	targetID := h.tg.Players[targIdx].ID
 
-	prepPeer := h.seedPeer(prepIdx, "Preparer stake")
-	targPeer := h.seedPeer(targIdx, "Target stake")
+	prepPeer := h.seedPeer(prepIdx0, "Preparer stake")
+	targA := h.seedPeer(targIdx, "Target stake A")
+	targB := h.seedPeer(targIdx, "Target stake B")
+	targC := h.seedPeer(targIdx, "Target stake C")
 
-	notes := "Courtyard duel at dawn"
-	plan := h.prepare(PreparePlanRequest{
-		PlanType:         model.PlanProposeDuel,
-		TargetPlayerID:   &targetID,
-		DuelType:         "arms",
-		PreparationNotes: &notes,
-	})
-	// Preparer at esteem rank 1 holds initiative; target at rank 5.
-	pinEsteemRank(t, h, targetID, 5)
-	pinEsteemRank(t, h, h.tg.Players[prepIdx].ID, 1)
-	require.NotNil(t, plan.RowNumber)
-	h.jumpToRow(*plan.RowNumber)
-	h.resolve(plan.ID)
-
-	// Fight in person; stake one asset each so a single bout settles the duel.
-	for _, idx := range []int{prepIdx, targIdx} {
-		code, body := h.post(idx, duelRoute(plan.ID, "elect-champion"), map[string]any{"asset_id": nil})
-		require.Equalf(t, http.StatusOK, code, "elect-champion: %v", body)
-	}
-	code, body := h.post(prepIdx, duelRoute(plan.ID, "select-stakes"), map[string]any{"asset_ids": []int64{prepPeer}})
-	require.Equalf(t, http.StatusOK, code, "prep select-stakes: %v", body)
-	code, body = h.post(targIdx, duelRoute(plan.ID, "select-stakes"), map[string]any{"asset_ids": []int64{targPeer}})
-	require.Equalf(t, http.StatusOK, code, "target select-stakes: %v", body)
-
-	// Phase is bouts; the preparer holds initiative and declares first.
-	require.Equal(t, h.tg.Players[prepIdx].ID, duelInitiative(t, h, plan.ID), "preparer holds initiative")
+	planID, prepIdx := seedDuelToBoutsRanked(t, h, targIdx,
+		[]int64{prepPeer}, []int64{targA, targB, targC}, 4)
+	pinDuelDice(t, h, planID, prepIdx, targIdx, preparerSweepsPrep, preparerSweepsTarg)
+	preparerID := h.tg.Players[prepIdx].ID
 
 	// A resolved, made demand hands perform_steps to the demander.
-	h.seedMadeDemand(demIdx, plan.ID, game.DemandOptionWinners{
-		game.DemandOptionPerformSteps: h.tg.Players[demIdx].ID,
+	h.seedMadeDemand(demIdx, planID, game.DemandOptionWinners{
+		game.DemandOptionPerformSteps: winnerID,
 	})
 
-	prepStake := firstUnresolvedStakeID(t, h, plan.ID, h.tg.Players[prepIdx].ID)
+	// ── The bouts: the duellists' own ──
+	h.assertWaitees("bout, the preparer holds initiative", model.RowStateAwaitDuelBout, preparerID)
 
-	// The preparer is locked out of declaring their own bout.
-	code, body = h.post(prepIdx, duelRoute(plan.ID, "bout-declare"),
+	prepStake := firstUnresolvedStakeID(t, h, planID, preparerID)
+	code, body := h.post(demIdx, duelRoute(planID, "bout-declare"),
 		map[string]any{"stake_id": prepStake, "declaration": "high"})
-	require.Equalf(t, http.StatusForbidden, code, "preparer locked out of their bout seat: %v", body)
+	require.Equalf(t, http.StatusForbidden, code, "the winner has no seat in the bouts: %v", body)
 
-	// The demander declares in the preparer's stead, using the preparer's stake.
-	code, body = h.post(demIdx, duelRoute(plan.ID, "bout-declare"),
+	code, body = h.post(prepIdx, duelRoute(planID, "bout-declare"),
 		map[string]any{"stake_id": prepStake, "declaration": "high"})
-	require.Equalf(t, http.StatusOK, code, "winner drives the preparer's bout: %v", body)
+	require.Equalf(t, http.StatusOK, code, "the preparer plays their own bout: %v", body)
 
-	// The bout records the PREPARER as declarer (the seat), not the winner.
-	latest, err := h.q.GetLatestDuelBout(ctx, plan.ID)
+	latest, err := h.q.GetLatestDuelBout(ctx, planID)
 	require.NoError(t, err)
-	assert.Equal(t, h.tg.Players[prepIdx].ID, latest.DeclarerID, "bout declarer is the preparer's seat")
+	assert.Equal(t, preparerID, latest.DeclarerID)
 
-	// The winner cannot usurp the TARGET's seat: responding is the target's role.
-	targStake := firstUnresolvedStakeID(t, h, plan.ID, h.tg.Players[targIdx].ID)
-	code, _ = h.post(demIdx, duelRoute(plan.ID, "bout-respond"), map[string]any{"stake_id": targStake})
-	require.Equal(t, http.StatusForbidden, code, "winner cannot respond for the target duellist")
+	h.assertWaitees("bout, awaiting the answer", model.RowStateAwaitDuelBout, targetID)
+	targStake := firstUnresolvedStakeID(t, h, planID, targetID)
+	code, _ = h.post(demIdx, duelRoute(planID, "bout-respond"), map[string]any{"stake_id": targStake})
+	require.Equal(t, http.StatusForbidden, code, "the winner cannot answer for the target either")
 
-	// The target responds as themselves (third-party seat untouched).
-	code, body = h.post(targIdx, duelRoute(plan.ID, "bout-respond"), map[string]any{"stake_id": targStake})
-	require.Equalf(t, http.StatusOK, code, "target responds as themselves: %v", body)
+	code, body = h.post(targIdx, duelRoute(planID, "bout-respond"), map[string]any{"stake_id": targStake})
+	require.Equalf(t, http.StatusOK, code, "the target answers as themselves: %v", body)
+
+	// ── The roll has resolved: now the winner's choices begin ──
+	roll, err := h.q.GetDiceRollByPlanID(ctx, &planID)
+	require.NoError(t, err)
+	require.NotNil(t, roll.Outcome)
+	require.Equal(t, "make", *roll.Outcome)
+	status, _ := planStatusOf(t, h, planID)
+	require.Equal(t, model.PlanResolving, status, "a real pick is still owed")
+	h.assertWaitees("the claim after the roll", model.RowStatePlanResolving, winnerID)
+
+	claim := map[string]any{
+		"result":  "make",
+		"choices": []string{strconv.FormatInt(targA, 10), strconv.FormatInt(targB, 10)},
+	}
+	code, body = h.post(prepIdx, duelRoute(planID, "make-choice"), claim)
+	require.Equalf(t, http.StatusForbidden, code, "the preparer is locked out of the claim: %v", body)
+	code, body = h.post(demIdx, duelRoute(planID, "make-choice"), claim)
+	require.Equalf(t, http.StatusOK, code, "the winner makes the claim: %v", body)
+
+	got, err := h.q.GetAssetByID(ctx, targA)
+	require.NoError(t, err)
+	require.Equal(t, preparerID, got.OwnerID, "the take still goes to the preparer, who is not a keep-assets winner")
 }
 
 // TestProposeDuelHTTP_PerformStepsWinnerCannotDriveTargetMar proves the

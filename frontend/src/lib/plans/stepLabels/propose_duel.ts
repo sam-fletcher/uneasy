@@ -12,8 +12,8 @@ import type { StepLabelFn } from '../stepLabel';
  * "to respond": the verb says which half is pending. The server names one actor for the
  * bout (the responder if a declared bout is open, else the declarer, who holds the
  * initiative), so an actor who is the initiative player is declaring and the other
- * duellist is responding. A stand-in holding a seat (a Make Demands winner) is neither,
- * and so is a plan that can't be found, and both stay "the bout".
+ * duellist is responding. A plan that can't be found, or an actor who is neither duellist,
+ * stays "the bout". (A Make Demands winner never acts here: the bouts are the duellists'.)
  */
 export function duelBoutLabel(plan: Plan | null | undefined, acting: readonly number[]): string {
 	if (!plan || plan.plan_type !== 'propose_duel' || acting.length !== 1) return 'the bout';
