@@ -616,7 +616,7 @@
 					<!-- The demand's decision comes first: the roll waits on it, and the server
 					     refuses their Ready until it is made, so there is no button to press. -->
 					<Notice tone="warning">
-						The roll waits for your Make Demands choice: {joinNames(heldDecisions)}. Ready comes after.
+						The roll waits for your Make Demands choice: {joinNames(heldDecisions)}. Make it in the Demand section; Ready comes after.
 					</Notice>
 				{:else}
 					<div class="step-actions">

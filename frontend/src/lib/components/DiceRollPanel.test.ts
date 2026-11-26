@@ -219,7 +219,7 @@ describe('DiceRollPanel for a Make Demands winner holding the roll', () => {
 
 	it('shows the decision they owe in place of Ready and Pass', () => {
 		const html = panel({ currentPlayerID: 1, heldDecisions: held });
-		expect(html).toContain('The roll waits for your Make Demands choice: how many of wren’s assets go onto the roll.');
+		expect(html).toContain('The roll waits for your Make Demands choice: how many of wren’s assets go onto the roll. Make it in the Demand section; Ready comes after.');
 		expect(html).not.toMatch(/action-btn primary/);
 		expect(html).not.toMatch(/>\s*Pass\s*</);
 		// And no line sending them to pass, which they cannot do yet.

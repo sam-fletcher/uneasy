@@ -270,8 +270,11 @@ test('a held winner cannot ready before deciding: the roll panel names the decis
 
 	await bob.getByRole('button', { name: 'Leverage none — let the roll fail' }).click();
 	await expect.poll(() => decisionStored(f, 'demand_leverage_finalized')).toBe(true);
-	// Decided: the reminder goes, and the ordinary Ready/Pass is theirs again.
+	// Decided: the reminder goes, and the ordinary Pass (their Ready) is theirs again.
 	await expect(bob.getByText('Make Demands choice')).toHaveCount(0);
+	await expect(bob.getByRole('button', { name: 'Pass' })).toBeVisible();
+	const ready = await f.api.bob.post(`/api/rolls/${rollID}/ready`, { data: { is_ready: true } });
+	expect(ready.status()).toBe(200);
 });
 
 test('control leverage against a plan with no roll of the preparer\'s own is a dud: greyed in the draft, named a dud afterwards, refused, and it holds nothing up', async ({ browser }) => {
