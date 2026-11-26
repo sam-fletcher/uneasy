@@ -33,6 +33,7 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
+	import '$lib/components/plans/planPanel.css';
 	import { onDestroy } from 'svelte';
 	import { createScene, type Asset, type Player, type TimeElapsed, type SceneSetupDraft } from '$lib/api';
 	import { playerColor } from '$lib/playerColor';
@@ -268,7 +269,7 @@
 
 <section class="scene-setup">
 	<div class="group">
-		<h3 class="label">Prompt</h3>
+		<h3 class="choices-header">Prompt</h3>
 		<p class="prompt">{prompt}</p>
 	</div>
 
@@ -311,7 +312,7 @@
 	</HelpDisclosure>
 
 	<div class="group">
-		<h3 class="label">Where</h3>
+		<h3 class="choices-header">Where</h3>
 		{#if holdings.length === 0}
 			<p class="hint">No holdings yet — use a custom location below.</p>
 		{:else}
@@ -345,7 +346,7 @@
 	</div>
 
 	<div class="group">
-		<h3 class="label">When</h3>
+		<h3 class="choices-header">When</h3>
 		<!-- Six chips in a row of several, so the compact size: three to a
 		     line on a phone. They are all "later than the last scene", which
 		     the opening scene has nothing to be. Only the free-text note is
@@ -379,7 +380,7 @@
 	</div>
 
 	<div class="group">
-		<h3 class="label">Who else is here</h3>
+		<h3 class="choices-header">Who else is here</h3>
 		<div class="cards">
 			{#if focusMainCharacter}
 				<AssetCardSelectable
@@ -447,17 +448,9 @@
 		min-width: 0;
 	}
 
-	/* The small heading over a group (Prompt, Where, When, Who else): label
-	   size, capitals, secondary. The game's gold is for the step's own heading,
-	   which the page draws above this form. */
-	.label {
-		margin: 0;
-		font-size: var(--text-label);
-		font-weight: 400;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--color-text-secondary);
-	}
+	/* The small heading over each group (Prompt, Where, When, Who else) is the step
+	   sub-heading, planPanel.css's .choices-header: 12px deep-gold capitals. It
+	   isn't restyled here, so a scene's groups can't drift from a plan's. */
 
 	/* The prompt, as step text. */
 	.prompt {

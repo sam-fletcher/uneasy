@@ -70,7 +70,7 @@ const chipsIn = (html: string) => html.match(/<button[^>]*class="chip[^"]*"[^>]*
 describe('the form', () => {
 	it('asks its questions under small headings, after the prompt', () => {
 		const html = draw();
-		const labels = [...html.matchAll(/<h3 class="label[^"]*">([^<]*)<\/h3>/g)].map((m) => m[1]);
+		const labels = [...html.matchAll(/<h3 class="choices-header[^"]*">([^<]*)<\/h3>/g)].map((m) => m[1]);
 		expect(labels).toEqual(['Prompt', 'Where', 'When', 'Who else is here']);
 		expect(html).toMatch(/<p class="prompt[^"]*">Set a scene of your character learning something new\.<\/p>/);
 	});
@@ -206,7 +206,7 @@ describe('the stylesheet', () => {
 	const props = (selector: string) => decls.filter((d) => d.selector === selector).map((d) => d.prop);
 
 	it('gives the prompt and the groups no box, no fill and no wash', () => {
-		for (const sel of ['.prompt', '.group', '.label', '.scene-setup', '.cards', '.chips', '.hint']) {
+		for (const sel of ['.prompt', '.group', '.scene-setup', '.cards', '.chips', '.hint']) {
 			const p = props(sel);
 			for (const banned of ['background', 'background-color', 'border', 'border-left', 'border-radius', 'box-shadow', 'opacity']) {
 				expect(p, `${sel} must not set ${banned}`).not.toContain(banned);
@@ -235,12 +235,13 @@ describe('the stylesheet', () => {
 		expect(value('background')).toBe('var(--color-surface)');
 	});
 
-	it('draws a small heading as a label: 12px, capitals, secondary, not the step\'s gold', () => {
-		const label = decls.filter((d) => d.selector === '.label');
-		const value = (prop: string) => label.find((d) => d.prop === prop)?.value;
-		expect(value('font-size')).toBe('var(--text-label)');
-		expect(value('text-transform')).toBe('uppercase');
-		expect(value('color')).toBe('var(--color-text-secondary)');
+	it('takes the step sub-heading for its groups and restyles it nowhere', () => {
+		// Prompt, Where, When and Who else are the step sub-heading (12px deep-gold
+		// capitals, planPanel.css's .choices-header). A rule of this file's own for
+		// the heading, or the old secondary .label, is how it would drift from a plan's.
+		expect(SOURCE).toContain("import '$lib/components/plans/planPanel.css'");
+		expect(decls.filter((d) => /\.(label|choices-header)\b/.test(d.selector))).toEqual([]);
+		expect(SOURCE).not.toMatch(/<h3 class="label/);
 	});
 
 	it('draws the prompt as step text', () => {

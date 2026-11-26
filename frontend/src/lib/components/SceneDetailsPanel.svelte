@@ -19,6 +19,7 @@
 <script lang="ts">
 	import '$lib/components/shared/actionButton.css';
 	import '$lib/components/shared/statusText.css';
+	import '$lib/components/plans/planPanel.css';
 	import {
 		claimScenePeer,
 		endScene,
@@ -159,7 +160,7 @@
 <section class="scene-details">
 	{#if scene.prompt}
 		<div class="group">
-			<h3 class="label">Prompt</h3>
+			<h3 class="choices-header">Prompt</h3>
 			<p class="prompt">{scene.prompt}</p>
 		</div>
 	{/if}
@@ -198,7 +199,7 @@
 
 	{#if locationAsset}
 		<div class="group">
-			<h3 class="label">Location</h3>
+			<h3 class="choices-header">Location</h3>
 			<AssetCardSelectable
 				asset={locationAsset}
 				ownerColor={colorFor(locationAsset.owner_id)}
@@ -208,7 +209,7 @@
 	{/if}
 
 	<div class="group">
-		<h3 class="label">Present</h3>
+		<h3 class="choices-header">Present</h3>
 		<div class="peer-list">
 			{#if focusMainCharacter}
 				<div class="peer-row">
@@ -291,17 +292,9 @@
 		min-width: 0;
 	}
 
-	/* The small heading over a group (Prompt, Location, Present): label size,
-	   capitals, secondary. The game's gold is for the step's own heading, which
-	   the page draws above this panel. */
-	.label {
-		margin: 0;
-		font-size: var(--text-label);
-		font-weight: 400;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--color-text-secondary);
-	}
+	/* The small heading over each group (Prompt, Location, Present) is the step
+	   sub-heading, planPanel.css's .choices-header: 12px deep-gold capitals. It
+	   isn't restyled here, so a scene's groups can't drift from a plan's. */
 
 	/* The prompt, as step text. */
 	.prompt {
