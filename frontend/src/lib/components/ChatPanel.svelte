@@ -682,8 +682,9 @@
 		{/if}
 		<!-- Two controls and, from three columns up, the column's name before them.
 		     On a phone there is no heading: the tab already says "Chat". Tones are
-		     reference for what is said, so they sit where it is said. The chip's
-		     wording is an open question (docs/work/questions/tones-chip-wording.md). -->
+		     reference for what is said, so they sit where it is said. The chip
+		     reads "Tones · 0 set" when none are: the owner's ruled wording
+		     (2026-11-26). -->
 		<Chip compact aria-haspopup="dialog" onclick={onOpenTones}>Tones · {tonesSetCount} set</Chip>
 		<label class="bookkeeping-toggle" title="Hide low-severity system events">
 			<span>Hide bookkeeping</span>

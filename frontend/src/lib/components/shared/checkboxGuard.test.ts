@@ -120,6 +120,23 @@ describe('the box is drawn once', () => {
 		expect(declaredIn('check-box')).toEqual(['lib/components/shared/checkbox.css']);
 	});
 
+	it('every box is 24px, the card\'s marginalia rows included', () => {
+		// The marginalia boxes used to be a 20px box with a 14px tick, set in the card.
+		const box = declarations(css(join(SRC, 'lib', 'components', 'shared', 'checkbox.css')))
+			.filter((d) => d.selector === '.check-box');
+		const of = (prop: string) => box.find((d) => d.prop === prop)?.value;
+		expect(of('width')).toBe('24px');
+		expect(of('height')).toBe('24px');
+
+		const file = join(SRC, 'lib', 'components', 'AssetCardSelectable.svelte');
+		const size = declarations(css(file)).filter((d) =>
+			/(^|[^\w-])\.(m-tap|select-tap|check-box)(?![\w-])/.test(d.selector)
+			&& /^(width|height|min-width|min-height|max-width|max-height|padding)$/.test(d.prop));
+		expect(size, 'the card must not resize the shared box').toEqual([]);
+		// The tick is ToneMark's default size in every box, not a smaller one for the rows.
+		expect(markupOf(file)).not.toMatch(/<ToneMark\b[^>]*\bsize=/);
+	});
+
 	it('the asset card draws its boxes with it: no fill, border or corner of its own', () => {
 		const file = join(SRC, 'lib', 'components', 'AssetCardSelectable.svelte');
 		const mine = declarations(css(file)).filter((d) => /(^|[^\w-])\.select-tap(?![\w-])/.test(d.selector)

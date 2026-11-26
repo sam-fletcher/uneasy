@@ -70,7 +70,7 @@ describe('the prompt', () => {
 		const html = draw({
 			scene: { id: 1, focus_player_id: 2, time_elapsed: 'hours', prompt: 'Set a scene of your character learning something new.' } as never,
 		});
-		expect(html).toMatch(/<h3 class="label[^"]*">Prompt<\/h3>\s*<p class="prompt[^"]*">Set a scene of your character learning something new\.<\/p>/);
+		expect(html).toMatch(/<h3 class="choices-header[^"]*">Prompt<\/h3>\s*<p class="prompt[^"]*">Set a scene of your character learning something new\.<\/p>/);
 		expect(html).not.toContain('prompt-label');
 	});
 
@@ -78,6 +78,21 @@ describe('the prompt', () => {
 		const html = draw({ scene: { id: 1, focus_player_id: 2, time_elapsed: 'hours', prompt: '' } as never });
 		expect(html).not.toContain('Prompt');
 		expect(html).not.toContain('class="prompt');
+	});
+});
+
+describe('the groups', () => {
+	it('are headed by the step sub-heading, not a heading of their own', () => {
+		const html = draw({
+			scene: { id: 1, focus_player_id: 2, location_holding_id: 7, time_elapsed: 'days', prompt: 'Go.' } as never,
+			assets: [{ ...(peerAsset(7, 'Sol Keep', false, 2) as object), asset_type: 'holding' } as never],
+		});
+		const heads = [...html.matchAll(/<h3 class="([^"]*)">([^<]*)<\/h3>/g)].map((m) => [m[1], m[2]]);
+		expect(heads).toEqual([
+			['choices-header', 'Prompt'],
+			['choices-header', 'Location'],
+			['choices-header', 'Present'],
+		]);
 	});
 });
 
@@ -188,7 +203,7 @@ describe('the stylesheet', () => {
 
 	it('boxes nothing of its own: no fill, border, shadow or corner on a group, a heading or a line', () => {
 		for (const sel of [
-			'.scene-details', '.group', '.label', '.prompt', '.scene-header', '.place', '.time',
+			'.scene-details', '.group', '.prompt', '.scene-header', '.place', '.time',
 			'.focus-line', '.peer-list', '.peer-row', '.end-bar',
 		]) {
 			const p = props(sel);
@@ -213,10 +228,12 @@ describe('the stylesheet', () => {
 	const value = (selector: string, prop: string) =>
 		decls.find((d) => d.prop === prop && d.selector.split(',').map((s) => s.trim()).includes(selector))?.value;
 
-	it('draws a small heading as a label and the prompt as step text', () => {
-		expect(value('.label', 'font-size')).toBe('var(--text-label)');
-		expect(value('.label', 'text-transform')).toBe('uppercase');
-		expect(value('.label', 'color')).toBe('var(--color-text-secondary)');
+	it('takes the step sub-heading for its groups, and draws the prompt as step text', () => {
+		// Prompt, Location and Present are planPanel.css's .choices-header (12px
+		// deep-gold capitals), not a heading restyled here.
+		expect(SOURCE).toContain("import '$lib/components/plans/planPanel.css'");
+		expect(decls.filter((d) => /\.(label|choices-header)\b/.test(d.selector))).toEqual([]);
+		expect(SOURCE).not.toMatch(/<h3 class="label/);
 		expect(value('.prompt', 'font-size')).toBe('var(--text-body)');
 		expect(value('.prompt', 'color')).toBe('var(--color-text)');
 	});

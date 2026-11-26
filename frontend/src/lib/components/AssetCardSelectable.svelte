@@ -362,7 +362,7 @@
 								}
 							}}
 						>
-							{#if blankPicked}<ToneMark tone="success" size={14} />{/if}
+							{#if blankPicked}<ToneMark tone="success" />{/if}
 						</span>
 						<span class="m-line">
 							<span class="m-text destroys">No marginalia — breaking destroys this asset.</span>
@@ -396,7 +396,7 @@
 										}
 									}}
 								>
-									{#if isPicked}<ToneMark tone="success" size={14} />{/if}
+									{#if isPicked}<ToneMark tone="success" />{/if}
 								</span>
 							{:else}
 								<span class="bullet" aria-hidden="true">•</span>
@@ -512,10 +512,10 @@
 		color: var(--color-you);
 	}
 
-	/* The checkbox's look (fill, border, corner, ticked, locked, focus) is
-	   shared/checkbox.css's .check-box, the same box <Checkbox> draws. What stays
-	   here is the card's own: the marginalia rows' smaller box. */
-	.m-tap { width: 20px; height: 20px; }
+	/* The checkbox's look (size, fill, border, corner, ticked, locked, focus) is
+	   shared/checkbox.css's .check-box, the same 24px box <Checkbox> draws, in a
+	   marginalia row as in the header. .m-tap sets nothing of its own: it only
+	   names the box that the row's tap area (above) stretches from. */
 
 	/* Invisible tap target around the header checkbox: extends the 24px box
 	   out to ~44px. Scoped to .header: the per-line marginalia checkboxes
