@@ -230,8 +230,10 @@ suite, and does not run Playwright. So
 the whole e2e suite once a night (06:17 UTC) against the latest commit on
 `main`. It never blocks a merge, and `main` is already live by the time it
 runs: its job is to catch a stale spec or a bad merge within a day rather
-than whenever someone next runs `make test-e2e` by hand. Whether to also gate
-PRs on it is still open (`docs/work/questions/ci-e2e-cadence.md`).
+than whenever someone next runs `make test-e2e` by hand. It stays nightly only
+(owner, 2026-11-26): every failed night from 2026-11-09 to 2026-11-26 was the
+runner image or a test timing race, so a gate on every PR would have blocked
+good PRs and caught no bug.
 
 The job does what the worktree recipe above does, on a clean runner: `make
 build` (the production binary with the frontend embedded, so no Vite), starts
