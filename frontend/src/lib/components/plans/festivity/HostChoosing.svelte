@@ -8,8 +8,16 @@
   The whole make list is on offer, a duel included (book p.61 gives the host the
   make list with no exception): challenging someone spends the make, and the
   target may accept (a nested Propose Duel, the host as challenger) or decline.
+
+  The draft (the option, the rumor, the new peer, the asset or target picked)
+  lives in lib/festivityDraft.svelte.ts, not here: this card is unmounted while a
+  duel is pending, and a guest's challenge or the nested duel it becomes would
+  take a half-written make with it. A Make Demands perform-steps winner drives
+  these makes for the host, so the header names the host to them (`amHost`).
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { hostMakeDraft as draft } from '$lib/festivityDraft.svelte';
 	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import Chip from '$lib/components/shared/Chip.svelte';
@@ -26,11 +34,13 @@
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
-	let { plan, fest, players, assets, blockedByOtherRoll, activeRollerID, onPlansChanged }: {
+	let { plan, fest, players, assets, amHost, blockedByOtherRoll, activeRollerID, onPlansChanged }: {
 		plan: Plan;
 		fest: FestRes;
 		players: Player[];
 		assets: Asset[];
+		/** Whether the viewer is the host; false for a perform-steps winner. */
+		amHost: boolean;
 		/** True while a guest's roll-and-choice is in progress: the server refuses a
 		 *  make until it concludes, so the picker waits too. */
 		blockedByOtherRoll: boolean;
@@ -49,12 +59,15 @@
 	// Drafts and real centered peers as one list — see options.ts.
 	const centerPeerCandidates = $derived(centeredPeerCards(fest, assets, plan.game_id));
 
-	let hostPickedChoice = $state<string | null>(null);
-	let hostRumor = $state('');
-	let hostPeerName = $state('');
-	let hostPeerMarginalia = $state('');
-	let hostAssetID = $state<number | null>(null);
-	let hostDuelTargetID = $state<number | null>(null);
+	const hostName = $derived(playerName(players, plan.preparer_id));
+
+	// Begin the draft for this plan (a different plan starts fresh). Untracked:
+	// begin() reads the draft's own key.
+	$effect.pre(() => {
+		const planID = plan.id;
+		untrack(() => draft.begin(planID));
+	});
+
 	let hostPickerBusy = $state(false);
 	let hostPickerError = $state('');
 
@@ -62,32 +75,18 @@
 	// per-choice checks in submitHostChoice so the button stays disabled (the
 	// server's non-empty validation is the backstop, not the first line).
 	const hostChoiceReady = $derived.by(() => {
-		if (!hostPickedChoice) return false;
-		switch (hostPickedChoice) {
-			case 'spread_rumor': return hostRumor.trim().length > 0;
-			case 'introduce_peer': return hostPeerName.trim().length > 0 && hostPeerMarginalia.trim().length > 0;
-			case 'take_center_peer': return hostAssetID != null;
-			case 'challenge_duel': return hostDuelTargetID != null;
+		if (!draft.picked) return false;
+		switch (draft.picked) {
+			case 'spread_rumor': return draft.rumor.trim().length > 0;
+			case 'introduce_peer': return draft.peerName.trim().length > 0 && draft.peerMarginalia.trim().length > 0;
+			case 'take_center_peer': return draft.assetID != null;
+			case 'challenge_duel': return draft.duelTargetID != null;
 			default: return true;
 		}
 	});
 
-	// Reset picker when plan changes.
-	let lastPlanID = $state<number | null>(null);
-	$effect(() => {
-		if (plan.id !== lastPlanID) {
-			lastPlanID = plan.id;
-			hostPickedChoice = null;
-			hostRumor = '';
-			hostPeerName = '';
-			hostPeerMarginalia = '';
-			hostAssetID = null;
-			hostDuelTargetID = null;
-			hostPickerError = '';
-		}
-	});
-
 	async function submitHostChoice() {
+		const hostPickedChoice = draft.picked;
 		if (hostPickerBusy || !hostPickedChoice) return;
 		hostPickerBusy = true; hostPickerError = '';
 		try {
@@ -96,36 +95,31 @@
 				peer_marginalia?: string[]; asset_id?: number; draft_id?: string;
 				target_player_id?: number;
 			} = { choice: hostPickedChoice };
-			if (hostPickedChoice === 'challenge_duel') {
-				if (hostDuelTargetID == null) { hostPickerError = 'Pick someone to challenge.'; return; }
-				body.target_player_id = hostDuelTargetID;
+			if (draft.picked === 'challenge_duel') {
+				if (draft.duelTargetID == null) { hostPickerError = 'Pick someone to challenge.'; return; }
+				body.target_player_id = draft.duelTargetID;
 			}
-			if (hostPickedChoice === 'spread_rumor') {
-				if (!hostRumor.trim()) { hostPickerError = 'Enter the rumor.'; return; }
-				body.rumor_text = hostRumor.trim();
+			if (draft.picked === 'spread_rumor') {
+				if (!draft.rumor.trim()) { hostPickerError = 'Enter the rumor.'; return; }
+				body.rumor_text = draft.rumor.trim();
 			}
-			if (hostPickedChoice === 'introduce_peer') {
-				if (!hostPeerName.trim() || !hostPeerMarginalia.trim()) {
+			if (draft.picked === 'introduce_peer') {
+				if (!draft.peerName.trim() || !draft.peerMarginalia.trim()) {
 					hostPickerError = 'Name the new peer, with one marginalia.';
 					return;
 				}
-				body.peer_name = hostPeerName.trim();
-				body.peer_marginalia = [hostPeerMarginalia.trim()];
+				body.peer_name = draft.peerName.trim();
+				body.peer_marginalia = [draft.peerMarginalia.trim()];
 			}
-			if (hostPickedChoice === 'take_center_peer') {
-				if (hostAssetID == null) { hostPickerError = 'Pick a centered peer.'; return; }
+			if (draft.picked === 'take_center_peer') {
+				if (draft.assetID == null) { hostPickerError = 'Pick a centered peer.'; return; }
 				// A draft peer travels as draft_id; a real one as asset_id.
-				const pick = centeredPeerPick(fest, hostAssetID);
+				const pick = centeredPeerPick(fest, draft.assetID);
 				if (pick == null) { hostPickerError = 'That peer is no longer available.'; return; }
 				Object.assign(body, pick);
 			}
 			await hostChoice(plan.id, body);
-			hostPickedChoice = null;
-			hostRumor = '';
-			hostPeerName = '';
-			hostPeerMarginalia = '';
-			hostAssetID = null;
-			hostDuelTargetID = null;
+			draft.clear();
 			onPlansChanged();
 		} catch (e) {
 			hostPickerError = e instanceof Error ? e.message : 'Could not take the make.';
@@ -134,7 +128,7 @@
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">Your extra Makes</p>
+	<p class="choices-header">{amHost ? 'Your' : `${hostName}'s`} extra Makes</p>
 	<p class="choices-note">{taken} of {earned} taken.</p>
 	{#if remaining > 0 && blockedByOtherRoll}
 		<p class="choices-note muted">
@@ -145,30 +139,30 @@
 			<div class="chip-row">
 				{#each MAKE_OPTS as o}
 					<Chip
-						selected={hostPickedChoice === o.key}
+						selected={draft.picked === o.key}
 						onclick={() => {
-							hostPickedChoice = hostPickedChoice === o.key ? null : o.key;
-							hostAssetID = null;
-							hostDuelTargetID = null;
+							draft.picked = draft.picked === o.key ? null : o.key;
+							draft.assetID = null;
+							draft.duelTargetID = null;
 						}}
 					>{o.label}</Chip>
 				{/each}
 			</div>
 		</FormField>
-		{#if hostPickedChoice === 'spread_rumor'}
+		{#if draft.picked === 'spread_rumor'}
 			<label class="form-label">
 				Rumor text
-				<textarea rows={2} bind:value={hostRumor} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}></textarea>
+				<textarea rows={2} bind:value={draft.rumor} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}></textarea>
 			</label>
-		{:else if hostPickedChoice === 'introduce_peer'}
+		{:else if draft.picked === 'introduce_peer'}
 			<AssetCreationForm
 				gameID={plan.game_id}
 				assetType="peer"
-				bind:name={hostPeerName}
-				bind:marginalia={hostPeerMarginalia}
+				bind:name={draft.peerName}
+				bind:marginalia={draft.peerMarginalia}
 				disabled={hostPickerBusy}
 			/>
-		{:else if hostPickedChoice === 'take_center_peer'}
+		{:else if draft.picked === 'take_center_peer'}
 			<CardPicker
 				label="Peer to take from the center"
 				items={centerPeerCandidates}
@@ -177,17 +171,17 @@
 				ownerLabel={(a) => isDraftCard(a)
 					? 'New to court — in nobody\'s retinue'
 					: `Owned by ${playerName(players, a.owner_id)}`}
-				selected={hostAssetID}
-				onSelect={(id) => (hostAssetID = id)}
+				selected={draft.assetID}
+				onSelect={(id) => (draft.assetID = id)}
 			/>
-		{:else if hostPickedChoice === 'challenge_duel'}
+		{:else if draft.picked === 'challenge_duel'}
 			<FormField label="Challenge">
 				<PlayerChips
 					players={duelTargets}
-					isActive={(p) => hostDuelTargetID === p.id}
-					onSelect={(p) => (hostDuelTargetID = hostDuelTargetID === p.id ? null : p.id)}
+					isActive={(p) => draft.duelTargetID === p.id}
+					onSelect={(p) => (draft.duelTargetID = draft.duelTargetID === p.id ? null : p.id)}
 				/>
-				{#if hostDuelTargetID != null && fest.acceptDuels.includes(hostDuelTargetID)}
+				{#if draft.duelTargetID != null && fest.acceptDuels.includes(draft.duelTargetID)}
 					<p class="choices-note muted">
 						This challenge must be accepted.
 					</p>

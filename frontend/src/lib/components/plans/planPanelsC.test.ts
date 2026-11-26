@@ -8,6 +8,9 @@ import GuestList from './festivity/GuestList.svelte';
 import SocializingTurn from './festivity/SocializingTurn.svelte';
 import ChallengeBanner from './festivity/ChallengeBanner.svelte';
 import HostFestivityPanel from './HostFestivityPanel.svelte';
+import HostPendingMar from './festivity/HostPendingMar.svelte';
+import HostChoosing from './festivity/HostChoosing.svelte';
+import { hostMarDraft, hostMakeDraft } from '$lib/festivityDraft.svelte';
 import MakeDemandsPanel from './MakeDemandsPanel.svelte';
 import { declarations, styleOf } from '$lib/components/shared/cssTestKit';
 import type { PlanContext } from './types';
@@ -517,6 +520,70 @@ describe('the host\'s pending Mar', () => {
 		const body = pendingMar(ALICE);
 		expect(body).toContain('You choose which one');
 		expect(body).not.toContain('to finish their roll');
+	});
+});
+
+describe('the host\'s Mar card and Make picker, read by a Make Demands stand-in', () => {
+	// A perform-steps winner answers the host's steps, and the mar lands on the HOST.
+	// The panel learns who the stand-in is from an effect a server render never runs,
+	// so these render the two cards directly with `amHost` set either way.
+	const hostPlan = { id: 5, game_id: 1, plan_type: 'host_festivity', preparer_id: ALICE } as never;
+	const marCard = (amHost: boolean, picked: string | null) => {
+		hostMarDraft.begin(5, BOB);
+		hostMarDraft.clear();
+		hostMarDraft.picked = picked;
+		return plain(strip(render(HostPendingMar, {
+			props: {
+				plan: hostPlan, players, assets: [], amHost, unchosenHostMars: [BOB],
+				blockedByOtherRoll: false, activeRollerID: null, onPlansChanged: () => {},
+			},
+		}).body));
+	};
+
+	it('names the host in the header and the choice copy, never "you"', () => {
+		for (const picked of [null, 'rumor_about_you', 'accept_duels', 'break_self']) {
+			const body = marCard(false, picked);
+			expect(body).toContain("alice's Mar");
+			expect(body).toContain('bob insists alice takes a Mar');
+			expect(body).toContain('You choose for alice');
+			expect(body).not.toMatch(/\byou(r|rself)?\b(?! choose for)/i);
+		}
+		expect(marCard(false, 'rumor_about_you')).toContain('The rumor about alice');
+		expect(marCard(false, 'accept_duels')).toContain('alice must accept any duel challenge');
+	});
+
+	it('words the Mar list itself about the host', () => {
+		const body = marCard(false, null);
+		expect(body).toContain('A rumor spreads about alice');
+		expect(body).toContain('alice must accept all duels');
+		expect(body).toContain('alice breaks themselves');
+	});
+
+	it('leaves the host\'s own wording alone', () => {
+		const body = marCard(true, 'rumor_about_you');
+		expect(body).toContain('Your Mar');
+		expect(body).toContain('bob insists you take a Mar');
+		expect(body).toContain('You choose which one');
+		expect(body).toContain('A rumor spreads about you');
+		expect(body).toContain('The rumor about you');
+	});
+
+	it('names the host over the Make picker too', () => {
+		hostMakeDraft.begin(5);
+		const picker = (amHost: boolean) => plain(strip(render(HostChoosing, {
+			props: {
+				plan: hostPlan, fest: {
+					guests: [ALICE, BOB, CAROL], outcomes: { [ALICE]: 'host', [BOB]: 'opt_out' },
+					guestMakes: {}, guestMars: {}, hostMakesTaken: [], guestRollIDs: {}, guestIOUs: [],
+					hostMarInsists: [], unchosenHostMars: [], acceptDuels: [], pendingDuelPlanID: null,
+					pendingChallenge: null, centeredAssetIDs: [], centeredDrafts: [],
+				}, players, assets: [], amHost, blockedByOtherRoll: false, activeRollerID: null,
+				onPlansChanged: () => {},
+			},
+		}).body));
+		expect(picker(false)).toContain("alice's extra Makes");
+		expect(picker(false)).not.toContain('Your extra Makes');
+		expect(picker(true)).toContain('Your extra Makes');
 	});
 });
 
