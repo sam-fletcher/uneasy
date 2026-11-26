@@ -56,6 +56,8 @@
 	import StandingStrip from './prologue/StandingStrip.svelte';
 	import PrologueHelp from './prologue/PrologueHelp.svelte';
 	import HelpDisclosure from '$lib/components/shared/HelpDisclosure.svelte';
+	import RowMark from '$lib/components/shared/RowMark.svelte';
+	import '$lib/components/shared/tapRow.css';
 	import AssetTypeIcon from '$lib/components/AssetTypeIcon.svelte';
 	import WeightMeter from '$lib/components/shared/WeightMeter.svelte';
 	import {
@@ -1070,10 +1072,10 @@
 					{@const isOpen = openSheets.has(sheet.type)}
 					{@const profile = sheetTrackProfile(sheet)}
 					{@const spentHere = spent.bySheet.get(sheet.type) ?? 0}
-					<section class="sheet-panel" class:open={isOpen}>
+					<section class="sheet-panel disclosure" class:open={isOpen} class:has-body={isOpen}>
 						<button
 							type="button"
-							class="sheet-header"
+							class="tap-row sheet-header"
 							aria-expanded={isOpen}
 							aria-controls={isOpen ? `sheet-body-${sheet.type}` : undefined}
 							onclick={(e: MouseEvent) => toggleSheetPanel(sheet.type, e.currentTarget as HTMLButtonElement)}
@@ -1105,7 +1107,7 @@
 									{/each}
 								</span>
 							{/if}
-							<span class="sheet-caret" aria-hidden="true">▾</span>
+							<span class="sheet-caret"><RowMark kind="caret" open={isOpen} /></span>
 							<span class="sheet-desc">{SHEET_DESCRIPTIONS[sheet.type]}</span>
 						</button>
 						{#if isOpen}
@@ -1113,7 +1115,7 @@
 							{@const rowEnd = expandedIndex === -1
 								? -1
 								: Math.min(Math.floor(expandedIndex / tileCols) * tileCols + tileCols - 1, sheet.choices.length - 1)}
-							<div class="sheet-body" id={`sheet-body-${sheet.type}`} role="region" aria-label={sheet.display_name}>
+							<div class="sheet-body disclosure-body" id={`sheet-body-${sheet.type}`} role="region" aria-label={sheet.display_name}>
 								<div class="tile-grid">
 									{#each sheet.choices as choice, i (choice.name)}
 										{@const existingClaim = claimMap.get(`${sheet.type}::${choice.name}`)}
@@ -1451,10 +1453,10 @@
 	   prologue/PrologueHelp.svelte for the copy and its styling,
 	   shared/HelpDisclosure.svelte for the frame.) */
 
+	/* The three category rows are a list: a hairline between them, no gap. */
 	.sheet-accordion {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
 	}
 
 	.sheet-panel {
@@ -1476,25 +1478,9 @@
 			'desc desc   desc desc';
 		align-items: center;
 		gap: 0.25rem 0.5rem;
-		width: 100%;
-		min-height: 44px;
-		padding: 0.55rem 0.7rem;
-		background: var(--color-surface-sunken);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.sheet-panel.open .sheet-header {
-		/* Calmer than gold (Round 2): the expanded tile/detail join is the one
-		   gold shape on screen now, so the open panel itself steps back to the
-		   standard warm ledger border. */
-		border-color: var(--color-border-warm);
-		border-bottom-color: transparent;
-		border-bottom-left-radius: 0;
-		border-bottom-right-radius: 0;
+		/* A disclosure row (tapRow.css): no box or fill, and the line under it
+		   moves under the open tiles. */
+		padding-block: var(--space-2);
 	}
 	.sheet-name { grid-area: name; color: var(--color-accent); font-size: 0.95rem; }
 	.sheet-desc {
@@ -1531,26 +1517,11 @@
 
 	.sheet-caret {
 		grid-area: caret;
-		color: var(--color-accent);
-		font-size: 0.75rem;
-		/* Points right when collapsed; rotates down to ▾ on open. */
-		transform: rotate(-90deg);
-		transition: transform 0.15s ease;
-	}
-	.sheet-panel.open .sheet-caret { transform: rotate(0); }
-	/* Reduced motion (docs/STYLE_GUIDE.md "Motion & the deck"): as .disc-caret
-	   above — the direction is the state, the sweep is the decoration. */
-	@media (prefers-reduced-motion: reduce) {
-		.sheet-caret { transition: none; }
+		display: inline-flex;
 	}
 
-	.sheet-body {
-		border: 1px solid var(--color-border-warm);
-		border-top: none;
-		border-bottom-left-radius: 8px;
-		border-bottom-right-radius: 8px;
-		padding: 0.5rem;
-	}
+	/* The tiles are game pieces and keep their boxes; the panel around them is
+	   not one (tapRow.css .disclosure-body: a line under it, nothing else). */
 	.tile-grid {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));

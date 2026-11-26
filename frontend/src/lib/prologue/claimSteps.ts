@@ -79,3 +79,12 @@ export function deriveClaimSteps(input: ClaimStepsInput): ClaimStep[] {
 
 	return steps;
 }
+
+/**
+ * The claim modal's open step after `key`'s header is pressed: pressing the
+ * open step shuts it (so its up chevron means "tap to close"), pressing a
+ * shut one opens it and shuts the rest. `null` means every step is shut.
+ */
+export function toggleStep(open: string | null, key: string): string | null {
+	return open === key ? null : key;
+}

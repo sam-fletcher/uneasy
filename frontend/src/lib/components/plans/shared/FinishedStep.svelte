@@ -2,7 +2,7 @@
   plans/shared/FinishedStep.svelte — a step that is over, as one line.
 
       ⚑ otto prepared Seek Answers
-      ✎ “the harbour ledgers”                ▸
+      ✎ “the harbour ledgers”                ⌄
 
   The play area reads as a plan's steps in order: finished steps collapse to a
   line like this one, and only the open step is expanded (and carries the
@@ -20,10 +20,11 @@
   drawn once, in LogMark, and never here.
 
   A line with nothing more to say is plain text and presses nothing. Give it
-  `detail` and it becomes a tappable row with a caret (a caret expands in
-  place) that opens the rest beneath it: a long note, or the dice of a roll
-  that is over. The text stays one line either way; a long one is cut with an
-  ellipsis, so give it a `detail` that holds the whole.
+  `detail` and it becomes a disclosure (tapRow.css): a tappable row with a
+  chevron that points down and flips up, which opens the rest beneath it: a
+  long note, or the dice of a roll that is over. The line under the row moves
+  to sit under the opened detail. The text stays one line either way; a long
+  one is cut with an ellipsis, so give it a `detail` that holds the whole.
 -->
 <script lang="ts">
 	import '$lib/components/shared/tapRow.css';
@@ -47,14 +48,17 @@
 	let { mark, children, detail, open: startOpen = false, wrap = false }: Props = $props();
 	// svelte-ignore state_referenced_locally
 	let open = $state(startOpen);
+	// A page holds many finished lines; the id is what aria-controls names.
+	const uid = $props.id();
 </script>
 
-<div class="done-step">
+<div class="done-step" class:disclosure={!!detail} class:has-body={!!detail && open}>
 	{#if detail}
 		<button
 			type="button"
 			class="tap-row done-line"
 			aria-expanded={open}
+			aria-controls={open ? `done-detail-${uid}` : undefined}
 			onclick={() => (open = !open)}
 		>
 			<span class="done-mark">{@render mark()}</span>
@@ -62,7 +66,7 @@
 			<RowMark kind="caret" {open} />
 		</button>
 		{#if open}
-			<div class="done-detail">{@render detail()}</div>
+			<div class="done-detail disclosure-body" id={`done-detail-${uid}`}>{@render detail()}</div>
 		{/if}
 	{:else}
 		<div class="done-line">
@@ -119,7 +123,6 @@
 	   (16px mark + one gap = 24px). */
 	.done-detail {
 		padding: var(--space-2) 0 var(--space-3) var(--space-5);
-		border-bottom: 1px solid var(--color-border);
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--color-text-secondary);

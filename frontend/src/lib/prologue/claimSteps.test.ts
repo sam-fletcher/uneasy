@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveClaimSteps, type ClaimStepsInput } from './claimSteps';
+import { deriveClaimSteps, toggleStep, type ClaimStepsInput } from './claimSteps';
 
 function baseInput(overrides: Partial<ClaimStepsInput> = {}): ClaimStepsInput {
 	return {
@@ -88,5 +88,15 @@ describe('deriveClaimSteps', () => {
 		const step = steps.find((s) => s.key === 'card:H::K')!;
 		expect(step.complete).toBe(true);
 		expect(step.isTake).toBe(true);
+	});
+});
+
+describe('toggleStep', () => {
+	it('pressing the open step shuts it, so its up chevron means "tap to close"', () => {
+		expect(toggleStep('asset', 'asset')).toBeNull();
+	});
+	it('pressing a shut step opens it and shuts the one that was open', () => {
+		expect(toggleStep('asset', 'card-H-3')).toBe('card-H-3');
+		expect(toggleStep(null, 'asset')).toBe('asset');
 	});
 });

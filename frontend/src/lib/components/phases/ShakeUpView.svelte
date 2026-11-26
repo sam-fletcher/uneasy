@@ -48,7 +48,7 @@
 	import { shakeUpWaitingOn, type WaitingOnState } from '$lib/waitingOn';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import Chip from '$lib/components/shared/Chip.svelte';
-	import ChecklistRow from '$lib/components/shared/ChecklistRow.svelte';
+	import HelpDisclosure from '$lib/components/shared/HelpDisclosure.svelte';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import TableRoster from '$lib/components/shared/TableRoster.svelte';
@@ -157,7 +157,7 @@
 		game.shake_up_step === 1 ? 'Rolling' : game.shake_up_step === 2 ? 'Spending' : '—'
 	);
 
-	// Phase intro: open by default only in the first act. ChecklistRow's
+	// Phase intro: open by default only in the first act. HelpDisclosure's
 	// `defaultOpen` is a one-shot seed (like Buffet's `open` prop /
 	// AssetCardSelectable's `defaultExpanded`) — once the player toggles it,
 	// their choice sticks even as the category advances.
@@ -447,10 +447,8 @@
 		<p class="state">Your tokens: <span class="num">{myTokens}</span></p>
 	</header>
 
-	<ChecklistRow
+	<HelpDisclosure
 		title="About the Shake-Up"
-		glyph="help"
-		action="expand"
 		id="shake-up-intro"
 		defaultOpen={game.shake_up_category === 'esteem'}
 	>
@@ -461,7 +459,7 @@
 			happened over the last thirteen rows of the public record, and
 			embrace this last moment: once Power is settled, the game ends.
 		</p>
-	</ChecklistRow>
+	</HelpDisclosure>
 
 	<!-- Load errors sit up here with the header: they explain the state below
 	     being stale. The action slot is further down, under the spend

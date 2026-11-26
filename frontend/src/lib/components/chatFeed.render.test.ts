@@ -215,6 +215,20 @@ describe("a plan's resolution", () => {
 		expect(open).toContain('Seek Answers succeeded. Next: otto.');
 	});
 
+	it('is a disclosure: the closing line moves to the foot of an open span, and the header names its body', () => {
+		const posts = planSpan(7, closeMake());
+		const folded = renderChat(posts, { plans, feed: { initialReadMarker: 999 } });
+		expect(folded).toMatch(/class="plan-group span disclosure[ "]/);
+		expect(folded).not.toMatch(/class="plan-group[^"]*\bhas-body\b/);
+		// aria-controls may only name an element that exists.
+		expect(folded).not.toContain('aria-controls');
+
+		const open = renderChat(posts, { plans, feed: { initialReadMarker: posts[0].id } });
+		expect(open).toMatch(/class="plan-group span disclosure[^"]*\bhas-body\b/);
+		expect(open).toContain('aria-controls="span-body-plan-7"');
+		expect(open).toContain('id="span-body-plan-7"');
+	});
+
 	it('does not say the status word twice: the outcome line is the sentence behind it', () => {
 		const body = renderChat(planSpan(7, closeMake()), { plans });
 		expect(body).not.toMatch(/class="plan-outcome[^>]*>\s*<span[^>]*>Make</);
