@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -94,16 +95,73 @@ type pushPayload struct {
 	URL   string `json:"url"`
 }
 
-// buildPushPayload renders the fixed copy for gameID/joinCode. Split out
-// from sendGroup so tests can assert on the encoding without a network round
-// trip (mirrors formatDiscordMessage in notify.go).
-func buildPushPayload(gameID int64) ([]byte, error) {
+// reminderSeat is one player at a table, as the reminder wording needs them.
+type reminderSeat struct {
+	id   int64
+	name string
+}
+
+// reminderBody words the "waiting on you" push for recipientID, naming the
+// other players at the table so a player in several games can tell which one
+// is calling. Tablemates are named by display name, never the join code, and
+// the recipient is left out. Two named at most; the rest are counted:
+//
+//	2 players: "... at the table with wren"
+//	3 players: "... at the table with otto and wren"
+//	5 players: "... at the table with otto, wren and 2 others"
+//
+// With no tablemates (a solo roster, or a failed roster read that passed nil)
+// it keeps the plain copy the reminder had before it named anyone.
+func reminderBody(recipientID int64, table []reminderSeat) string {
+	var others []string
+	for _, s := range table {
+		if s.id != recipientID {
+			others = append(others, s.name)
+		}
+	}
+	switch {
+	case len(others) == 0:
+		return "The game is waiting on you!"
+	case len(others) <= 2:
+		return "The game is waiting on you at the table with " + strings.Join(others, " and ")
+	default:
+		rest := len(others) - 2
+		noun := "others"
+		if rest == 1 {
+			noun = "other"
+		}
+		return fmt.Sprintf("The game is waiting on you at the table with %s, %s and %d %s",
+			others[0], others[1], rest, noun)
+	}
+}
+
+// buildPushPayload encodes one reminder for gameID with the given body. Split
+// out from sendGroup so tests can assert on the encoding without a network
+// round trip (mirrors formatDiscordMessage in notify.go).
+func buildPushPayload(gameID int64, body string) ([]byte, error) {
 	return json.Marshal(pushPayload{
 		Title: pushTitle,
-		Body:  "The game is waiting on you!",
+		Body:  body,
 		Tag:   fmt.Sprintf("game-%d", gameID),
 		URL:   fmt.Sprintf("/table/%d", gameID),
 	})
+}
+
+// reminderBodyFor loads gameID's roster and words the reminder for playerID. A
+// failed roster read is logged and the plain copy goes out instead: the names
+// are decoration on the ping, and a reminder is not worth dropping over them.
+func reminderBodyFor(ctx context.Context, q *dbgen.Queries, logger *slog.Logger, playerID, gameID int64) string {
+	roster, err := q.GetPlayersByGame(ctx, gameID)
+	if err != nil {
+		logger.WarnContext(ctx, "push notify: load roster for reminder wording failed",
+			"err", err, "game_id", gameID)
+		return reminderBody(playerID, nil)
+	}
+	table := make([]reminderSeat, 0, len(roster))
+	for _, p := range roster {
+		table = append(table, reminderSeat{id: p.ID, name: p.DisplayName})
+	}
+	return reminderBody(playerID, table)
 }
 
 // RunNotificationTick is one full reconcile+send pass across every game that
@@ -231,7 +289,7 @@ func sendGroup(ctx context.Context, store *db.Store, logger *slog.Logger, g dueG
 	if vapidPublicKey == "" || vapidPrivateKey == "" {
 		logger.InfoContext(ctx, "push notification (VAPID keys unset)",
 			"player_id", g.playerID, "game_id", g.gameID, "subscriptions", len(g.subs))
-	} else if payload, err := buildPushPayload(g.gameID); err != nil {
+	} else if payload, err := buildPushPayload(g.gameID, reminderBodyFor(ctx, store.Q, logger, g.playerID, g.gameID)); err != nil {
 		logger.ErrorContext(ctx, "notification tick: encode payload failed", "err", err, "player_id", g.playerID)
 	} else {
 		for _, sub := range g.subs {
