@@ -25,7 +25,7 @@
 	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import Quote from '$lib/components/shared/Quote.svelte';
 	import './planPanel.css';
-		import { useWindowEvents } from '$lib/useWindowEvents';
+	import { useWindowEvents } from '$lib/useWindowEvents';
 	import { WAR_EVENTS } from '$lib/ws';
 	import {
 		ApiError,
@@ -111,7 +111,9 @@
 	// is part of the key because a plan can be shown a moment before its
 	// resolution_data carries it, and that arrival is what makes the fetch worth
 	// making.
-	let lastKey = $state<string | null>(null);
+	// Plain `let`: nothing renders it, and writing a $state inside the effect that
+	// reads it would re-run the effect once.
+	let lastKey: string | null = null;
 	$effect(() => {
 		if (!isWarView || !plan) return;
 		const key = `${plan.id}:${warID ?? ''}`;

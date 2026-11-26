@@ -204,6 +204,9 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			PlayerID: player.ID, Accepted: body.Accepted,
 		})
 
+		// Both branches below log a line that names the proposer.
+		proposer := playerDisplayName(ctx, deps.Q, prop.ProposerID)
+
 		if !body.Accepted {
 			_ = deps.Q.SetPeaceProposalStatus(ctx, dbgen.SetPeaceProposalStatusParams{
 				ID:     prop.ID,
@@ -212,7 +215,6 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			// Without this a rejection was silent: the proposal just vanished
 			// from the war panel and the proposer, who still owes the cost,
 			// was never told why. Names both so the log reads as an exchange.
-			proposer := playerDisplayName(ctx, deps.Q, prop.ProposerID)
 			mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
 				"%s rejected %s's peace terms — the cost of battle is still owed.",
 				playerMark(player.ID, player.DisplayName), proposer))
@@ -230,7 +232,6 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		// acceptance is logged too. Logged for the last accepter as well, so the
 		// run of lines ends on who closed it, ahead of "the war is over".
 		if !alreadyAccepted {
-			proposer := playerDisplayName(ctx, deps.Q, prop.ProposerID)
 			mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
 				"%s accepted %s's peace terms.",
 				playerMark(player.ID, player.DisplayName), proposer))
