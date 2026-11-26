@@ -1102,6 +1102,14 @@
 				</FinishedStep>
 			</div>
 		</Cell>
+		<Cell label="What a set piece settled · later steps carry it as plain text in the finished line, not the set piece again (Propose Duel's bouts and roll)">
+			<div class="step-col">
+				<FinishedStep wrap>
+					{#snippet mark()}<LogMark family="asset" />{/snippet}
+					Stakes set: <PlayerName {players} id={1} />'s <AssetName name="Ser Ott" /> faces <PlayerName {players} id={3} />'s <AssetName name="Dame Orr" />
+				</FinishedStep>
+			</div>
+		</Cell>
 		<Cell label="Finished steps · plain lines with the step's mark; one with more to say opens in place (caret)">
 			<div class="step-col">
 				<FinishedStep>
