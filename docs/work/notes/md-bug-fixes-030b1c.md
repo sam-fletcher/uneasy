@@ -36,7 +36,7 @@ The owner's two readings are recorded in the private rulings (Make Demands).
 Against this worktree's code (private database `uneasy_claude_md_bug_fixes_030b1c`, own server on :8163):
 
 - `make check-fast`: passes (Go lint and unit, svelte-check, Vitest 2390, tracker check).
-- `make test-integration`: full suite on the private database. One failure, an older Waiting On duel test (`TestWaitingOn_ProposeDuel_…`) that pinned the old seating; I rewrote it to the new reading and re-ran the duel tests (`TestWaitingOn_ProposeDuel|TestProposeDuel`), which pass. The full suite was not run again after that one edit.
+- `make test-integration`: the full suite passes on the branch rebased onto the latest `main`. The first full run had caught one older Waiting On duel test (`TestWaitingOn_ProposeDuel_…`) that pinned the old seating; I rewrote it to the new reading.
 - Each new test was shown failing without its fix:
   - `ws-handlers.test.ts` › "demand.prepared, whose payload is a plan, fetches no plan": one
     `getPlan` call with the fix reverted.
@@ -47,8 +47,8 @@ Against this worktree's code (private database `uneasy_claude_md_bug_fixes_030b1
   - Not a bite check: `…HeldWinnerCommittingTheirLastDieStaysHeld` passes without a code change; it
     pins the sweep's existing behaviour. The `DiceRollPanel` and `heldRollDecisions` unit tests use
     a new prop and helper, so they can't exist without the change.
-- `make_demands.spec.ts`: 19 of 19 pass against my own server, including a new spec for the held
-  winner (reminder shown to the winner only, the early ready 409s, the reminder goes once decided).
+- `make_demands.spec.ts`: 19 of 19 pass against my own server (re-run after the final rebase), including a new spec for the held
+  winner (reminder shown to the winner only, the early ready 409s, the reminder goes and Pass and Ready return once decided).
 - 375px screenshots (throwaway spec, not committed): the duel's bouts with a perform-steps demand
   in place as the preparer (alice sees "Your move: Declare the bout") and the winner (bob sees
   "Waiting on alice", no controls); the roll panel for a held winner as winner, preparer and
