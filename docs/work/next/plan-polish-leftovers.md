@@ -6,10 +6,6 @@ order: 73
 What is left of the 2026-11-07 audit's small gaps, after the plan-by-plan pass that fixed the rest
 (see `notes/inspiring-matsumoto-c4b60d.md`). Each is waiting on the owner or is an item of its own.
 
-**Host Festivity**
-- Insisting is one irreversible tap; consider two steps if playtesters trip on it. The owner's call:
-  [festivity-insist-two-step](../questions/festivity-insist-two-step.md).
-
 **Other**
 - About 180 "you" lines in plan panels were never reviewed for wrong-person copy. This is an audit,
   not a fix, and is its own piece of work.
