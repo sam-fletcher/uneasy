@@ -12,7 +12,8 @@
 //
 // WHEN A DRAG IS CLAIMED. Decided once per gesture, at the first move past a
 // few pixels of slop: the finger is going mostly downward AND the body is
-// scrolled to the very top. Anything else (moving up, moving sideways, a body
+// scrolled to the very top (the body, and any scrolling region under the
+// finger). Anything else (moving up, moving sideways, a body
 // scrolled partway) is left alone for the rest of that gesture, so the body
 // scrolls as normal, and a long scroll-up flick that happens to reach the top
 // doesn't carry on into closing the sheet; the owner lifts and swipes again.
@@ -57,13 +58,28 @@ export interface SwipeOptions {
 	/** Read at the start of each touch, not once: the sheet's mode changes with the window. */
 	enabled: () => boolean;
 	onClose: () => void;
-	/** The scroller inside the sheet; a drag only starts when it is at the top. */
-	body: () => HTMLElement | null;
 	/** The scrim, faded in step with the drag. */
 	scrim: () => HTMLElement | null;
 }
 
 type Sample = { t: number; y: number };
+
+/** The largest `scrollTop` among the vertical scrollers between `from` and the
+ *  sheet (inclusive of `from`, exclusive of `root`). A sheet can scroll in more
+ *  than one place: its own body, or a region inside its content (Help's tab
+ *  panel has a fixed height and scrolls itself, leaving the body at 0). A drag
+ *  may only claim the gesture when all of them are at the top. */
+export function scrolledAmount(from: Element | null, root: HTMLElement): number {
+	let most = 0;
+	for (let el = from; el && el !== root; el = el.parentElement) {
+		if (!(el instanceof HTMLElement) || el.scrollTop <= 0) continue;
+		const overflowY = getComputedStyle(el).overflowY;
+		if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+			most = Math.max(most, el.scrollTop);
+		}
+	}
+	return most;
+}
 
 /** Svelte action for the `.sheet` element. */
 export function swipeToDismiss(node: HTMLElement, options: SwipeOptions) {
@@ -71,6 +87,7 @@ export function swipeToDismiss(node: HTMLElement, options: SwipeOptions) {
 	let startX = 0;
 	let startY = 0;
 	let originY = 0;
+	let target: Element | null = null; // where the touch began
 	let tracking = false; // a one-finger touch is down and still undecided or claimed
 	let claimed = false;
 	let busy = false; // an exit or spring-back is animating; ignore new touches
@@ -156,6 +173,7 @@ export function swipeToDismiss(node: HTMLElement, options: SwipeOptions) {
 		if (busy || !opts.enabled() || e.touches.length !== 1) return;
 		if (e.target instanceof Element && e.target.closest(TEXT_FIELD)) return;
 		const t = e.touches[0];
+		target = e.target instanceof Element ? e.target : null;
 		startX = t.clientX;
 		startY = t.clientY;
 		samples = [{ t: performance.now(), y: t.clientY }];
@@ -176,7 +194,7 @@ export function swipeToDismiss(node: HTMLElement, options: SwipeOptions) {
 			const mx = t.clientX - startX;
 			const my = t.clientY - startY;
 			if (Math.abs(mx) < SLOP_PX && Math.abs(my) < SLOP_PX) return;
-			const scrollTop = opts.body()?.scrollTop ?? 0;
+			const scrollTop = scrolledAmount(target, node);
 			if (!claimsDrag(mx, my, scrollTop)) {
 				tracking = false; // leave this gesture to the browser
 				return;

@@ -26,6 +26,11 @@ component every sheet goes through (`RetinueSheet.svelte`):
      the gesture is left to the browser for its whole length. So a body scrolled
      partway scrolls back up, and a scroll-up flick that reaches the top doesn't
      carry on into closing: the user lifts and swipes again.
+   - "At the top" means every vertical scroller from the touch target up to the
+     sheet is at 0 (`scrolledAmount`), not just `.sheet-body`: on a phone Help
+     fixes its tab panel's height and scrolls *that* (`.help.panel .body`), so
+     the sheet body stays at 0 there. Found in review; pinned by the Help case
+     in the e2e spec, which fails with a body-only check.
    - Never starts on `input`, `textarea`, `select` or `[contenteditable]`.
    - Once claimed, `preventDefault` on each move, `translateY(dy)` on `.sheet`,
      and the scrim fades in step.

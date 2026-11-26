@@ -107,7 +107,6 @@
 	const swipeOptions = () => ({
 		enabled: draggable,
 		onClose,
-		body: () => sheetEl?.querySelector<HTMLElement>('.sheet-body') ?? null,
 		scrim: () => scopeEl?.querySelector<HTMLElement>('.backdrop') ?? null,
 	});
 

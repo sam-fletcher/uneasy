@@ -196,3 +196,39 @@ test('only a bottom sheet drags: hosted over a column yes, the centred dialog no
   expect((await page.locator('.sheet').boundingBox())!.y).toBeCloseTo(b.y, 0);
   await ctx.close();
 });
+
+test("Help's own scrolling tab panel is protected like the sheet body", async ({ browser }) => {
+  // On a phone Help gives its tab panel a fixed height and scrolls *that*, so
+  // the sheet body's own scrollTop stays 0. The drag has to look at the
+  // scroller under the finger, not just the body.
+  const ctx = await browser.newContext({ baseURL: E2E, viewport: PHONE, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage();
+  await openTable(page, ctx.request);
+  const cdp = await ctx.newCDPSession(page);
+  const dialog = page.getByRole('dialog');
+
+  await page.getByRole('button', { name: /How to play/ }).click();
+  await expect(dialog).toBeVisible();
+  await page.waitForTimeout(300);
+  const inner = dialog.locator('.help.panel .body');
+  const overflow = await inner.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(overflow, "Help's panel body must overflow for this to mean anything").toBeGreaterThan(100);
+  expect(await page.locator('.sheet-body').evaluate((el) => el.scrollTop)).toBe(0);
+
+  const half = Math.floor(overflow / 2);
+  await inner.evaluate((el, y) => (el.scrollTop = y), half);
+  const box = (await inner.boundingBox())!;
+  const top = await sheetTop(page);
+
+  // A downward swipe on the half-scrolled inner body scrolls it back up.
+  await drag(cdp, { x: 187, y: box.y + 40 }, { x: 187, y: box.y + 40 + 120 }, { stepMs: 30 });
+  expect(await sheetTop(page)).toBeCloseTo(top, 0);
+  await expect(dialog).toBeVisible();
+  expect(await inner.evaluate((el) => el.scrollTop)).toBeLessThan(half);
+
+  // At the top of the inner body, the same swipe closes the sheet.
+  await inner.evaluate((el) => (el.scrollTop = 0));
+  await drag(cdp, { x: 187, y: box.y + 40 }, { x: 187, y: box.y + 40 + 300 });
+  await expect(dialog).toHaveCount(0);
+  await ctx.close();
+});
