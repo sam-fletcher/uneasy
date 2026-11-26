@@ -356,11 +356,11 @@
 		}
 	});
 	async function submitAddendum(p: Plan) {
-		if (addendumBusy) return;
+		if (addendumBusy || !addendumDraft.trim()) return;
 		addendumBusy = true; resError = '';
 		try {
 			const text = addendumDraft.trim();
-			await setAddendum(p.id, text, text ? addendumConnector : undefined);
+			await setAddendum(p.id, text, addendumConnector);
 			onPlansChanged();
 		} catch (e) {
 			resError = e instanceof Error ? e.message : 'Could not place addendum.';
@@ -643,7 +643,7 @@
 							<div class="titled">
 								<p class="choices-header">The addendum</p>
 								<p class="ft-prompt">
-									Add your rider to the final law's text (or leave it blank).
+									Add your rider to the final law's text.
 								</p>
 							</div>
 							<div class="chip-row">
@@ -654,11 +654,11 @@
 							</div>
 							<label class="form-label">
 								<textarea rows={2} bind:value={addendumDraft} class="form-textarea" maxlength={TEXT_LIMITS.LONG_TEXT}
-									placeholder='a simple phrase. (optional)'></textarea>
+									placeholder='a simple phrase.'></textarea>
 							</label>
 							<button class="action-btn primary"
 								onclick={() => submitAddendum(plan)}
-								disabled={addendumBusy}>
+								disabled={addendumBusy || !addendumDraft.trim()}>
 								{addendumBusy ? '…' : 'Place addendum'}
 							</button>
 							<EndsNote text={`This places the addendum. ${playerName(players, resolutionActorID(plan, plans))} enacts the law next.`} />

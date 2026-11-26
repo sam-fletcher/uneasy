@@ -36,9 +36,10 @@ type ProposeDecreeResolutionData struct {
 	// resource asset are created later, at set-addendum. See OutcomeApplied.
 	Outcome string `json:"outcome,omitempty"`
 
-	// Addendum is the signatory's optional free-text rider. AddendumConnector
+	// Addendum is the signatory's free-text rider (required; a blank is refused).
+	// AddendumConnector
 	// ("and"/"but") is prepended to it in the final law. AddendumPlaced flips
-	// true when the signatory confirms their addendum (even if blank). Placing
+	// true once the signatory has written their addendum. Placing
 	// the addendum is the step that ENACTS the law (creates the law row and, on a
 	// make, the resource asset) — the rules put the law into effect with its
 	// addendum, so it cannot precede this step.

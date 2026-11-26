@@ -630,9 +630,9 @@ func pdSkipAmendHandler(deps *PlanDeps) http.HandlerFunc {
 
 // pdSetAddendumHandler handles POST /api/plans/:planId/set-addendum.
 //
-// The signatory records their rider — an "and"/"but" connector plus optional
-// free text. This is a required step (AddendumPlaced), confirmed even with blank
-// text, and it comes immediately BEFORE enactment: the preparer then enacts the
+// The signatory records their rider — an "and"/"but" connector plus free text,
+// both required (a blank addendum is refused with a 400). This is a required step
+// (AddendumPlaced), and it comes immediately BEFORE enactment: the preparer then enacts the
 // law (enact-law), which writes the law row carrying this addendum. Keeping the
 // addendum a distinct, signatory-only step means the preparer sees the final law
 // text (body + amendments + addendum) when authoring the resource. Only valid
@@ -703,14 +703,20 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		body.Addendum = addendum
-		// A connector is only required when there's addendum text to attach.
-		if strings.TrimSpace(body.Addendum) != "" && body.Connector != "and" && body.Connector != "but" {
-			respondErr(w, http.StatusBadRequest, "connector must be 'and' or 'but' when an addendum is provided")
+		// The addendum is required, on a make and on a mar: the law goes into place
+		// "after the signatory adds an addendum" (book p.47; rulings, Propose
+		// Decree, owner 2026-11-26). A blank is refused, so the connector always
+		// has text to join.
+		if addendum == "" {
+			respondErr(w, http.StatusBadRequest, "the signatory's addendum is required")
+			return
+		}
+		if body.Connector != "and" && body.Connector != "but" {
+			respondErr(w, http.StatusBadRequest, "connector must be 'and' or 'but'")
 			return
 		}
 
-		pd.Addendum = strings.TrimSpace(body.Addendum)
+		pd.Addendum = addendum
 		pd.AddendumConnector = body.Connector
 		pd.AddendumPlaced = true
 		if err := saveResolutionData(ctx, deps.Q, plan.ID, resData); err != nil {
@@ -722,9 +728,6 @@ func pdSetAddendumHandler(deps *PlanDeps) http.HandlerFunc {
 		if rider := pdComposeAddendum(pd); rider != nil {
 			pdLog(ctx, deps, plan, model.SeverityDefault,
 				fmt.Sprintf("%s placed the signatory's addendum at the end of the law: %q", signatoryName, *rider))
-		} else {
-			pdLog(ctx, deps, plan, model.SeverityDefault,
-				fmt.Sprintf("%s left the law without an addendum.", signatoryName))
 		}
 
 		// The law is not enacted here — the preparer enacts it (enact-law). Nudge

@@ -36,7 +36,7 @@ package handler
 //      auto-resolves (AutoCompleteAfterChoice) — no separate Complete step.
 //
 // The final law = amended body + an "and"/"but" connector + the signatory's
-// (optional) rider text.
+// rider text.
 //
 // Follow Scene: Your character interacting with a law.
 //
@@ -494,7 +494,7 @@ func pdCreateLawAsset(
 
 // CanComplete gates completion on the full law-writing sequence: the outcome
 // must be applied (make-choice), on a mar every council amender must have taken
-// their turn, the signatory must have placed their addendum (even if blank), and
+// their turn, the signatory must have placed their addendum (never blank), and
 // the preparer must have enacted the law (which creates the law row, so LawID is
 // the enactment signal). Completion normally runs automatically right after
 // enact-law (AutoCompleteAfterChoice).
