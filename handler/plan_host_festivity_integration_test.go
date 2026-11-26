@@ -847,6 +847,24 @@ func TestHostFestivity_EndEventGate(t *testing.T) {
 	assert.Equal(t, model.PlanResolved, resolved.Status, "ending resolves the plan")
 }
 
+// TestHostFestivity_EndEventMidRoll_GetsTheRollLock: End the event during a
+// guest's roll-and-choice answers with the roll lock's message, as every other
+// host action does — not the end-of-event refusal ("still in full swing"). The
+// refusal itself is right (the roller has no outcome yet); only the words differ.
+func TestHostFestivity_EndEventMidRoll_GetsTheRollLock(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	g1 := (hostIdx + 1) % len(h.tg.Players)
+
+	hfStartRoll(t, h, plan.ID, g1) // g1 is mid roll-and-choice
+	endPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/end-event"
+	code, body := h.post(hostIdx, endPath, nil)
+	require.Equalf(t, http.StatusConflict, code, "end mid-roll: %v", body)
+	msg, _ := body["error"].(string)
+	assert.Contains(t, msg, "dice roll is in progress", "the roll lock's message")
+	assert.NotContains(t, msg, "full swing", "not the end-of-event refusal")
+}
+
 // hfChallengeState reloads the plan and returns its festivity sub-state.
 func hfChallengeState(t *testing.T, h *planLifecycle, planID int64) *gamepkg.FestivityResolutionData {
 	t.Helper()
