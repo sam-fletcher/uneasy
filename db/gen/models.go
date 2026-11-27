@@ -345,6 +345,18 @@ type Ranking struct {
 	Rank     int16                 `db:"rank" json:"rank"`
 }
 
+type RenderCrashReport struct {
+	ID        int64              `db:"id" json:"id"`
+	AccountID *int64             `db:"account_id" json:"account_id"`
+	GameID    *int64             `db:"game_id" json:"game_id"`
+	Boundary  string             `db:"boundary" json:"boundary"`
+	Message   string             `db:"message" json:"message"`
+	Stack     *string            `db:"stack" json:"stack"`
+	Route     string             `db:"route" json:"route"`
+	Build     string             `db:"build" json:"build"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type Rumor struct {
 	ID             int64              `db:"id" json:"id"`
 	GameID         int64              `db:"game_id" json:"game_id"`

@@ -371,6 +371,10 @@ func setupRouter(
 			r.With(credentialLimiter).Post("/reset-requests", handler.CreateResetRequest(store))
 			r.With(credentialLimiter).Post("/password-resets", handler.CreatePasswordReset(store))
 
+			// Render-crash reports (handler/render_crash.go). Session-authed like
+			// /feedback, and rate-limited by its own table count, not the feedback one.
+			r.Post("/render-crashes", handler.CreateRenderCrashReport(store))
+
 			// Dev-only routes — gated by UNEASY_DEV=1. Never mount in prod.
 			if devRoutesEnabled() {
 				logger.Warn("dev routes are MOUNTED — never run this in production")
