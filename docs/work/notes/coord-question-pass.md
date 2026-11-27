@@ -65,11 +65,11 @@ mechanical joins `make-war-peace-proposal-loose-ends` for the rules round.
 
 ## Ready to build, no question open
 
-- `festivity-duel-terms`, `render-crash-report`, `make-demands-overlay-stand-in-line`,
-  `check-fast-fresh-worktree` and `war-cost-and-spoils-words`: each brief is settled, so Haiku at high
-  effort. Each touches its own files, so they can run in parallel.
-- `war-peace-treaties` after `war-cost-and-spoils-words`, since both touch the peace handler. Sonnet:
-  it crosses the server, the laws payload and the "new" dot.
+- `festivity-duel-terms`, `render-crash-report`, `make-demands-overlay-stand-in-line` and
+  `check-fast-fresh-worktree`: each brief is settled, so Haiku at high effort. Each touches its own
+  files, so they can run in parallel.
+- **Taken:** `war-cost-and-spoils-words` (Haiku) and `war-peace-treaties` (Sonnet) are being built by
+  sessions the question-pass coordinator started, at the owner's request. Don't start them again.
 - Then the queue: `redesign-prologue` (after board 1), `inline-text-names-in-strings`,
   `set-piece-candidates`, `plan-gain-recipient-helper` (alone: it touches most plan panels),
   `redesign-cleanup` last.

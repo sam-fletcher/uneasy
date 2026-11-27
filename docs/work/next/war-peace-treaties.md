@@ -1,7 +1,6 @@
 ---
 title: "Make War: agreed peace terms are kept on the Laws tab as treaties, and the closing line quotes them"
 order: 84
-after: next/war-cost-and-spoils-words.md
 ---
 
 Ruled by the owner on 2026-11-26. A peace proposal's terms are stored with it
