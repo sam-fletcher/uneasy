@@ -32,6 +32,25 @@ export function submitFeedback(body: {
 	});
 }
 
+// POST /api/render-crashes — session-authed. Sent by lib/renderCrash.ts when a
+// svelte:boundary catches a render throw. Field limits are in that file and in
+// handler/render_crash.go.
+export interface RenderCrashReport {
+	boundary: string;
+	message: string;
+	stack?: string;
+	route: string;
+	build: string;
+	game_id?: number;
+}
+
+export function submitRenderCrash(body: RenderCrashReport): Promise<{ id: number }> {
+	return apiFetch('/render-crashes', {
+		method: 'POST',
+		body: JSON.stringify(body),
+	});
+}
+
 // POST /api/reset-requests — logged-out. `website` is a hidden honeypot;
 // real users never see or fill it in.
 export function submitResetRequest(body: {

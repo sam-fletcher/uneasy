@@ -6,8 +6,10 @@
 // each_key_duplicate inside the table's boundary) read as a stale waiting-on
 // bar until a CDP debugger hook dug the real error out.
 //
-// This only logs, locally. Reporting a render crash to the server is a separate
-// question waiting on the owner (docs/work/questions/render-crash-report.md).
+// This logs locally. A boundary's onerror also calls reportRenderCrash
+// (lib/renderCrash.ts), which files the same crash with the server. The two stay
+// separate: this file is imported by the Playwright suite, which cannot load
+// $app/environment (the build id the report needs), so the report can't live here.
 
 /** Prefix on every line this writes, so a console capture (a Playwright
  *  listener, a bug report) can pick the lines out. */

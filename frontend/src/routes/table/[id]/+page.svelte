@@ -33,6 +33,7 @@
 	import { createConnection, type WSMessage } from '$lib/ws';
 	import { readTableSnapshot, writeTableSnapshot, type TableSnapshot } from '$lib/pageCache';
 	import { logBoundaryError } from '$lib/boundaryError';
+	import { reportRenderCrash } from '$lib/renderCrash';
 	import { handleWSMessage as runWSMessage, syncActiveRoll, type WSContext } from './ws-handlers';
 	import {
 		reconnectResync, resolveAnchor, enterHistoryMode, countUnread, type ChatFeedContext,
@@ -1121,7 +1122,11 @@
 					worth offering first, since a bad payload is usually repaired by the next
 					resync.
 				-->
-				<svelte:boundary onerror={(error) => logBoundaryError(`table phase view (${game?.phase ?? 'no game'})`, error)}>
+				<svelte:boundary onerror={(error) => {
+					const where = `table phase view (${game?.phase ?? 'no game'})`;
+					logBoundaryError(where, error);
+					reportRenderCrash(where, error, game?.id);
+				}}>
 					{#if loading}
 						<div class="center-message">Loading…</div>
 
