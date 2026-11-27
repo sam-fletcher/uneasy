@@ -22,10 +22,9 @@ import {
 //   · a table with a reigning monarch: the monarch signs and sits on the
 //     council at any power rank (never audited, ADR-007 Phase C).
 //
-// Whether the make resolves itself once the law is enacted is an open owner
-// question (docs/work/questions/propose-decree-make-autoresolve.md), so no spec
-// here asserts the plan's status after enact-law — the law and the resource are
-// the outcome.
+// The make resolves itself once the law is enacted, since enacting it is a real
+// closing act. No spec here asserts the plan's status after enact-law yet: the law
+// and the resource are the outcome.
 //
 // Setup (seed, scene, prepare, fast-forward, forcing the dice, crowning a
 // monarch via /api/dev/crown) goes over the API; the subject is the panel and
