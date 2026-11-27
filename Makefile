@@ -44,6 +44,21 @@ frontend: frontend-install
 	find cmd/server/frontend_dist -mindepth 1 -not -name .gitignore -exec rm -rf {} +
 	cp -R frontend/build/. cmd/server/frontend_dist/
 
+# The cmd/server tests read the embedded frontend (frontend_test.go,
+# warmup_test.go) and fail when frontend_dist holds no build. frontend_dist is
+# gitignored, so a fresh worktree has none, and only `make frontend` or `make
+# build` used to fill it. This file target runs `make frontend` when the build's
+# _app directory is missing. Once it exists the target has no prerequisites to
+# be stale against, so it is up to date and costs nothing.
+#
+# It does not check that the build is fresh. The tests need some immutable
+# asset to be present, not the latest one. After a frontend change you want the
+# embedded server to show, run `make frontend` yourself.
+FRONTEND_BUILT := cmd/server/frontend_dist/_app
+
+$(FRONTEND_BUILT):
+	$(MAKE) frontend
+
 # Ensure the embed directory has at least one file so `go build` succeeds
 # without a frontend build (CI Go-only checks, fresh clones, etc.).
 placeholder:
@@ -156,7 +171,7 @@ test-e2e: frontend-install
 
 check: check-fast test-integration test-e2e
 
-check-fast: vet deadcode test check-frontend test-frontend-unit test-hooks tracker-check
+check-fast: $(FRONTEND_BUILT) vet deadcode test check-frontend test-frontend-unit test-hooks tracker-check
 
 # Regenerate sqlc bindings after touching db/queries/*.sql or migrations.
 sqlc:
