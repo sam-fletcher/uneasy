@@ -46,6 +46,7 @@
 //     push_notifications.go, push_subscriptions.go — the unified chat/
 //     action-log feed, its WebSocket event types, and web-push delivery.
 //   - feedback.go — in-app feedback form submission.
+//   - render_crash.go — a browser's report of a render crash a boundary caught.
 //   - helpers.go, respond.go — small generic helpers (JSON response
 //     writers, field parsing) used throughout the package.
 //

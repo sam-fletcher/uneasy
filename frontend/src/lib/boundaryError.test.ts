@@ -79,17 +79,17 @@ function nodesOf(node: unknown, type: string): AstNode[] {
 }
 
 /**
- * The name this component gives `logBoundaryError` (the import can be aliased),
- * or null when it doesn't import it from boundaryError.
+ * The name this component gives `exported` (the import can be aliased), or null
+ * when it doesn't import it from a module whose path matches `from`.
  */
-function logBoundaryErrorName(ast: ReturnType<typeof parse>): string | null {
+function importedName(ast: ReturnType<typeof parse>, from: RegExp, exported: string): string | null {
 	const imports = nodesOf(ast.instance, 'ImportDeclaration');
 	for (const imp of imports) {
-		const from = (imp.source as { value?: unknown }).value;
-		if (typeof from !== 'string' || !/(^|\/)boundaryError$/.test(from)) continue;
+		const source = (imp.source as { value?: unknown }).value;
+		if (typeof source !== 'string' || !from.test(source)) continue;
 		for (const spec of imp.specifiers as AstNode[]) {
 			const imported = spec.imported as AstNode | undefined;
-			if (spec.type === 'ImportSpecifier' && imported?.name === 'logBoundaryError') {
+			if (spec.type === 'ImportSpecifier' && imported?.name === exported) {
 				return (spec.local as AstNode).name ?? null;
 			}
 		}
@@ -121,17 +121,26 @@ function alwaysCalls(onerror: AstNode | undefined, fn: string | null): boolean {
 /**
  * Every <svelte:boundary> in a component's source, as "name:line", sorted by
  * what its `onerror` does: nothing (`silent`), something that never calls
- * logBoundaryError (`unlogged`), or calls it (`logged`).
+ * logBoundaryError (`unlogged`), or calls it (`logged`). Separately, `unreported`
+ * lists every boundary whose `onerror` does not always call reportRenderCrash,
+ * so a crash it catches never reaches the server.
  */
 function boundariesIn(src: string, name: string) {
-	const out = { silent: [] as string[], unlogged: [] as string[], logged: [] as string[] };
+	const out = {
+		silent: [] as string[],
+		unlogged: [] as string[],
+		logged: [] as string[],
+		unreported: [] as string[],
+	};
 	const ast = parse(src, { modern: true });
-	const logFn = logBoundaryErrorName(ast);
+	const logFn = importedName(ast, /(^|\/)boundaryError$/, 'logBoundaryError');
+	const reportFn = importedName(ast, /(^|\/)renderCrash$/, 'reportRenderCrash');
 	for (const b of nodesOf(ast.fragment, 'SvelteBoundary')) {
 		const at = `${name}:${src.slice(0, b.start).split('\n').length}`;
 		const attrs = (b.attributes as AstNode[] | undefined) ?? [];
 		const onerror = attrs.find(a => a.type === 'Attribute' && a.name === 'onerror');
 		(onerror === undefined ? out.silent : alwaysCalls(onerror, logFn) ? out.logged : out.unlogged).push(at);
+		if (onerror === undefined || !alwaysCalls(onerror, reportFn)) out.unreported.push(at);
 	}
 	return out;
 }
@@ -154,6 +163,16 @@ describe('error boundaries', () => {
 		).toEqual([]);
 	});
 
+	it("every <svelte:boundary>'s onerror calls reportRenderCrash, so each render crash it catches reaches the server", () => {
+		expect(
+			all.flatMap(b => b.unreported),
+			"add the call to the boundary's onerror, importing reportRenderCrash from $lib/renderCrash: " +
+			'`onerror={(error) => { logBoundaryError(where, error); reportRenderCrash(where, error, gameId); }}`. ' +
+			'It has the same placement rules as logBoundaryError (the handler\'s expression body or a top-level statement). ' +
+			'Without it a crash is logged in the console but never filed with the server (handler/render_crash.go).',
+		).toEqual([]);
+	});
+
 	it('finds the boundary it is guarding (a rename of the node type would pass the checks above for nothing)', () => {
 		expect(all.flatMap(b => b.logged).length).toBeGreaterThan(0);
 	});
@@ -161,12 +180,47 @@ describe('error boundaries', () => {
 
 describe('the boundary matcher', () => {
 	const IMPORT = `<script>import { logBoundaryError } from '$lib/boundaryError';</script>`;
+	const BOTH = `<script>import { logBoundaryError } from '$lib/boundaryError'; import { reportRenderCrash } from '$lib/renderCrash';</script>`;
+	const REPORT = `onerror={(e) => { logBoundaryError("w", e); reportRenderCrash("w", e); }}`;
 	const boundary = (attrs: string) => `<svelte:boundary ${attrs}>x{#snippet failed()}y{/snippet}</svelte:boundary>`;
 	const sort = (src: string) => boundariesIn(src, 'T.svelte');
 
 	it('accepts a handler that calls it', () => {
-		const b = sort(IMPORT + boundary('onerror={(e) => logBoundaryError("where", e)}'));
-		expect(b).toEqual({ silent: [], unlogged: [], logged: ['T.svelte:1'] });
+		const b = sort(BOTH + boundary(REPORT));
+		expect(b).toEqual({ silent: [], unlogged: [], logged: ['T.svelte:1'], unreported: [] });
+	});
+
+	it('sorts a boundary whose onerror logs but never reports as unreported', () => {
+		const b = sort(BOTH + boundary('onerror={(e) => logBoundaryError("where", e)}'));
+		expect(b.logged).toEqual(['T.svelte:1']);
+		expect(b.unreported).toEqual(['T.svelte:1']);
+	});
+
+	it('sorts a boundary whose onerror reports but never logs as unlogged and as reported', () => {
+		const b = sort(BOTH + boundary('onerror={(e) => reportRenderCrash("w", e)}'));
+		expect(b.unlogged).toEqual(['T.svelte:1']);
+		expect(b.unreported).toEqual([]);
+	});
+
+	it('sorts a report call that may never run as unreported', () => {
+		expect(sort(BOTH + boundary('onerror={(e) => { logBoundaryError("w", e); if (e) reportRenderCrash("w", e); }}')).unreported).toEqual(['T.svelte:1']);
+		expect(sort(BOTH + boundary('onerror={(e) => { logBoundaryError("w", e); const later = () => reportRenderCrash("w", e); }}')).unreported).toEqual(['T.svelte:1']);
+	});
+
+	it('sorts a call to a reportRenderCrash lookalike not imported from renderCrash as unreported', () => {
+		const local = `<script>import { logBoundaryError } from '$lib/boundaryError'; function reportRenderCrash() {}</script>`;
+		const elsewhere = `<script>import { logBoundaryError } from '$lib/boundaryError'; import { reportRenderCrash } from '$lib/somewhereElse';</script>`;
+		expect(sort(local + boundary(REPORT)).unreported).toEqual(['T.svelte:1']);
+		expect(sort(elsewhere + boundary(REPORT)).unreported).toEqual(['T.svelte:1']);
+	});
+
+	it('accepts an aliased reportRenderCrash import', () => {
+		const aliased = `<script>import { logBoundaryError } from '$lib/boundaryError'; import { reportRenderCrash as report } from '$lib/renderCrash';</script>`;
+		expect(sort(aliased + boundary('onerror={(e) => { logBoundaryError("w", e); report("w", e); }}')).unreported).toEqual([]);
+	});
+
+	it('sorts a boundary with no onerror as unreported too', () => {
+		expect(sort(BOTH + boundary('')).unreported).toEqual(['T.svelte:1']);
 	});
 
 	it('accepts a handler that calls it among other statements, and an aliased import', () => {
