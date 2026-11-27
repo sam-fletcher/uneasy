@@ -74,7 +74,11 @@ back. Don't act on any ruling before that confirmation.
 
 Rulings — on design *and* on how the app reads a rule — live in the
 private design principles and rulings files. Follow the shape each already
-uses, and show the owner the wording first:
+uses. Show the owner the wording first when it says more than the question
+they answered: a new principle, a reading that generalises, or a reason they
+haven't seen. When they accepted a recommendation that already carried its
+wording, record it without another turn: for something that simple, the
+owner finds the extra round trip not worth it.
 
 - **A new principle, or an amendment to one** → the tension, the
   resolution, and the test to apply next time.
