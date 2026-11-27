@@ -122,9 +122,36 @@ ORDER BY id DESC LIMIT 1;
 SELECT * FROM war_peace_proposals WHERE id = $1;
 
 -- name: SetPeaceProposalStatus :exec
+-- For a rejection. Accepting goes through AcceptPeaceProposal, which also draws
+-- the treaty's rev; the table's CHECK refuses an 'accepted' row without one.
 UPDATE war_peace_proposals
 SET status = $2, resolved_at = now()
 WHERE id = $1;
+
+-- name: AcceptPeaceProposal :one
+-- The proposal becomes a treaty (migration 061). It draws a rev from the laws
+-- and rumors sequence, so the Laws tab's "new" dot lights for everyone whose
+-- marker is behind it, exactly as for a new law. Only an open proposal can be
+-- accepted: a second call gets no row.
+UPDATE war_peace_proposals
+SET status = 'accepted', resolved_at = now(), rev = nextval('laws_rumors_rev_seq')
+WHERE id = $1 AND status = 'open'
+RETURNING *;
+
+-- name: ListTreaties :many
+-- A game's agreed peace terms, oldest agreement first, with the players who
+-- agreed. Public to the whole table, like the laws they sit under: the terms
+-- were posted to the log when proposed. agreed_by is every accepting vote, the
+-- proposer's included (proposing is an acceptance).
+SELECT p.id, p.war_id, w.origin_plan_id, p.terms, COALESCE(p.rev, 0)::BIGINT AS rev, p.resolved_at,
+       COALESCE(array_agg(v.player_id ORDER BY v.player_id)
+                FILTER (WHERE v.accepted), '{}')::BIGINT[] AS agreed_by
+FROM war_peace_proposals p
+JOIN wars w ON w.id = p.war_id
+LEFT JOIN war_peace_votes v ON v.proposal_id = p.id
+WHERE w.game_id = $1 AND p.status = 'accepted'
+GROUP BY p.id, w.origin_plan_id
+ORDER BY p.rev ASC;
 
 -- name: UpsertPeaceVote :exec
 INSERT INTO war_peace_votes (proposal_id, player_id, accepted)

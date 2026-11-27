@@ -540,6 +540,7 @@ type WarPeaceProposal struct {
 	Status     string             `db:"status" json:"status"`
 	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	ResolvedAt pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
+	Rev        *int64             `db:"rev" json:"rev"`
 }
 
 type WarPeaceVote struct {

@@ -112,6 +112,9 @@ func newPlanLifecycleOn(t *testing.T, pool *pgxpool.Pool, n int) *planLifecycle 
 	r.Get("/api/tables/{id}/plan-eligibility", PlanEligibility(store))
 	r.Get("/api/tables/{id}/state", GetGameState(store))
 	r.Get("/api/tables/{id}/wars", ListWars(store))
+	// The Laws tab's list and its seen marker — treaties ride with them.
+	r.Get("/api/tables/{id}/laws", ListLaws(store))
+	r.Put("/api/tables/{id}/seen/laws", MarkLawsSeen(store))
 	r.Get("/api/tables/{id}/plans", ListPlans(store))
 	// Scene + chat routes — needed by plan-scene lifecycle tests
 	// (adr/CHAT_OVERHAUL_PLAN.md Phase 5): posting in/out of character, reading

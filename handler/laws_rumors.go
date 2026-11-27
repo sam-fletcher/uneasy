@@ -15,6 +15,11 @@ package handler
 // viewer's markers, PUT /tables/{id}/seen/{laws,rumors} moves them, and
 // frontend/src/lib/lawsRumorsSeen.ts is the one place the comparison is made.
 //
+// Treaties (migration 061). The Laws tab also lists the table's agreed peace
+// terms, and they count toward its "new" dot: an accepted war_peace_proposals
+// row carries a rev drawn from the same sequence, compared with the same
+// laws marker. They are read-only (no edit route exists), and public.
+//
 // Hidden sources: the markers live in their own table, never on players (whose
 // rows every player receives), and the rumor row stores no editor. The only
 // thing a rumor's author or editor changes is their own marker row, which only
@@ -57,12 +62,21 @@ func ListLaws(s *db.Store) http.HandlerFunc {
 			respondInternalErr(w, r, "could not list laws", err)
 			return
 		}
+		// Treaties are listed with the laws: the Laws tab shows both, under one
+		// marker (migration 061).
+		treaties, err := s.Q.ListTreaties(r.Context(), gameID)
+		if err != nil {
+			respondInternalErr(w, r, "could not list treaties", err)
+			return
+		}
 		seen, err := s.Q.GetLawsRumorsSeen(r.Context(), player.ID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load laws marker", err)
 			return
 		}
-		respond(w, http.StatusOK, map[string]any{"laws": laws, "seen_rev": seen.LawsSeenRev})
+		respond(w, http.StatusOK, map[string]any{
+			"laws": laws, "treaties": treaties, "seen_rev": seen.LawsSeenRev,
+		})
 	}
 }
 
@@ -260,8 +274,9 @@ func canEditRumor(ctx context.Context, q *dbgen.Queries, rumor *dbgen.Rumor, pla
 // ── "New" markers ─────────────────────────────────────────────────────────────
 
 // MarkLawsSeen handles PUT /api/tables/{id}/seen/laws.
-// Body: {"seen_rev": N}, the highest law rev the client has shown the player.
-// Returns {"seen_rev": stored}. Monotonic and clamped to the game's newest law
+// Body: {"seen_rev": N}, the highest law or treaty rev the client has shown the
+// player. Returns {"seen_rev": stored}. Monotonic and clamped to the game's newest
+// law or treaty
 // (see MarkLawsSeen in db/queries/laws_rumors.sql), private to the caller, and
 // with no WebSocket broadcast, like the chat read marker it mirrors.
 func MarkLawsSeen(s *db.Store) http.HandlerFunc {

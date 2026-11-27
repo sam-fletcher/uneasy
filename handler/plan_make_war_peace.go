@@ -237,27 +237,12 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 				playerMark(player.ID, player.DisplayName), proposer))
 		}
 
-		active, err := deps.Q.ListActiveWarParticipants(ctx, war.ID)
+		unanimous, awaiting, errMsg, err := mwPeaceTally(ctx, deps.Q, war.ID, prop.ID)
 		if err != nil {
-			respondInternalErr(w, r, "could not load active participants", err)
+			respondInternalErr(w, r, errMsg, err)
 			return
 		}
-		votes, err := deps.Q.ListPeaceVotes(ctx, prop.ID)
-		if err != nil {
-			respondInternalErr(w, r, "could not load votes", err)
-			return
-		}
-		accepted := map[int64]bool{}
-		for _, v := range votes {
-			if v.Accepted {
-				accepted[v.PlayerID] = true
-			}
-		}
-		activeIDs := make([]int64, len(active))
-		for i, a := range active {
-			activeIDs[i] = a.PlayerID
-		}
-		if unanimous, awaiting := gamepkg.PeaceTally(activeIDs, accepted); !unanimous {
+		if !unanimous {
 			// This voter drops out of the Waiting On set.
 			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 			respond(w, http.StatusOK, map[string]any{
@@ -268,20 +253,10 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			return
 		}
 
-		_ = deps.Q.SetPeaceProposalStatus(ctx, dbgen.SetPeaceProposalStatusParams{
-			ID:     prop.ID,
-			Status: gamepkg.PeaceAccepted,
-		})
-		_ = deps.Q.EndWar(ctx, dbgen.EndWarParams{
-			ID:         war.ID,
-			EndReason:  new(gamepkg.WarEndPeace),
-			EndedAtRow: &game.CurrentRow,
-		})
-		broadcastEvent(deps.Manager, plan.GameID, model.EventWarEnded, model.WarEndedPayload{
-			WarID: war.ID, Reason: gamepkg.WarEndPeace, RowNumber: game.CurrentRow,
-		})
-		mwLog(ctx, deps, plan, game, model.SeverityImportant,
-			"All active participants agreed to peace terms — the war is over.")
+		if err = mwAgreePeace(ctx, deps, plan, game, war, prop); err != nil {
+			respondInternalErr(w, r, "could not accept peace proposal", err)
+			return
+		}
 		// Ending the war may clear an AwaitBattleCost gate on future rows.
 		broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)
 		respond(w, http.StatusOK, map[string]any{
@@ -290,6 +265,67 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			"war_ended":   true,
 		})
 	}
+}
+
+// mwPeaceTally reads the active participants and the votes and reports whether
+// every active participant has accepted, and if not who is still awaited. On a
+// read failure it returns the message to answer with.
+func mwPeaceTally(
+	ctx context.Context,
+	q *dbgen.Queries,
+	warID, proposalID int64,
+) (unanimous bool, awaiting int64, errMsg string, err error) {
+	active, err := q.ListActiveWarParticipants(ctx, warID)
+	if err != nil {
+		return false, 0, "could not load active participants", err
+	}
+	votes, err := q.ListPeaceVotes(ctx, proposalID)
+	if err != nil {
+		return false, 0, "could not load votes", err
+	}
+	accepted := map[int64]bool{}
+	for _, v := range votes {
+		if v.Accepted {
+			accepted[v.PlayerID] = true
+		}
+	}
+	activeIDs := make([]int64, len(active))
+	for i, a := range active {
+		activeIDs[i] = a.PlayerID
+	}
+	unanimous, awaiting = gamepkg.PeaceTally(activeIDs, accepted)
+	return unanimous, awaiting, "", nil
+}
+
+// mwAgreePeace is the last accept of a peace proposal: the proposal becomes a
+// treaty, the war ends, and the table is told. The only place a proposal is
+// accepted.
+//
+// AcceptPeaceProposal draws the rev that lights the Laws tab's "new" dot (migration
+// 061). It is not best-effort like the calls around it: without the rev there is
+// no treaty, and the war must not end with its terms unkept.
+func mwAgreePeace(
+	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, game dbgen.Game, war dbgen.War, prop dbgen.WarPeaceProposal,
+) error {
+	if _, err := deps.Q.AcceptPeaceProposal(ctx, prop.ID); err != nil {
+		return err
+	}
+	_ = deps.Q.EndWar(ctx, dbgen.EndWarParams{
+		ID:         war.ID,
+		EndReason:  new(gamepkg.WarEndPeace),
+		EndedAtRow: &game.CurrentRow,
+	})
+	broadcastEvent(deps.Manager, plan.GameID, model.EventWarEnded, model.WarEndedPayload{
+		WarID: war.ID, Reason: gamepkg.WarEndPeace, RowNumber: game.CurrentRow,
+	})
+	// Peace terms are public record: every player at the table gets the treaty,
+	// and the closing line quotes the terms so the log keeps them too. %q quotes
+	// player text in the log as the decree's amendments do. Terms stay words:
+	// nothing here carries them out.
+	broadcastTreaty(ctx, deps, plan.GameID, prop.ID)
+	mwLog(ctx, deps, plan, game, model.SeverityImportant, fmt.Sprintf(
+		"All active participants agreed to peace terms: %q — the war is over.", prop.Terms))
+	return nil
 }
 
 // mwHasAcceptedPeace reports whether playerID already has an accepting vote on
@@ -305,4 +341,20 @@ func mwHasAcceptedPeace(ctx context.Context, q *dbgen.Queries, proposalID, playe
 		}
 	}
 	return false, nil
+}
+
+// broadcastTreaty sends the table the treaty a just-accepted proposal became, so
+// the Laws tab shows it (and its "new" dot lights) without a reload. Best effort:
+// a missed frame is repaired by the next state load, which carries every treaty.
+func broadcastTreaty(ctx context.Context, deps *PlanDeps, gameID, proposalID int64) {
+	treaties, err := deps.Q.ListTreaties(ctx, gameID)
+	if err != nil {
+		return
+	}
+	for _, t := range treaties {
+		if t.ID == proposalID {
+			broadcastEvent(deps.Manager, gameID, model.EventTreatyAgreed, model.TreatyAgreedPayload{Treaty: t})
+			return
+		}
+	}
 }
