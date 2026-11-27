@@ -28,6 +28,12 @@ go mod download
 # Frontend dependencies need no step of their own: the first `make` target
 # that runs frontend tooling (make check-frontend, make check-fast, ...) runs
 # `npm ci` for you, and runs it again whenever the lockfile changes.
+#
+# The embedded frontend build is the same: `make check-fast` runs `make
+# frontend` for you when `cmd/server/frontend_dist/_app` is missing, as in a
+# fresh worktree, and does nothing when it exists. It does not rebuild after a
+# frontend edit, so run `make frontend` (or `make build`) yourself when you
+# want the Go server to serve the change.
 ```
 
 Both `go install` and `make lint-install` drop binaries in `$(go env GOPATH)/bin`,
