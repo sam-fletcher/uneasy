@@ -14,7 +14,10 @@ private rulings and decisions files, never here.
 - **Session models:** Sonnet for open work, Haiku at high effort for settled work, where the test is
   "would two careful developers given this brief make essentially the same PR?" Reviews record which
   model built each PR. So far: #135 (Sonnet) had one must-fix, a host name in plain text; #136 (Sonnet)
-  went back once for stale screenshots; #137 and #139 (Sonnet) and #138 (Haiku) were clean.
+  went back once for stale screenshots; #137 and #139 (Sonnet) and #138 (Haiku) were clean. Later:
+  #145 (Haiku, war wording) was clean on its brief. It went back once for two strings the brief had
+  missed, which it had flagged itself. #146 (Sonnet, treaties) had one must-fix: votes on a war that
+  had already ended were never refused, an older gap that a treaty would have made permanent.
 
 ## The plan from here, in order
 
