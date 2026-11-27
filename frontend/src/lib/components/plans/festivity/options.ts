@@ -23,6 +23,19 @@ export const MAR_OPTS = [
 	{ key: 'break_self',      label: 'Break yourself',                  desc: '— Tear a marginalia on your main character.' },
 ];
 
+// The Mar list as a Make Demands perform-steps winner reads it. The list is
+// printed in the second person to the host (book p.61), and the winner answers it
+// FOR the host, so "you" would name the wrong person. Same keys and order as
+// MAR_OPTS; the host's own card keeps MAR_OPTS.
+export function standInMarOpts(hostName: string): typeof MAR_OPTS {
+	return [
+		{ key: 'rumor_about_you', label: `A rumor spreads about ${hostName}`,    desc: `— Create a rumor targeting ${hostName}'s main character.` },
+		{ key: 'disagreement',    label: 'A peer considers leaving',             desc: `— They're available for anyone to take. If not taken, they'll rejoin ${hostName}, broken.` },
+		{ key: 'accept_duels',    label: `${hostName} must accept all duels`,    desc: 'during the festivity.' },
+		{ key: 'break_self',      label: `${hostName} breaks themselves`,        desc: `— Tear a marginalia on ${hostName}'s main character.` },
+	];
+}
+
 // Third-person past-tense phrases for the scorecard ("The Talk of the Event"),
 // where the MAKE_OPTS/MAR_OPTS labels (second person) read awkwardly.
 export const MAKE_PHRASE: Record<string, string> = {

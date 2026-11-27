@@ -276,6 +276,38 @@ test('the host\'s pending Mar waits too while a guest rolls, and what she typed 
 	await expect.poll(async () => (await festivity(g, planID)).host_mar_insists).toEqual(['rumor_about_you']);
 });
 
+test('the host\'s Make picker and pending Mar keep what she typed through a guest\'s duel challenge', async ({ browser }) => {
+	const { g, planID } = await newFestivity(browser);
+	await bobMakes(g, planID);
+	expect((await act(g, 'bob', planID, 'insist-host-mar')).status()).toBe(200);
+	const { alice, dave } = await openPages(g, ['alice', 'dave']);
+
+	// Alice owes a Mar and holds her make for hosting. She half-fills both cards.
+	const mar = alice.locator('.choices-section', { hasText: 'bob insists you take a Mar' });
+	await mar.getByRole('button', { name: 'A rumor spreads about you' }).click();
+	await mar.getByRole('textbox', { name: 'The rumor about you' }).fill(MAR_RUMOR);
+	const make = alice.locator('.choices-section', { hasText: 'Your extra Makes' });
+	await make.getByRole('button', { name: 'Spread a new rumor' }).click();
+	await make.getByRole('textbox', { name: 'Rumor text' }).fill(RUMOR);
+
+	// Carol rolls a make and spends it on a challenge to dave. Both of alice's cards
+	// leave the page while the table waits on dave.
+	const rollID = await startRoll(g, 'carol', planID);
+	await forceRoll(g, rollID, 'make');
+	expect((await act(g, 'carol', planID, 'challenge-duel', { target_player_id: g.ids.dave })).status()).toBe(201);
+	await expect(alice.getByText('Awaiting the target')).toBeVisible();
+	await expect(alice.getByText('bob insists you take a Mar')).toHaveCount(0);
+	await expect(alice.getByText('Your extra Makes')).toHaveCount(0);
+
+	// Dave waves it off. The cards come back with the picks and the words in them.
+	await dave.getByRole('button', { name: 'Decline' }).click();
+	await expect(alice.getByText('Awaiting the target')).toHaveCount(0);
+	await expect(mar.getByRole('textbox', { name: 'The rumor about you' })).toHaveValue(MAR_RUMOR);
+	await expect(make.getByRole('textbox', { name: 'Rumor text' })).toHaveValue(RUMOR);
+	await mar.getByRole('button', { name: 'Take this Mar' }).click();
+	await expect.poll(async () => (await festivity(g, planID)).host_mar_insists).toEqual(['rumor_about_you']);
+});
+
 test('the lock also covers insisting, settling a mar and challenging, and frees when the roller chooses', async ({ browser }) => {
 	const { g, planID } = await newFestivity(browser);
 	// Bob makes and insists at once: an unchosen mar waits on the host. Carol

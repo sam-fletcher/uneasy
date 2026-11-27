@@ -660,6 +660,12 @@ func hfEndEventHandler(deps *PlanDeps) http.HandlerFunc {
 			respondInternalErr(w, r, "could not load roster", err)
 			return
 		}
+		// Mid-roll the event can't end (the roller has no outcome yet), but say so
+		// in the roll lock's words like every other host action, not with the
+		// end-of-event refusal.
+		if hfBlockOnActiveRoll(w, state, roster, player.ID) {
+			return
+		}
 		if !state.EventEndable(roster) {
 			respondErr(w, http.StatusConflict,
 				"the festivity is still in full swing: every guest must choose "+

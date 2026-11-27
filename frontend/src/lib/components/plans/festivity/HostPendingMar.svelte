@@ -11,11 +11,19 @@
 
   While a guest's roll-and-choice is open, the server refuses the settlement, so
   the card keeps its place and names the wait in place of its picker, as the
-  host's Make picker does (HostChoosing). The picker's draft stays mounted through
-  the wait, so a half-written rumor or a half-made pick is still there after.
+  host's Make picker does (HostChoosing). The picker's draft survives the wait,
+  and a duel challenge that takes the card off the page: it lives in
+  lib/festivityDraft.svelte.ts, not here, because this component is unmounted
+  whenever a duel is pending.
+
+  The mar lands on the HOST. When a Make Demands perform-steps winner drives the
+  host's steps the card is theirs, so its copy names the host wherever it would
+  say "you" to the host (`amHost` false); the host's own wording is unchanged.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import PlayerName from '$lib/components/shared/PlayerName.svelte';
+	import { hostMarDraft as draft } from '$lib/festivityDraft.svelte';
 	import '$lib/components/shared/actionButton.css';
 	import Notice from '$lib/components/shared/Notice.svelte';
 	import OptionCard from '$lib/components/shared/OptionCard.svelte';
@@ -24,13 +32,16 @@
 	import { breakableAssets, playerName } from '../shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import { TEXT_LIMITS } from '$lib/textLimits';
-	import { MAR_OPTS } from './options';
+	import { MAR_OPTS, standInMarOpts } from './options';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
-	let { plan, players, assets, unchosenHostMars, blockedByOtherRoll, activeRollerID, onPlansChanged }: {
+	let { plan, players, assets, amHost, unchosenHostMars, blockedByOtherRoll, activeRollerID, onPlansChanged }: {
 		plan: Plan;
 		players: Player[];
 		assets: Asset[];
+		/** Whether the viewer is the host. False for a Make Demands perform-steps
+		 *  winner, who answers the mar for the host: the copy then names the host. */
+		amHost: boolean;
 		/** Guests whose insistence the host hasn't answered yet, oldest first. */
 		unchosenHostMars: number[];
 		/** True while a guest's roll-and-choice is in progress: the server refuses a
@@ -45,7 +56,18 @@
 	const insisterID = $derived(unchosenHostMars[0] ?? null);
 	const total = $derived(unchosenHostMars.length);
 
-	let picked = $state<string | null>(null);
+	// The host, for copy that would say "you" to the host and must not say it to a stand-in.
+	const hostName = $derived(playerName(players, plan.preparer_id));
+	const marOpts = $derived(amHost ? MAR_OPTS : standInMarOpts(hostName));
+
+	// The draft lives outside this component (see the header); begin it for this
+	// mar. Untracked: begin() reads the draft's own key, and an effect that reads
+	// and writes the same state would re-trigger itself.
+	$effect.pre(() => {
+		const planID = plan.id;
+		const insister = insisterID;
+		untrack(() => draft.begin(planID, insister));
+	});
 
 	// break_self target: the host's main character, if a break can land on it —
 	// an intact marginalia to tear, or a blank MC the break destroys outright.
@@ -64,45 +86,42 @@
 	);
 	// An option the host can't carry out is shown but locked, with the reason.
 	const lockReason = (key: string): string | undefined =>
-		key === 'disagreement' && hostPeers.length === 0 ? 'You have no peers' : undefined;
+		key === 'disagreement' && hostPeers.length === 0
+			? (amHost ? 'You have no peers' : `${hostName} has no peers`)
+			: undefined;
 
-	let rumor = $state('');
-	let marginaliaID = $state<number | null>(null);
-	let assetID = $state<number | null>(null);
+	// The draft outlives a duel, and a duel can change the board under it: the peer
+	// picked may have been taken or lost, the marginalia torn. Drop a pick that no
+	// longer matches the current lists (the server would refuse it anyway); what is
+	// still valid stays. Writes only when something is stale, so it settles at once.
+	$effect(() => {
+		const peerIDs = hostPeers.map(a => a.id);
+		const marginaliaIDs = hostMC.flatMap(a => (a.marginalia ?? []).filter(m => !m.is_torn).map(m => m.id));
+		const lockedPick = draft.picked != null && lockReason(draft.picked) != null;
+		untrack(() => {
+			if (lockedPick) draft.picked = null;
+			if (draft.assetID != null && !peerIDs.includes(draft.assetID)) draft.assetID = null;
+			if (draft.marginaliaID != null && !marginaliaIDs.includes(draft.marginaliaID)) draft.marginaliaID = null;
+		});
+	});
+
 	let busy = $state(false);
 	let error = $state('');
-
-	function reset() {
-		picked = null;
-		rumor = '';
-		marginaliaID = null;
-		assetID = null;
-		error = '';
-	}
-
-	// Start fresh whenever the mar being answered changes.
-	let lastKey = $state('');
-	$effect(() => {
-		const key = `${insisterID ?? ''}`;
-		if (key !== lastKey) {
-			lastKey = key;
-			reset();
-		}
-	});
 
 	// Mirrors the checks in submit() so the button stays disabled until the chosen
 	// option has what it needs (the server validates again).
 	const ready = $derived.by(() => {
-		switch (picked) {
-			case 'rumor_about_you': return rumor.trim().length > 0;
-			case 'disagreement': return assetID != null;
-			case 'break_self': return !canBreak || marginaliaID != null;
+		switch (draft.picked) {
+			case 'rumor_about_you': return draft.rumor.trim().length > 0;
+			case 'disagreement': return draft.assetID != null;
+			case 'break_self': return !canBreak || draft.marginaliaID != null;
 			case 'accept_duels': return true;
 			default: return false;
 		}
 	});
 
 	async function submit() {
+		const picked = draft.picked;
 		if (busy || !picked || !ready || insisterID == null) return;
 		busy = true; error = '';
 		try {
@@ -110,13 +129,13 @@
 				mar_option: picked,
 				insister_id: insisterID,
 			};
-			if (picked === 'rumor_about_you') body.rumor_text = rumor.trim();
+			if (picked === 'rumor_about_you') body.rumor_text = draft.rumor.trim();
 			// For break_self with nothing left to tear, the server settles it as a
 			// no-op; the placeholder id is ignored in that case.
-			if (picked === 'break_self') body.marginalia_id = marginaliaID ?? 0;
-			if (picked === 'disagreement') body.asset_id = assetID!;
+			if (picked === 'break_self') body.marginalia_id = draft.marginaliaID ?? 0;
+			if (picked === 'disagreement') body.asset_id = draft.assetID!;
 			await resolveHostMar(plan.id, body);
-			reset();
+			draft.clear();
 			onPlansChanged();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not settle the mar.';
@@ -124,11 +143,20 @@
 	}
 </script>
 
+<!-- The host in template text: "you" to the host, their name (in their colour, drawn by
+     PlayerName and never typed by hand) to a stand-in. Snippets, so the words around a
+     call keep their spaces. Names inside a string prop (an OptionCard's title, an
+     emptyMessage, a lock reason) can't hold a component and stay plain text. -->
+{#snippet them()}{#if amHost}you{:else}<PlayerName {players} id={plan.preparer_id} />{/if}{/snippet}
+{#snippet subject()}{#if amHost}You{:else}<PlayerName {players} id={plan.preparer_id} />{/if}{/snippet}
+{#snippet choose()}{#if amHost}You choose which one{:else}You choose for <PlayerName {players} id={plan.preparer_id} />{/if}{/snippet}
+{#snippet owner()}{#if amHost}Your{:else}<PlayerName {players} id={plan.preparer_id} />'s{/if}{/snippet}
+
 {#if total > 0}
 	<div class="choices-section">
-		<p class="choices-header">Your Mar</p>
+		<p class="choices-header">{@render owner()} Mar</p>
 		<p class="ft-prompt">
-			<PlayerName {players} id={insisterID} /> insists you take a Mar.
+			<PlayerName {players} id={insisterID} /> insists {@render them()} take{amHost ? '' : 's'} a Mar.
 			{#if total > 1}{total} mars to settle.{/if}
 		</p>
 
@@ -137,64 +165,68 @@
 				Waiting for <PlayerName {players} id={activeRollerID} /> to finish their roll…
 			</p>
 		{:else}
-			<p class="choices-note muted">You choose which one — pick one from the Mar list.</p>
+			<p class="choices-note muted">
+				{@render choose()} — pick one from the Mar list.
+			</p>
 			<div class="option-list">
-				{#each MAR_OPTS as o (o.key)}
+				{#each marOpts as o (o.key)}
 					{@const reason = lockReason(o.key)}
 					<OptionCard
 						title={o.label}
 						description={o.desc || undefined}
 						{reason}
-						selected={picked === o.key}
+						selected={draft.picked === o.key}
 						disabled={reason != null}
-						onclick={() => { picked = picked === o.key ? null : o.key; }}
+						onclick={() => { draft.picked = draft.picked === o.key ? null : o.key; }}
 					/>
 				{/each}
 			</div>
 
-			{#if picked === 'rumor_about_you'}
+			{#if draft.picked === 'rumor_about_you'}
 				<label class="form-label">
-					The rumor about you
-					<textarea rows={2} bind:value={rumor} class="form-textarea"
+					The rumor about {@render them()}
+					<textarea rows={2} bind:value={draft.rumor} class="form-textarea"
 						maxlength={TEXT_LIMITS.LONG_TEXT} placeholder="What does the rumor say?"></textarea>
 				</label>
-			{:else if picked === 'accept_duels'}
+			{:else if draft.picked === 'accept_duels'}
 				<p class="choices-note muted">
-					You must accept any duel challenge for the rest of the event.
+					{@render subject()} must accept any duel challenge for the rest of the event.
 				</p>
-			{:else if picked === 'break_self'}
+			{:else if draft.picked === 'break_self'}
 				{#if canBreak}
 					<CardPicker
 						label="Marginalia to tear"
 						items={hostMC}
 						{players}
-						emptyMessage="You have nothing left to break."
+						emptyMessage="{amHost ? 'You have' : `${hostName} has`} nothing left to break."
 						marginaliaMode
-						selectedMarginaliaID={marginaliaID}
+						selectedMarginaliaID={draft.marginaliaID}
 						selectedAssetID={hostMC[0]?.id ?? null}
-						onSelectMarginalia={(mID) => (marginaliaID = mID)}
+						onSelectMarginalia={(mID) => (draft.marginaliaID = mID)}
 					/>
 					{#if breakWarn}<Notice tone="warning">{breakWarn}</Notice>{/if}
 				{:else}
-					<p class="choices-note muted">You have nothing left to tear — you can pass the break.</p>
+					<p class="choices-note muted">
+						{@render subject()} {amHost ? 'have' : 'has'} nothing left to tear — pass the break.
+					</p>
 				{/if}
-			{:else if picked === 'disagreement'}
+			{:else if draft.picked === 'disagreement'}
 				<CardPicker
 					label="Peer to set in the center"
 					items={hostPeers}
 					{players}
-					emptyMessage="You have no peers to set in the center."
+					emptyMessage="{amHost ? 'You have' : `${hostName} has`} no peers to set in the center."
 					ownerLabel={(a) => `Owned by ${playerName(players, a.owner_id)}`}
-					selected={assetID}
-					onSelect={(id) => (assetID = id)}
+					selected={draft.assetID}
+					onSelect={(id) => (draft.assetID = id)}
 				/>
 			{/if}
 
 			{#if error}<ErrorText message={error} variant="panel" />{/if}
-			{#if picked}
+			{#if draft.picked}
 				<button class="action-btn primary" onclick={submit} disabled={busy || !ready}>
 					{busy ? '…'
-					: picked === 'break_self' && !canBreak ? 'Pass the break'
+					: draft.picked === 'break_self' && !canBreak ? 'Pass the break'
 					: 'Take this Mar'}
 				</button>
 			{/if}

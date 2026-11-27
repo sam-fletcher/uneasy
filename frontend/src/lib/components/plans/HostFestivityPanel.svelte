@@ -245,12 +245,12 @@
 			{/if}
 
 			{#if isResolving && amStepActor && hostMakesLeft > 0 && !fest.pendingChallenge}
-				<HostChoosing {plan} {fest} {players} {assets} {blockedByOtherRoll} {activeRollerID} {onPlansChanged} />
+				<HostChoosing {plan} {fest} {players} {assets} {amHost} {blockedByOtherRoll} {activeRollerID} {onPlansChanged} />
 			{/if}
 
 			{#if isResolving && amStepActor && !fest.pendingChallenge && fest.unchosenHostMars.length > 0}
 				<HostPendingMar
-					{plan} {players} {assets} {blockedByOtherRoll} {activeRollerID}
+					{plan} {players} {assets} {amHost} {blockedByOtherRoll} {activeRollerID}
 					unchosenHostMars={fest.unchosenHostMars}
 					{onPlansChanged}
 				/>
