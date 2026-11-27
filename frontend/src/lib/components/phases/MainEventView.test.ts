@@ -53,7 +53,7 @@ describe('the open step always has a heading', () => {
 		['a plan resolving whose panel has not loaded', state('plan_resolving'), 'Waiting on alice. The next step'],
 		['an active scene before the scene has loaded', state('scene_active'), 'Waiting on alice. The scene'],
 		['a cost of battle with no war on screen', state('await_battle_cost'), 'Waiting on alice. Pay the cost of battle'],
-		['a surrender claim with no war on screen', state('await_surrender_claim'), 'Waiting on alice. Surrender-asset claims'],
+		['a surrender claim with no war on screen', state('await_surrender_claim'), 'Waiting on alice. Take the spoils of war'],
 		['an open roll before it has loaded', state('await_dice_roll'), 'Waiting on alice. The roll'],
 		['Make War resolving, which draws its own panel', { ...state('plan_resolving'), plan_id: 9 }, 'Waiting on alice. The next step'],
 	];

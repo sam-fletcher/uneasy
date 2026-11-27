@@ -945,8 +945,8 @@ choices read "Join otto", "Join Wren" and "Stay out".
 of that pick shows under the chips, and the single main button, labelled with what it
 will do ("Join otto’s side"), sends it. The button is greyed out until something is
 picked. The chips take no meaning colour, and the cost is ordinary secondary text. A
-side's members are plain lines of shape and name, with any debt in words ("joining, owes
-entry").
+side's members are plain lines of shape and name, with any payment still due in words ("joining,
+entry to pay").
 
 **Controls on the sheet take the raised-twice fill**, since the sheet is itself a raised
 surface (`WarSheet` sets this for the chips and secondary buttons inside it).

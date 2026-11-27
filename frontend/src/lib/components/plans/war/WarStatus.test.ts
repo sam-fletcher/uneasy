@@ -88,7 +88,7 @@ describe('the sides, named after their leaders', () => {
 			],
 		} as unknown as WarStateResponse;
 		const { body } = render(WarStatus, { props: props(1, joining) });
-		expect(body).toContain('joining, owes entry');
+		expect(body).toContain('joining, entry to pay');
 		expect(body.match(/class="player-shape/g)?.length).toBe(3);
 	});
 

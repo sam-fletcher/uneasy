@@ -216,7 +216,7 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 			// from the war panel and the proposer, who still owes the cost,
 			// was never told why. Names both so the log reads as an exchange.
 			mwLog(ctx, deps, plan, game, model.SeverityDefault, fmt.Sprintf(
-				"%s rejected %s's peace terms — the cost of battle is still owed.",
+				"%s rejected %s's peace terms — the cost of battle still has to be paid.",
 				playerMark(player.ID, player.DisplayName), proposer))
 			// The gate goes back to naming the outstanding payers.
 			broadcastRowState(ctx, deps.Q, deps.Manager, plan.GameID)

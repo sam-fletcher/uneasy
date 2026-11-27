@@ -276,7 +276,7 @@ describe('await_battle_cost / await_surrender_claim', () => {
 			input({ rowState: rowState('await_surrender_claim', { acting_player_ids: [3] }) }),
 		);
 		expect(playerIDs(got.waitees)).toEqual([3]);
-		expect(got.stepLabel).toBe('surrender-asset claims');
+		expect(got.stepLabel).toBe('take the spoils of war');
 	});
 });
 
