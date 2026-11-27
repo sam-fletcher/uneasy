@@ -43,6 +43,8 @@ and a second for the server, both dropped):
 
 - `make check-fast`: passes (Go vet/lint/unit, svelte-check, Vitest 2414, hook tests, tracker).
 - `make test-integration`: the full suite passes (handler package 265s).
+- Review fixes (all prove-it-bites checked by reverting each): the ended-war vote, the second
+  final accept, `agreed_by` without a surrendered accepter, and `UpdateLawText`'s treaty catch-up.
 - New integration tests in `handler/war_treaties_integration_test.go`: accepting a proposal puts
   the treaty (terms, war's plan, who agreed) in `GET /state` and `GET /laws` for all five seats,
   with a rev above the newest law and above every marker; the closing line quotes the terms; the
@@ -74,6 +76,12 @@ stand-in / keep-assets "who acts" renderings (a treaty names no one as acting or
   not have the tab open.)
 - Accepting now fails loudly (500, war stays active) if the rev can't be drawn, where it used to
   ignore a failed status write and end the war anyway.
+- A vote on a war that is no longer active is refused with a 409 (propose and pay already did).
+  Before, a proposal left open when a surrender emptied a side could be accepted later: that wrote
+  a treaty for a war already over, overwrote the end reason with `peace` and logged "the war is
+  over" twice. Two final accepts racing now give the loser a 409, not a 500.
+- `agreed_by` is the accepting votes of the war's *active* participants, the set the vote's tally
+  counts, so a player who accepted and then surrendered is not named.
 - Wars that ended by peace before this migration show their treaties on the Laws tab.
 
 ## Open questions for the owner
@@ -90,5 +98,3 @@ still `questions/make-war-peace-proposal-loose-ends.md`.
 - `plan_make_war.go` ends a war with reason `peace` when a delayed war falls off the record
   (`delayRevealOverflow`). No proposal exists there, so no treaty: correct, but the reason name
   is misleading.
-- The item file `docs/work/next/war-peace-treaties.md` is on PR #141's branch, not here, so this
-  branch doesn't delete it. Delete it when rebasing on `main` after #141 merges.
