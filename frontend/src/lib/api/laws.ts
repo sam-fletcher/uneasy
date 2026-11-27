@@ -1,7 +1,7 @@
 import { apiFetch } from './client';
-import type { Law, LawsRumorsSeen, Rumor } from './types';
+import type { Law, LawsRumorsSeen, Rumor, Treaty } from './types';
 
-export function listLaws(gameID: number): Promise<{ laws: Law[]; seen_rev: number }> {
+export function listLaws(gameID: number): Promise<{ laws: Law[]; treaties: Treaty[]; seen_rev: number }> {
 	return apiFetch(`/tables/${gameID}/laws`);
 }
 

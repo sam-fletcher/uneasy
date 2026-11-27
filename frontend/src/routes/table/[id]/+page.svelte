@@ -43,7 +43,7 @@
 	} from '$lib/toneWrites';
 	import type {
 		Game, Player, ToneTopic, Ranking, Asset, Marginalium,
-		Law, Rumor,
+		Law, Rumor, Treaty,
 		ChatPost, SceneEntry, RecordRow, PresenceMember, PlayerActivity,
 		DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie,
 		Plan, PlanToken, Secret,
@@ -78,7 +78,7 @@
 	import { tableTitle } from '$lib/tableTitle';
 	import { tableLayout, watchTableLayout } from '$lib/tableLayout.svelte';
 	import { provideSheetHost } from '$lib/sheetHost';
-	import { hasNewEntries, seenThrough } from '$lib/lawsRumorsSeen';
+	import { hasNewEntries, seenThrough, type Revisioned } from '$lib/lawsRumorsSeen';
 	import { mergeSeenMarkers, rereadCouldClearADot, dividerMarkerAfterReread } from '$lib/seenMarkers';
 	import { provideSecretCounts } from '$lib/secretCountsContext';
 	import { provideSuccession } from '$lib/successionContext';
@@ -94,6 +94,8 @@
 	let rankings = $state<Ranking[]>([]);
 	let assets = $state<Asset[]>([]);
 	let laws = $state<Law[]>([]);
+	// Agreed peace terms, listed under the laws (migration 061).
+	let treaties = $state<Treaty[]>([]);
 	let rumors = $state<Rumor[]>([]);
 	let members = $state<PresenceMember[]>([]);
 	// Durable per-seat presence ("last here 3h ago") and reminder reachability.
@@ -343,7 +345,11 @@
 	// the cache shows no dots until the load below has landed.
 	let lawsSeenRev = $state<number | null>(null);
 	let rumorsSeenRev = $state<number | null>(null);
-	const lawsNew = $derived(lawsSeenRev != null && hasNewEntries(laws, lawsSeenRev));
+	// The Laws tab lists laws and treaties under one marker, so everything that
+	// asks "is anything on Laws new?" reads both: the dot, the report that
+	// clears it, and the re-read that catches up the writer.
+	const lawsTabEntries = $derived<Revisioned[]>([...laws, ...treaties]);
+	const lawsNew = $derived(lawsSeenRev != null && hasNewEntries(lawsTabEntries, lawsSeenRev));
 	const rumorsNew = $derived(rumorsSeenRev != null && hasNewEntries(rumors, rumorsSeenRev));
 	const paneMarks = $derived<PaneMarkState>(
 		paneMarksFor({ lawsNew, rumorsNew, yourMove: isMyMove, unreadChat: hasUnreadChat })
@@ -358,7 +364,7 @@
 		const kind = recordTab;
 		const seen = kind === 'laws' ? lawsSeenRev : rumorsSeenRev;
 		if (seen == null) return;
-		const top = seenThrough(kind === 'laws' ? laws : rumors, seen);
+		const top = seenThrough(kind === 'laws' ? lawsTabEntries : rumors, seen);
 		if (top == null || top <= reportedSeen[kind]) return;
 		reportedSeen[kind] = top;
 		const report = kind === 'laws' ? markLawsSeen : markRumorsSeen;
@@ -386,7 +392,7 @@
 		for (const kind of ['laws', 'rumors'] as const) {
 			const seen = kind === 'laws' ? lawsSeenRev : rumorsSeenRev;
 			if (seen == null) continue;
-			const top = (kind === 'laws' ? laws : rumors).reduce((m, e) => Math.max(m, e.rev), 0);
+			const top = (kind === 'laws' ? lawsTabEntries : rumors).reduce((m, e) => Math.max(m, e.rev), 0);
 			if (top <= seen || top <= checkedTop[kind]) continue;
 			checkedTop[kind] = top;
 			clearTimeout(markerRereads[kind]);
@@ -566,6 +572,7 @@
 		get rankings() { return rankings; }, set rankings(v) { rankings = v; },
 		get assets() { return assets; }, set assets(v) { assets = v; },
 		get laws() { return laws; }, set laws(v) { laws = v; },
+		get treaties() { return treaties; }, set treaties(v) { treaties = v; },
 		get rumors() { return rumors; }, set rumors(v) { rumors = v; },
 		get secrets() { return secrets; }, set secrets(v) { secrets = v; },
 		chatFeed,
@@ -617,7 +624,7 @@
 	// produced. If you add server-owned state above, add it to both.
 	function captureSnapshot(): TableSnapshot {
 		return {
-			game, players, toneTopics, rankings, assets, laws, rumors, members,
+			game, players, toneTopics, rankings, assets, laws, treaties, rumors, members,
 			playerActivity, secrets, currentPlayerID, prologueActivePlayerID,
 			recordRows, plans, planTokens, activeScene, activeScenePeers, rowState,
 			bankedDice, activeRoll, activeRollDice, activeRollVotes,
@@ -633,7 +640,7 @@
 
 	function applySnapshot(s: TableSnapshot) {
 		game = s.game; players = s.players; toneTopics = s.toneTopics;
-		rankings = s.rankings; assets = s.assets; laws = s.laws; rumors = s.rumors;
+		rankings = s.rankings; assets = s.assets; laws = s.laws; treaties = s.treaties; rumors = s.rumors;
 		members = s.members; playerActivity = s.playerActivity; secrets = s.secrets;
 		currentPlayerID = s.currentPlayerID;
 		prologueActivePlayerID = s.prologueActivePlayerID;
@@ -698,6 +705,7 @@
 			if (data.rankings) rankings = data.rankings;
 			if (data.current_prologue_player_id !== undefined) prologueActivePlayerID = data.current_prologue_player_id;
 			if (data.laws) laws = data.laws;
+			if (data.treaties) treaties = data.treaties;
 			if (data.rumors) rumors = data.rumors;
 			// Assign-only, for the same reason as player_activity below: the
 			// payload is best-effort, and a resync that lost that one query
@@ -1077,6 +1085,7 @@
 						<LawsRumors
 							kind={recordTab}
 							{laws}
+							{treaties}
 							{rumors}
 							{plans}
 							{players}

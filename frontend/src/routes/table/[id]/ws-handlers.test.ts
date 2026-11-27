@@ -65,6 +65,21 @@ function makeCtx(over: Partial<WSContext> = {}): WSContext {
 	} as unknown as WSContext;
 }
 
+describe('treaty.agreed', () => {
+	const treaty = (id: number, terms: string) => ({
+		id, war_id: 5, origin_plan_id: 9, terms, rev: 12, resolved_at: null, agreed_by: [1, 2],
+	});
+
+	it('adds the treaty to the Laws tab without a reload, and a replay changes nothing', () => {
+		const ctx = makeCtx({ treaties: [] });
+		handleWSMessage(ctx, { type: EventTypes.TreatyAgreed, payload: { treaty: treaty(3, 'White peace.') } });
+		handleWSMessage(ctx, { type: EventTypes.TreatyAgreed, payload: { treaty: treaty(3, 'White peace.') } });
+		expect(ctx.treaties.map(t => t.id)).toEqual([3]);
+		handleWSMessage(ctx, { type: EventTypes.TreatyAgreed, payload: { treaty: treaty(4, 'Border at the river.') } });
+		expect(ctx.treaties.map(t => t.terms)).toEqual(['White peace.', 'Border at the river.']);
+	});
+});
+
 describe('plan.prepared record sync', () => {
 	it('adds the prepared plan to its record row without a reload', () => {
 		const ctx = makeCtx();

@@ -7,7 +7,7 @@ import { EventTypes, type WSMessage } from '$lib/ws';
 import { getRoll, listBankedDice, getVisibleSecrets, getPlan, listPlans, listPlanTokens } from '$lib/api';
 import type {
 	Game, Player, PresenceMember, ToneTopic, Ranking, Asset, Marginalium,
-	Law, Rumor, Secret, ChatPost, SceneEntry, RecordRow, RowState, Scene,
+	Law, Rumor, Treaty, Secret, ChatPost, SceneEntry, RecordRow, RowState, Scene,
 	ScenePeerView, SceneSetupDraft, PreparePlanDraft, DiceRoll, DiceRollDie,
 	VoteView, RollParticipant, BankedDie, Plan, PlanToken, ActiveRollPayload,
 } from '$lib/api';
@@ -33,6 +33,7 @@ export interface WSContext {
 	rankings: Ranking[];
 	assets: Asset[];
 	laws: Law[];
+	treaties: Treaty[];
 	rumors: Rumor[];
 	secrets: Secret[];
 	/** Owns the contiguous post window, live/history mode, and cursors — see
@@ -581,6 +582,16 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			if (law) {
 				const idx = ctx.laws.findIndex(l => l.id === law.id);
 				ctx.laws = idx >= 0 ? ctx.laws.map(l => l.id === law.id ? law : l) : [...ctx.laws, law];
+			}
+			break;
+		}
+		case EventTypes.TreatyAgreed: {
+			// Peace terms agreed by everyone in a war, kept on the Laws tab. Public,
+			// so every client gets the frame; replacing by id keeps a replay harmless.
+			const { treaty } = msg.payload as { treaty: Treaty };
+			if (treaty) {
+				const idx = ctx.treaties.findIndex(t => t.id === treaty.id);
+				ctx.treaties = idx >= 0 ? ctx.treaties.map(t => t.id === treaty.id ? treaty : t) : [...ctx.treaties, treaty];
 			}
 			break;
 		}

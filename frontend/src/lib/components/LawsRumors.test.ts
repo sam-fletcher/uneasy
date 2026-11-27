@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import LawsRumors from './LawsRumors.svelte';
 import { declarations, styleOf } from './shared/cssTestKit';
-import type { Asset, Law, Plan, Player, Rumor } from '$lib/api';
+import type { Asset, Law, Plan, Player, Rumor, Treaty } from '$lib/api';
 
 /*
  * The Laws and Rumors lists, rendered through svelte/server (no jsdom). Pinned:
@@ -266,6 +266,93 @@ describe('what the list says', () => {
 	it('puts a law\'s addendum under its text, in italics, after an ellipsis', () => {
 		const html = draw({ laws: [law(1, 1, { addendum: 'unless it flies the crown’s colours' })] });
 		expect(html).toMatch(/class="lr-addendum[^"]*">…unless it flies the crown’s colours</);
+	});
+});
+
+// Peace terms every active participant of a war agreed to (migration 061).
+const treaty = (id: number, rev: number, over: Partial<Treaty> = {}): Treaty => ({
+	id,
+	war_id: 5,
+	origin_plan_id: 9,
+	terms: `Treaty terms ${id}`,
+	rev,
+	resolved_at: null,
+	agreed_by: [1, 2],
+	...over,
+});
+// The plan that declared the war: Ash's war on Wren.
+const warPlan = (): Plan =>
+	({
+		id: 9,
+		plan_type: 'make_war',
+		preparer_id: 1,
+		resolution_data: JSON.stringify({ make_war: { enemy_player_ids: [2] } }),
+	}) as Plan;
+
+describe('Treaties', () => {
+	it('is a group below the laws, and only when the table has a treaty', () => {
+		const none = draw({ laws: [law(1, 1)], treaties: [], plans: [warPlan()] });
+		expect(none).not.toContain('aria-label="Treaties"');
+
+		const html = draw({ laws: [law(1, 1)], treaties: [treaty(1, 2)], plans: [warPlan()] });
+		expect(html).toContain('aria-label="Treaties"');
+		expect(html.indexOf('aria-label="Laws"')).toBeLessThan(html.indexOf('aria-label="Treaties"'));
+		expect(html).toContain('1 treaty');
+		// Kept apart from the laws: the law count and entries are the laws' own.
+		expect(html).toContain('1 law<');
+	});
+
+	it('shows the group even when there are no laws', () => {
+		const html = draw({ laws: [], treaties: [treaty(1, 2)], plans: [warPlan()] });
+		expect(html).toContain('No laws yet.');
+		expect(html).toContain('Treaty terms 1');
+	});
+
+	it('is not drawn on the Rumors list', () => {
+		const html = draw({ kind: 'rumors', treaties: [treaty(1, 2)], plans: [warPlan()] });
+		expect(html).not.toContain('Treaty terms 1');
+	});
+
+	it('has no Edit button, for anyone: everyone agreed to those words', () => {
+		// Player 1 declared the war and agreed to the terms; Wren (2) agreed too.
+		for (const currentPlayerID of [1, 2, 3]) {
+			const html = draw({ treaties: [treaty(1, 2)], plans: [warPlan()], currentPlayerID });
+			expect(html).toContain('Treaty terms 1');
+			expect(html).not.toContain('>Edit<');
+			expect(html).not.toContain('lr-edit');
+		}
+	});
+
+	it('names the war and everyone who agreed, each with their shape', () => {
+		const html = draw({ treaties: [treaty(1, 2, { agreed_by: [1, 2, 3] })], plans: [warPlan()] });
+		const [entry] = items(html);
+		expect(entry).toContain('Ash’s war on Wren');
+		expect(entry).toContain('Agreed by');
+		// Ash is the diamond, Wren the triangle, otto the square.
+		for (const [name, shape] of [['Ash', 'diamond'], ['Wren', 'triangle'], ['otto', 'square']]) {
+			expect(entry).toMatch(new RegExp(`${shape}[\\s\\S]*?${name}`));
+		}
+	});
+
+	it('names no war rather than guessing when the declaring plan is not here', () => {
+		const html = draw({ treaties: [treaty(1, 2)], plans: [] });
+		expect(html).toContain('Treaty terms 1');
+		expect(html).not.toContain('Ending');
+	});
+
+	it('starts a "new" dot above the Laws marker, like a law', () => {
+		const html = draw({ laws: [law(1, 1)], treaties: [treaty(1, 8)], plans: [warPlan()], seenLaws: 5 });
+		const [lawEntry, treatyEntry] = items(html);
+		expect(lawEntry).not.toContain('new-dot');
+		expect(treatyEntry).toContain('new-dot');
+		const seen = draw({ laws: [law(1, 1)], treaties: [treaty(1, 8)], plans: [warPlan()], seenLaws: 8 });
+		expect(count(seen, 'new-dot')).toBe(0);
+	});
+
+	it('renders the terms as written, never parsed', () => {
+		const html = draw({ treaties: [treaty(1, 2, { terms: 'A <b>bold</b> **peace**' })], plans: [warPlan()] });
+		expect(html).not.toContain('<b>bold</b>');
+		expect(html).toContain('**peace**');
 	});
 });
 

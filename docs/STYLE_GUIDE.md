@@ -434,6 +434,12 @@ for controls, and a record is read, not pressed. `PublicRecord.svelte` and
   its writer.
 - **Edit** is the house secondary button (`action-btn secondary`, 44px), shown only on an entry
   you wrote.
+- **Treaties** are a group of their own below the laws, shown only when the table has one, so a
+  treaty never reads as a law a decree could amend. Its total is "1 treaty", like the laws'. A
+  treaty is a plain entry like a law: the agreed terms, then two bylines, "Ending" with the war's
+  name (`WarName`: the barbute and the red the war carries everywhere) and "Agreed by" with each
+  player who agreed (shape and name). It has **no Edit button**: everyone agreed to those words.
+  It counts toward the Laws tab's "new" dot and draws its own dot as a law does.
 
 ## Typography
 

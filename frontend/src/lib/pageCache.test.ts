@@ -13,7 +13,7 @@ const acct = { id: 1, username: 'alice' } as Account;
 function snap(overrides: Partial<TableSnapshot> = {}): TableSnapshot {
 	return {
 		game: null, players: [], toneTopics: [], rankings: [], assets: [],
-		laws: [], rumors: [], members: [], playerActivity: [], secrets: [],
+		laws: [], treaties: [], rumors: [], members: [], playerActivity: [], secrets: [],
 		currentPlayerID: null, prologueActivePlayerID: null,
 		recordRows: [], plans: [], planTokens: [],
 		activeScene: null, activeScenePeers: [], rowState: null, bankedDice: [],

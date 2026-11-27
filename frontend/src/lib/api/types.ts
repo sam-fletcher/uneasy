@@ -208,6 +208,25 @@ export interface Asset {
 	secret_count: number;
 }
 
+/** Peace terms every active participant agreed to, kept on the Laws tab (migration
+ *  061). Not a law: no one may edit it and a decree can't amend it. Worked out on
+ *  the server from an accepted peace proposal and the votes that accepted it. */
+export interface Treaty {
+	/** The accepted peace proposal's id. */
+	id: number;
+	war_id: number;
+	/** The war's origin plan, which names the war (warName in $lib/warText). */
+	origin_plan_id: number;
+	/** The proposer's words. */
+	terms: string;
+	/** Drawn when the proposal was accepted, from the same sequence as a law's,
+	 *  so a treaty is "new" against the viewer's laws marker exactly as a law is. */
+	rev: number;
+	resolved_at: string | null;
+	/** Player ids of everyone who agreed, the proposer included. */
+	agreed_by: number[];
+}
+
 export interface Law {
 	id: number;
 	game_id: number;

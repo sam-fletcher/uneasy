@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 import type {
-	Game, Player, GamePhase, ToneTopic, ToneTopicStatus, Ranking, Law, Rumor,
+	Game, Player, GamePhase, ToneTopic, ToneTopicStatus, Ranking, Law, Rumor, Treaty,
 	PlayerActivity, LawsRumorsSeen, PlanType,
 } from './types';
 
@@ -80,6 +80,8 @@ export function getGameState(id: string | number): Promise<{
 	tone_topics?: ToneTopic[];
 	rankings?: Ranking[];
 	laws?: Law[];
+	/** Agreed peace terms, shown under the laws. Best-effort server-side. */
+	treaties?: Treaty[];
 	rumors?: Rumor[];
 	/** The viewer's own markers for the "new" dots on Laws and Rumors. Best-effort
 	 *  server-side, so absent if that one query failed. */
