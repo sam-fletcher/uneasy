@@ -20,6 +20,7 @@
 	import LogMark from '../../LogMark.svelte';
 	import { demandLeverage, demandRetarget, type Plan, type Player, type Asset } from '$lib/api';
 	import { parseLiaiseData } from '$lib/plans/resolutionData/liaise';
+	import { performStepsWording, TARGET_SLOT } from '$lib/plans/buffets';
 	import {
 		playerName, activeDemandAgainst, demandWinnersFromPlan,
 		parseResolutionData, targetHasPreparerRoll, demandOptionInertReason, PLAN_SHORT,
@@ -147,6 +148,9 @@
 	// Seek Answers and Chronicle Histories give their preparer no assets, so
 	// there is nothing for the keep_assets winner to take.
 	const keepAssetsLive = $derived(demandOptionInertReason('keep_assets', plan.plan_type) == null);
+	// The perform-steps sentence, the same one the option picker reads (buffets.ts). Its
+	// preparer is named with PlayerName, and its subject is "You" or the Make Demands winner's name.
+	const stepsWording = $derived(performStepsWording(plan.plan_type));
 
 	// ── Retarget form ─────────────────────────────────────────────────────────
 
@@ -267,6 +271,11 @@
 </script>
 
 {#if demand && draftComplete}
+	<!-- A target-plan name in a sentence from buffets.ts: the preparer's name is a PlayerName,
+	     the rest of the text is plain. -->
+	{#snippet namedPreparer(text: string)}
+		{#each text.split(TARGET_SLOT) as part, i (i)}{#if i > 0}<PlayerName {players} id={plan.preparer_id} />{/if}{part}{/each}
+	{/snippet}
 	<div class="step-groups">
 		<!-- What the demand does to this plan: plain rules, so no box and no colour. -->
 		<div class="demand-summary">
@@ -277,14 +286,9 @@
 			<ul class="demand-winners">
 				{#if winners.perform_steps != null && winners.perform_steps !== plan.preparer_id}
 					<li>
-						{#if amPerformStepsWinner}
-							You will submit this plan's make/mar choices
-							in <PlayerName {players} id={plan.preparer_id} />'s place.
-						{:else}
-							<PlayerName {players} id={winners.perform_steps} />
-							will submit this plan's make/mar choices in
-							<PlayerName {players} id={plan.preparer_id} />'s place.
-						{/if}
+						{#if amPerformStepsWinner}You{:else}<PlayerName {players} id={winners.perform_steps} />{/if}
+						will {@render namedPreparer(stepsWording.lead)}.
+						{#if stepsWording.notes}{@render namedPreparer(stepsWording.notes)}{/if}
 					</li>
 				{/if}
 				{#if keepAssetsLive && winners.keep_assets != null && winners.keep_assets !== plan.preparer_id}

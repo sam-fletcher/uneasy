@@ -110,7 +110,7 @@ describe('Make Demands: the draft, as a watcher sees it', () => {
 		expect(t).toContain('Choose how many of bea’s assets go onto their roll.');
 		expect(t).toContain('No effect here: Seek Answers isn’t aimed at anything a demand could redirect.');
 		expect(t).toContain('No effect here: Seek Answers gives its preparer no assets to keep.');
-		expect(t).toContain('Pick the make or mar options for bea once they have rolled.');
+		expect(t).toContain('Pick the make or mar options for bea once bea has rolled.');
 	});
 
 	it('shows the other drafter the mirror too, when it is not their pick', () => {

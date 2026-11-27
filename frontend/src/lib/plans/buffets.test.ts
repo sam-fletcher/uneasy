@@ -234,7 +234,7 @@ describe('Make Demands, against each target', () => {
 		it('is never a dud, and makes the choices after the roll', () => {
 			for (const p of ['seek_answers', 'spread_propaganda', 'chronicle_histories', 'make_introductions']) {
 				expect(line(p as PlanType)).not.toContain('No effect here');
-				expect(line(p as PlanType)).toMatch(/options for bea once they have rolled/);
+				expect(line(p as PlanType)).toMatch(/options for bea once bea has rolled/);
 			}
 		});
 		it('Propose Decree has no options to pick: the stand-in enacts the law, and places the addendum when the preparer signs', () => {
@@ -244,9 +244,9 @@ describe('Make Demands, against each target', () => {
 			expect(t).not.toContain('options');
 		});
 
-		it('Propose Duel: the preparer still plays the bouts; the stand-in chooses the claim after the roll', () => {
+		it('Propose Duel: the preparer still stakes and plays the bouts; the stand-in chooses the staked assets after the roll', () => {
 			const t = line('propose_duel');
-			expect(t).toContain('bea still plays the bouts');
+			expect(t).toContain('bea still stakes and plays the bouts');
 			expect(t).toContain('once the duel’s roll has landed');
 			expect(t).toContain('which staked assets a make takes, in bea’s place');
 			// The stand-in does not play a side of the bouts: they come before the roll.
@@ -255,7 +255,7 @@ describe('Make Demands, against each target', () => {
 
 		it('keeps a mar with the plan\'s own target where that target chooses it: exchange, rumors, duel', () => {
 			for (const p of ['exchange_courtiers', 'spread_rumors', 'propose_duel'] as PlanType[]) {
-				expect(line(p), p).toMatch(/a mar.s (choice|claim) stays with the plan.s own target/i);
+				expect(line(p), p).toMatch(/a mar.s choice stays with the plan.s own target/i);
 			}
 			for (const p of ['seek_answers', 'spread_propaganda'] as PlanType[]) {
 				expect(line(p), p).not.toMatch(/stays with/);

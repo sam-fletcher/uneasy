@@ -130,6 +130,55 @@ const MAR_STAYS_WITH_TARGET: ReadonlySet<PlanType> = new Set<PlanType>([
 	'exchange_courtiers', 'spread_rumors', 'propose_duel',
 ]);
 
+/** Where a target plan's preparer's name goes in `performStepsWording`'s text. */
+export const TARGET_SLOT = '{target}';
+
+/**
+ * What a Make Demands winner who takes "perform the steps" does in the target plan's
+ * preparer's place. This is the one source for both the option picker's line (imperative,
+ * the Make Demands winner unnamed) and the target's banner (the Make Demands winner in front: "You will …" or
+ * "Cyril will …"). `lead` has no subject and no full stop; `notes` are whole sentences that
+ * follow it. Both use `TARGET_SLOT` for the preparer, so the banner can keep their name as a
+ * `PlayerName`. "will" takes the base form for either person, so nothing is conjugated.
+ *
+ * Duel: the stakes and the bouts come before the duel's roll, so the preparer still makes them, and the
+ * stand-in starts once the roll has landed, choosing which staked assets a make takes. A mar's
+ * choice stays with the plan's own target. [RULINGS, Make Demands: perform-steps is post-roll
+ * only; a duel's bouts are the duellists' own.] Liaison and festivity have no roll of their
+ * preparer's own, so there is no "once they have rolled" for them.
+ */
+export function performStepsWording(planType: PlanType): { lead: string; notes: string } {
+	if (planType === 'clandestinely_liaise') {
+		return { lead: `make the liaison’s choices in ${TARGET_SLOT}’s place, and move it on`, notes: '' };
+	}
+	if (planType === 'host_festivity') {
+		return { lead: `make the host’s choices in ${TARGET_SLOT}’s place, including when the event ends`, notes: '' };
+	}
+	if (planType === 'propose_duel') {
+		return {
+			lead: `choose which staked assets a make takes, in ${TARGET_SLOT}’s place, once the duel’s roll has landed`,
+			notes: `${TARGET_SLOT} still stakes and plays the bouts. A mar’s choice stays with the plan’s own target.`,
+		};
+	}
+	// Propose Decree has no options to pick: the stand-in enacts the law, and places the
+	// addendum when the preparer is the signatory (a signatory who is someone else keeps it).
+	if (planType === 'propose_decree') {
+		return {
+			lead: `enact the law in ${TARGET_SLOT}’s place once the dice have landed, and place the addendum too when ${TARGET_SLOT} is the signatory`,
+			notes: '',
+		};
+	}
+	return {
+		lead: `pick the make or mar options for ${TARGET_SLOT} once ${TARGET_SLOT} has rolled`,
+		notes: MAR_STAYS_WITH_TARGET.has(planType) ? 'A mar’s choice stays with the plan’s own target.' : '',
+	};
+}
+
+/** Fills a `TARGET_SLOT`-bearing text with the preparer's name (the plain-text form). */
+function fillTarget(text: string, target: string): string {
+	return text.split(TARGET_SLOT).join(target);
+}
+
 /**
  * What one of a demand's four options does against a target plan of this type, in a
  * sentence, or why it does nothing. `target` is the player who prepared the target plan.
@@ -147,22 +196,9 @@ export function demandOptionLine(opt: DemandOption, planType: PlanType, target: 
 		case 'keep_assets':
 			return `Take ${KEPT_ASSETS[planType] ?? 'what the plan gives its preparer'}, in place of ${target}.`;
 		case 'perform_steps': {
-			// A plan with no roll of its preparer's own has no "once they have rolled".
-			if (planType === 'clandestinely_liaise') return `Make the liaison’s choices in ${target}’s place, and move it on.`;
-			if (planType === 'host_festivity') return `Make the host’s choices in ${target}’s place, including when the event ends.`;
-			// The bouts come before the duel's roll, so the preparer plays them; the stand-in
-			// starts once it has resolved, choosing which staked assets a make takes. The target's
-			// seat is never moved [RULINGS, Make Demands: perform-steps is post-roll only].
-			if (planType === 'propose_duel') {
-				return `Choose which staked assets a make takes, in ${target}’s place, once the duel’s roll has landed. ${target} still plays the bouts. A mar’s claim stays with the plan’s own target.`;
-			}
-			// Propose Decree has no options to pick: the stand-in enacts the law, and places the
-			// addendum when the preparer is the signatory (a signatory who is someone else keeps it).
-			if (planType === 'propose_decree') {
-				return `Enact the law in ${target}’s place once the dice have landed, and place the addendum too when ${target} is the signatory.`;
-			}
-			const base = `Pick the make or mar options for ${target} once they have rolled.`;
-			return MAR_STAYS_WITH_TARGET.has(planType) ? `${base} A mar’s choice stays with the plan’s own target.` : base;
+			const { lead, notes } = performStepsWording(planType);
+			const sentence = `${lead.charAt(0).toUpperCase()}${lead.slice(1)}.`;
+			return fillTarget([sentence, notes].filter(Boolean).join(' '), target);
 		}
 	}
 }

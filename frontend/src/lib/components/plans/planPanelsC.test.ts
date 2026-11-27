@@ -693,7 +693,7 @@ describe('the Make Demands draft', () => {
 		const body = draft(BOB);
 		expect(body).toMatch(/option-title[^>]*>Perform steps<\/span>/);
 		// Said for this plan and its preparer, as the "What can happen" before the dice says it.
-		expect(body).toMatch(/option-desc[^>]*>Pick the make or mar options for alice once they have rolled\.</);
+		expect(body).toMatch(/option-desc[^>]*>Pick the make or mar options for alice once alice has rolled\.</);
 		expect(body).not.toContain('Submit the target plan');
 		// Control leverage is already taken, so it is not offered again.
 		expect(body).not.toMatch(/option-title[^>]*>Control leverage</);
@@ -703,7 +703,7 @@ describe('the Make Demands draft', () => {
 		const duel = draft(BOB, 'propose_duel');
 		expect(card(duel, 'Keep or change target')).toContain('Keep or change who is challenged.');
 		expect(card(duel, 'Keep assets')).toContain('Take the staked assets the preparer takes, in place of alice.');
-		expect(card(duel, 'Perform steps')).toContain('alice still plays the bouts');
+		expect(card(duel, 'Perform steps')).toContain('alice still stakes and plays the bouts');
 		expect(card(duel, 'Perform steps')).not.toContain('Pick the make or mar options');
 		const rumors = draft(BOB, 'spread_rumors');
 		expect(card(rumors, 'Keep or change target')).toContain('Keep or change which asset the rumor is about.');
