@@ -875,7 +875,7 @@ export function guestChoice(
 }
 
 /** Host Festivity — host spends one of their earned extra makes (their spoils).
- *  A `challenge_duel` also carries `target_player_id` (and optional notes). */
+ *  A `challenge_duel` also carries `target_player_id`, `duel_type` and `preparation_notes` (the place). */
 export function hostChoice(
 	planID: number,
 	body: { choice: string } & Record<string, unknown>
@@ -891,15 +891,17 @@ export function endFestivity(planID: number): Promise<{ plan_id: number; result:
 	return apiFetch(`/plans/${planID}/end-event`, { method: 'POST' });
 }
 
-/** Host Festivity — challenge a guest to a duel; spawns a Propose Duel plan. */
+/** Host Festivity — challenge a guest to a duel; spawns a Propose Duel plan. The
+ *  challenger names the duel's type (arms or wits) and its place, as Propose Duel does. */
 export function challengeDuel(
 	planID: number,
 	targetPlayerID: number,
-	notes?: string,
+	duelType: 'arms' | 'wits',
+	place: string,
 ): Promise<{ plan_id: number; duel_plan_id?: number; challenger_id?: number; target_id?: number; must_accept?: boolean }> {
 	return apiFetch(`/plans/${planID}/challenge-duel`, {
 		method: 'POST',
-		body: JSON.stringify({ target_player_id: targetPlayerID, preparation_notes: notes ?? '' }),
+		body: JSON.stringify({ target_player_id: targetPlayerID, duel_type: duelType, preparation_notes: place }),
 	});
 }
 

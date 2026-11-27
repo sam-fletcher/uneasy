@@ -7,6 +7,9 @@ import type { DraftPeer } from './draft_peer';
 export interface PendingChallenge {
 	challenger_id: number;
 	target_id: number;
+	/** The duel's type: "arms" or "wits". */
+	duel_type?: 'arms' | 'wits';
+	/** The duel's place. */
 	notes?: string;
 }
 

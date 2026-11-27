@@ -43,6 +43,22 @@ describe('hostMakeDraft', () => {
 		expect(hostMakeDraft.peerMarginalia).toBe('');
 		expect(hostMakeDraft.assetID).toBeNull();
 	});
+
+	it('keeps a duel\'s terms until it is sent, and clear resets them', () => {
+		hostMakeDraft.begin(7);
+		hostMakeDraft.picked = 'challenge_duel';
+		hostMakeDraft.duelTargetID = 3;
+		hostMakeDraft.duelType = 'wits';
+		hostMakeDraft.duelPlace = 'The sunken garden.';
+
+		hostMakeDraft.begin(7); // a remount, before the make is sent
+		expect(hostMakeDraft.duelType).toBe('wits');
+		expect(hostMakeDraft.duelPlace).toBe('The sunken garden.');
+
+		hostMakeDraft.clear();
+		expect(hostMakeDraft.duelType).toBe('arms');
+		expect(hostMakeDraft.duelPlace).toBe('');
+	});
 });
 
 describe('hostMarDraft', () => {

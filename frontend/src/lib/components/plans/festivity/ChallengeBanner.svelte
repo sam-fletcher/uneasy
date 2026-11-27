@@ -10,7 +10,7 @@
 	import { playerName } from '../shared';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
-	type Challenge = { challenger_id: number; target_id: number; notes?: string };
+	type Challenge = { challenger_id: number; target_id: number; duel_type?: 'arms' | 'wits'; notes?: string };
 
 	let { planID, challenge, players, currentPlayerID, mustAccept, onPlansChanged }: {
 		planID: number;
@@ -41,7 +41,7 @@
 	<p class="choices-header">Duel challenge</p>
 	<p class="ft-prompt">
 		<PlayerName {players} id={challenge.challenger_id} /> challenges
-		<PlayerName {players} id={challenge.target_id} />.
+		<PlayerName {players} id={challenge.target_id} />{#if challenge.duel_type}{' '}to a duel of {challenge.duel_type}{/if}.
 	</p>
 	{#if challenge.notes}
 		<p class="plan-notes">"{challenge.notes}"</p>

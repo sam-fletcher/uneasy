@@ -14,10 +14,11 @@
 	import CardPicker from '../CardPicker.svelte';
 	import AssetCreationForm from '../../AssetCreationForm.svelte';
 	import FormField from '../FormField.svelte';
+	import DuelTermsFields from '../duel/DuelTermsFields.svelte';
 	import { breakableAssets, playerName } from '../shared';
 	import { destructionWarning } from '$lib/assetRisk';
 	import {
-		MAKE_OPTS, MAR_OPTS, centeredPeerCards, centeredPeerPick, isDraftCard, type FestRes,
+		MAKE_OPTS, MAR_OPTS, challengeReady, centeredPeerCards, centeredPeerPick, isDraftCard, type FestRes,
 	} from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
@@ -67,6 +68,9 @@
 	let pickedAssetID = $state<number | null>(null);
 	let pickedMargID = $state<number | null>(null);
 	let pickedDuelTargetID = $state<number | null>(null);
+	// The duel's terms, named by a challenger as Propose Duel's preparation does.
+	let pickedDuelType = $state<'arms' | 'wits'>('arms');
+	let pickedDuelPlace = $state('');
 	let pickerBusy = $state(false);
 	let pickerError = $state('');
 
@@ -102,7 +106,7 @@
 		if (!pickedChoice) return false;
 		switch (pickedChoice) {
 			case 'challenge_duel':
-				return pickedDuelTargetID != null;
+				return challengeReady(pickedDuelTargetID, pickedDuelPlace);
 			case 'introduce_peer':
 				return peerName.trim().length > 0 && peerMarginalia.trim().length > 0;
 			case 'spread_rumor':
@@ -130,6 +134,8 @@
 			pickedAssetID = null;
 			pickedMargID = null;
 			pickedDuelTargetID = null;
+			pickedDuelType = 'arms';
+			pickedDuelPlace = '';
 			pickerError = '';
 		}
 	});
@@ -143,7 +149,11 @@
 					pickerError = 'Pick a target.';
 					return;
 				}
-				await challengeDuel(plan.id, pickedDuelTargetID);
+				if (!pickedDuelPlace.trim()) {
+					pickerError = 'Describe the location of the duel.';
+					return;
+				}
+				await challengeDuel(plan.id, pickedDuelTargetID, pickedDuelType, pickedDuelPlace.trim());
 			} else {
 				const body: {
 					choice: string; rumor_text?: string; peer_name?: string;
@@ -188,6 +198,8 @@
 			// stale value would read as a live pick rather than "nothing chosen".
 			pickedMargID = null;
 			pickedDuelTargetID = null;
+			pickedDuelType = 'arms';
+			pickedDuelPlace = '';
 			onPlansChanged();
 		} catch (e) {
 			pickerError = e instanceof Error ? e.message : 'Could not submit choice.';
@@ -306,6 +318,7 @@
 					</p>
 				{/if}
 			</FormField>
+			<DuelTermsFields bind:duelType={pickedDuelType} bind:place={pickedDuelPlace} />
 		{/if}
 
 		{#if pickerError}<ErrorText message={pickerError} variant="panel" />{/if}

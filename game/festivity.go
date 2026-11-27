@@ -74,9 +74,13 @@ func IsValidFestivityMarOption(key string) bool {
 // While set, all further festivity game actions are blocked until the target
 // accepts (spawning a duel plan) or declines.
 type PendingChallenge struct {
-	ChallengerID int64  `json:"challenger_id"`
-	TargetID     int64  `json:"target_id"`
-	Notes        string `json:"notes,omitempty"`
+	ChallengerID int64 `json:"challenger_id"`
+	TargetID     int64 `json:"target_id"`
+	// DuelType ("arms" or "wits") and Notes (the place) are the duel's terms, which
+	// the challenger names as Propose Duel's preparation does (RULINGS, Host
+	// Festivity, 2026-11-26). Notes is the spawned duel's preparation notes.
+	DuelType string `json:"duel_type,omitempty"`
+	Notes    string `json:"notes,omitempty"`
 }
 
 // FestivityResolutionData holds all Host Festivity plan state stored inside
