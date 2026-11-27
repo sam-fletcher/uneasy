@@ -58,14 +58,18 @@ badly.
    the PR's "For the owner" section with a screenshot, and the merge accepts it. A point that waits on
    playtest evidence goes on a watch list, not into `questions/`.
 
-**Waiting on the owner now:** `war-takeover-layout` (the war's words for paying a cost and for what a
-surrender gives up) and `war-peace-terms-record` (agreed terms kept on the Laws tab as a treaty).
+**Answered later on 2026-11-26:** the war's words (the cost of battle is paid, never owed; a
+surrender's opponents take spoils of war) and peace terms (kept on the Laws tab as treaties, and the
+war's closing line quotes them). Both are built by the items below. Whether terms can do anything
+mechanical joins `make-war-peace-proposal-loose-ends` for the rules round.
 
 ## Ready to build, no question open
 
 - `festivity-duel-terms`, `render-crash-report`, `make-demands-overlay-stand-in-line` and
   `check-fast-fresh-worktree`: each brief is settled, so Haiku at high effort. Each touches its own
   files, so they can run in parallel.
+- **Taken:** `war-cost-and-spoils-words` (Haiku) and `war-peace-treaties` (Sonnet) are being built by
+  sessions the question-pass coordinator started, at the owner's request. Don't start them again.
 - Then the queue: `redesign-prologue` (after board 1), `inline-text-names-in-strings`,
   `set-piece-candidates`, `plan-gain-recipient-helper` (alone: it touches most plan panels),
   `redesign-cleanup` last.
