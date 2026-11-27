@@ -684,10 +684,13 @@ func (q *Queries) ListPeaceVotes(ctx context.Context, proposalID int64) ([]WarPe
 const listTreaties = `-- name: ListTreaties :many
 SELECT p.id, p.war_id, w.origin_plan_id, p.terms, COALESCE(p.rev, 0)::BIGINT AS rev, p.resolved_at,
        COALESCE(array_agg(v.player_id ORDER BY v.player_id)
-                FILTER (WHERE v.accepted), '{}')::BIGINT[] AS agreed_by
+                FILTER (WHERE v.accepted AND wp.player_id IS NOT NULL), '{}')::BIGINT[] AS agreed_by
 FROM war_peace_proposals p
 JOIN wars w ON w.id = p.war_id
 LEFT JOIN war_peace_votes v ON v.proposal_id = p.id
+LEFT JOIN war_participants wp
+  ON wp.war_id = p.war_id AND wp.player_id = v.player_id
+ AND wp.surrendered_at_row IS NULL AND wp.entry_payment_complete = TRUE
 WHERE w.game_id = $1 AND p.status = 'accepted'
 GROUP BY p.id, w.origin_plan_id
 ORDER BY p.rev ASC
@@ -705,8 +708,11 @@ type ListTreatiesRow struct {
 
 // A game's agreed peace terms, oldest agreement first, with the players who
 // agreed. Public to the whole table, like the laws they sit under: the terms
-// were posted to the log when proposed. agreed_by is every accepting vote, the
-// proposer's included (proposing is an acceptance).
+// were posted to the log when proposed. agreed_by is the players whose accepts
+// closed the vote, the proposer's included (proposing is an acceptance): the
+// accepting votes of the war's ACTIVE participants, the same set the vote's
+// tally counts (ListActiveWarParticipants). A player who accepted and then
+// surrendered before the vote closed was no longer a party to the peace.
 func (q *Queries) ListTreaties(ctx context.Context, gameID int64) ([]ListTreatiesRow, error) {
 	rows, err := q.db.Query(ctx, listTreaties, gameID)
 	if err != nil {

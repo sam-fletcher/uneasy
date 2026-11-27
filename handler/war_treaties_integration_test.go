@@ -17,10 +17,12 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	dbgen "uneasy/db/gen"
+	"uneasy/game"
 )
 
 // treatiesFor reads the treaties as seat idx sees them in GET /state, and the
@@ -214,4 +216,149 @@ func TestMakeWarHTTP_PeaceAcceptedWithoutARevIsRefused(t *testing.T) {
 	require.NotNil(t, accepted.Rev)
 	_, err = h.q.AcceptPeaceProposal(context.Background(), proposalID)
 	require.Error(t, err, "a resolved proposal can't be accepted again")
+}
+
+// An edit to a law must not carry its editor's marker over a treaty they haven't
+// read, the same rule as writing one (CreateLaw): the marker is one number.
+func TestMakeWarHTTP_PeaceTreatyIsNotSkippedByALawEdit(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+	h.jumpToRow(warRow + 1)
+
+	// Seat 3 has read the one law, so only an unread treaty can stop their marker.
+	editor := h.tg.Players[3]
+	law, err := h.q.CreateLaw(ctx, dbgen.CreateLawParams{GameID: h.tg.Game.ID, Text: "No dogs."})
+	require.NoError(t, err)
+	_, err = h.q.MarkLawsSeen(ctx, dbgen.MarkLawsSeenParams{
+		PlayerID: editor.ID, RequestedRev: law.Rev, GameID: h.tg.Game.ID,
+	})
+	require.NoError(t, err)
+
+	proposalID := proposePeace(t, h, planID, prepIdx, "Withdraw to the old border.")
+	votePeace(t, h, planID, enemyIdx, proposalID, true)
+
+	_, err = h.q.UpdateLawText(ctx, dbgen.UpdateLawTextParams{
+		ID: law.ID, Text: "No hounds.", EditorID: &editor.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, law.Rev, lawsMarker(t, h, 3),
+		"their own edit is not a reason to skip a treaty they haven't read")
+}
+
+// A vote on a war that has already ended is refused. A proposal left open when a
+// surrender emptied a side would otherwise be accepted later: it would write a
+// treaty for a war that was already over, end it a second time (overwriting the
+// surrender as its end reason) and log "the war is over" twice.
+func TestMakeWarHTTP_PeaceVoteRefusedOnceTheWarHasEnded(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+	_, margA := h.seedPeerWithMarginalia(prepIdx, "Sacrificed asset")
+	h.jumpToRow(warRow + 1)
+
+	proposalID := proposePeace(t, h, planID, prepIdx, "Withdraw to the old border.")
+
+	// The proposer surrenders while their proposal is open; that empties their
+	// side and ends the war.
+	code, body := h.post(prepIdx, warRoute(planID, "pay-battle-cost"), map[string]any{
+		"opponent_id":   h.tg.Players[enemyIdx].ID,
+		"choice":        "break_asset",
+		"marginalia_id": margA,
+		"surrender":     true,
+	})
+	require.Equalf(t, http.StatusOK, code, "surrender pay: %v", body)
+	war, err := h.q.GetWarByOriginPlan(ctx, planID)
+	require.NoError(t, err)
+	require.Equal(t, "ended", war.Status)
+
+	code, body = h.post(enemyIdx, warRoute(planID, "vote-peace"), map[string]any{
+		"proposal_id": proposalID, "accepted": true,
+	})
+	require.Equalf(t, http.StatusConflict, code, "vote on an ended war: %v", body)
+
+	for i := range h.tg.Players {
+		require.Empty(t, treatiesFor(t, h, i), "a war that ended by surrender has no treaty")
+	}
+	war, err = h.q.GetWarByOriginPlan(ctx, planID)
+	require.NoError(t, err)
+	require.NotNil(t, war.EndReason)
+	assert.Equal(t, game.WarEndSurrender, *war.EndReason, "the end reason stays surrender")
+	posts := warSystemPosts(t, h.q, h.tg.Game.ID)
+	assert.False(t, anyContains(posts, "agreed to peace terms"))
+}
+
+// Two final accepts can race: the second finds the proposal already accepted.
+// mwAgreePeace then reports it before it ends the war or says anything, so the
+// war is ended and announced once, and the handler turns it into a 409.
+func TestMakeWarHTTP_PeaceSecondFinalAcceptChangesNothing(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+	h.jumpToRow(warRow + 1)
+	proposalID := proposePeace(t, h, planID, prepIdx, "Withdraw to the old border.")
+	votePeace(t, h, planID, enemyIdx, proposalID, true)
+
+	before := len(warSystemPosts(t, h.q, h.tg.Game.ID))
+	plan, err := h.q.GetPlanByID(ctx, planID)
+	require.NoError(t, err)
+	war, err := h.q.GetWarByOriginPlan(ctx, planID)
+	require.NoError(t, err)
+	prop, err := h.q.GetPeaceProposal(ctx, proposalID)
+	require.NoError(t, err)
+	g, err := h.q.GetGameByID(ctx, h.tg.Game.ID)
+	require.NoError(t, err)
+	deps := &PlanDeps{Store: h.store, Manager: h.manager}
+
+	err = mwAgreePeace(ctx, deps, &plan, g, war, prop)
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+	assert.Len(t, warSystemPosts(t, h.q, h.tg.Game.ID), before, "nothing more is logged")
+	assert.Len(t, treatiesFor(t, h, 0), 1)
+}
+
+// agreed_by is the players whose accepts closed the vote: the accepting votes of
+// the war's active participants. Someone who accepted and then surrendered
+// before the vote closed was no longer a party to the peace.
+func TestMakeWarHTTP_PeaceTreatyOmitsAnAccepterWhoSurrendered(t *testing.T) {
+	h := newPlanLifecycle(t, 5)
+	ctx := context.Background()
+	planID, prepIdx, enemyIdx, warRow := seedActiveWar(t, h)
+	war, err := h.q.GetWarByOriginPlan(ctx, planID)
+	require.NoError(t, err)
+
+	// An ally of the enemy joins, the war having started.
+	allyIdx := -1
+	for i := range h.tg.Players {
+		if i != prepIdx && i != enemyIdx {
+			allyIdx = i
+			break
+		}
+	}
+	parts, err := h.q.ListWarParticipants(ctx, war.ID)
+	require.NoError(t, err)
+	var enemySide int16
+	for _, p := range parts {
+		if p.PlayerID == h.tg.Players[enemyIdx].ID {
+			enemySide = p.Side
+		}
+	}
+	allyID := h.tg.Players[allyIdx].ID
+	require.NoError(t, h.q.AddWarParticipant(ctx, dbgen.AddWarParticipantParams{
+		WarID: war.ID, PlayerID: allyID, Side: enemySide, JoinedAtRow: warRow,
+	}))
+	h.jumpToRow(warRow + 1)
+
+	proposalID := proposePeace(t, h, planID, prepIdx, "Withdraw to the old border.")
+	votePeace(t, h, planID, allyIdx, proposalID, true)
+	row := warRow
+	require.NoError(t, h.q.SetWarParticipantSurrendered(ctx, dbgen.SetWarParticipantSurrenderedParams{
+		WarID: war.ID, PlayerID: allyID, SurrenderedAtRow: &row,
+	}))
+	votePeace(t, h, planID, enemyIdx, proposalID, true)
+
+	got := treatiesFor(t, h, 0)
+	require.Len(t, got, 1)
+	assert.ElementsMatch(t,
+		[]any{float64(h.tg.Players[prepIdx].ID), float64(h.tg.Players[enemyIdx].ID)},
+		got[0]["agreed_by"], "the ally accepted, then surrendered: not a party to the peace")
 }

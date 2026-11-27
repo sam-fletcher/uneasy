@@ -7,8 +7,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/jackc/pgx/v5"
 
 	dbgen "uneasy/db/gen"
 	gamepkg "uneasy/game"
@@ -154,6 +157,14 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		// A war that has ended can't be made peace in: a proposal left open when a
+		// surrender emptied a side would otherwise be accepted later, write a treaty
+		// for a war already over, and overwrite its end reason. Propose and pay
+		// check this too.
+		if war.Status != warStatusActive {
+			respondErr(w, http.StatusConflict, "war is no longer active")
+			return
+		}
 		game, err := deps.Q.GetGameByID(ctx, plan.GameID)
 		if err != nil {
 			respondInternalErr(w, r, "could not load game", err)
@@ -254,6 +265,13 @@ func mwVotePeaceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		if err = mwAgreePeace(ctx, deps, plan, game, war, prop); err != nil {
+			// Two final accepts can race: both tally unanimous, one wins the accept
+			// and the other finds the proposal no longer open. That is a conflict,
+			// not a fault, and the war has been ended once by the winner.
+			if errors.Is(err, pgx.ErrNoRows) {
+				respondErr(w, http.StatusConflict, "proposal is already resolved")
+				return
+			}
 			respondInternalErr(w, r, "could not accept peace proposal", err)
 			return
 		}
@@ -303,7 +321,9 @@ func mwPeaceTally(
 //
 // AcceptPeaceProposal draws the rev that lights the Laws tab's "new" dot (migration
 // 061). It is not best-effort like the calls around it: without the rev there is
-// no treaty, and the war must not end with its terms unkept.
+// no treaty, and the war must not end with its terms unkept. It returns
+// pgx.ErrNoRows when the proposal is no longer open (another accept got there
+// first), before it ends the war or says anything.
 func mwAgreePeace(
 	ctx context.Context, deps *PlanDeps, plan *dbgen.Plan, game dbgen.Game, war dbgen.War, prop dbgen.WarPeaceProposal,
 ) error {
