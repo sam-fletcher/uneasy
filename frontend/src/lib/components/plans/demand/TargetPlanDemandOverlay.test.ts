@@ -229,3 +229,101 @@ describe('TargetPlanDemandOverlay liaison re-aim', () => {
 			.toContain("alice's own meeting peer is gone");
 	});
 });
+
+// The perform-steps line names the stand-in in the second person for the Make Demands winner
+// and by name for everyone else, and the sentence after it is the one buffets.ts gives the option
+// picker (`performStepsWording`). The names in the sentence are PlayerNames, so the markup is pinned.
+// The fixture is four seated players: alice prepares the duel's target plan, bob is the Make
+// Demands winner, carol is the duel's target (not the winner), dan is a bystander.
+describe('TargetPlanDemandOverlay perform-steps banner', () => {
+	const text = (html: string) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+	const CAROL = 3;
+	const DAN = 4;
+	const four = [
+		{ id: ALICE, display_name: 'alice' }, { id: BOB, display_name: 'bob' },
+		{ id: CAROL, display_name: 'carol' }, { id: DAN, display_name: 'dan' },
+	] as never;
+
+	/** A PlayerName's markup for `name`: the span the component emits, with SSR's hydration comments inside it. */
+	const PN = (name: string) => `<span class="player-name"[^>]*>(?:<!--[^>]*-->)*${name}(?:<!--[^>]*-->)*</span>`;
+	/** The preparer's name in the duel sentence ("in <alice>’s place, once the duel’s roll…"), through PlayerName. */
+	const placePinned = (html: string) =>
+		expect(html).toMatch(new RegExp(`${PN('alice')}(?:<!--[^>]*-->)*’s place, once the duel’s roll`));
+	/** The Make Demands winner as the subject in the third person ("<bob> will choose…"), through PlayerName. */
+	const subjectPinned = (html: string) =>
+		expect(html).toMatch(new RegExp(`${PN('bob')}(?:<!--[^>]*-->)* will `));
+
+	function banner(viewer: number, targetType: string): string {
+		const target = {
+			id: 10, plan_type: targetType, status: 'resolving', preparer_id: ALICE,
+			target_player_id: CAROL, target_asset_id: null, resolution_data: '{}',
+		};
+		const demand = {
+			id: 11, plan_type: 'make_demands', status: 'resolved', result: 'make',
+			preparer_id: BOB, targeted_plan_id: 10,
+			resolution_data: JSON.stringify({ make_demands: { draft_choices: [
+				{ option: 'control_leverage', player_id: BOB },
+				{ option: 'keep_or_change_target', player_id: ALICE },
+				{ option: 'keep_assets', player_id: ALICE },
+				{ option: 'perform_steps', player_id: BOB },
+			] } }),
+		};
+		return render(TargetPlanDemandOverlay, {
+			props: { plan: target as never, plans: [target, demand] as never, players: four, assets: [], currentPlayerID: viewer },
+			context: new Map([[ACTIVE_ROLL_KEY, () => null]]),
+		}).body;
+	}
+
+	const DUEL_BY_BOB = 'bob will choose which staked assets a make takes, in alice’s place, once the duel’s roll has landed. ' +
+		'alice still stakes and plays the bouts. A mar’s choice stays with the plan’s own target.';
+
+	it('tells the Make Demands winner of a duel what they choose, in the second person', () => {
+		const html = banner(BOB, 'propose_duel');
+		expect(text(html)).toContain(
+			'You will choose which staked assets a make takes, in alice’s place, once the duel’s roll has landed. ' +
+			'alice still stakes and plays the bouts. A mar’s choice stays with the plan’s own target.',
+		);
+		placePinned(html);
+		expect(text(html)).not.toContain('bob will choose');
+	});
+
+	it('tells the preparer the same, in the third person, and never "you"', () => {
+		const html = banner(ALICE, 'propose_duel');
+		expect(text(html)).toContain(DUEL_BY_BOB);
+		expect(text(html)).not.toContain('You will');
+		subjectPinned(html);
+		placePinned(html);
+	});
+
+	it('tells the duel\'s target the same, in the third person, with both names through PlayerName', () => {
+		const html = banner(CAROL, 'propose_duel');
+		expect(text(html)).toContain(DUEL_BY_BOB);
+		subjectPinned(html);
+		placePinned(html);
+	});
+
+	it('tells a seated bystander the same, in the third person', () => {
+		const html = banner(DAN, 'propose_duel');
+		expect(text(html)).toContain(DUEL_BY_BOB);
+		expect(text(html)).not.toContain('You will');
+		subjectPinned(html);
+		placePinned(html);
+	});
+
+	it('gives another plan type its generic line, to the Make Demands winner and to a bystander', () => {
+		expect(text(banner(BOB, 'spread_propaganda')))
+			.toContain('You will pick the make or mar options for alice once alice has rolled.');
+		expect(text(banner(DAN, 'spread_propaganda')))
+			.toContain('bob will pick the make or mar options for alice once alice has rolled.');
+	});
+
+	it('never says "winner" or "make/mar choices" in the banner', () => {
+		for (const t of ['propose_duel', 'spread_propaganda']) {
+			for (const viewer of [ALICE, BOB, CAROL, DAN]) {
+				const body = text(banner(viewer, t));
+				expect(body).not.toMatch(/\bwinner\b/i);
+				expect(body).not.toContain('make/mar choices');
+			}
+		}
+	});
+});

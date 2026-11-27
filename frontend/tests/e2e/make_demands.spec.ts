@@ -435,9 +435,9 @@ test('perform steps: the roll stays the preparer\'s, then the winner takes over 
 	// Everyone sees the demand in effect.
 	for (const p of [alice, bob, carol]) await expect(p.getByText('Demand from bob')).toBeVisible();
 	// The winner is told they act in the preparer's place; the others, who.
-	await expect(bob.getByText("You will submit this plan's make/mar choices in alice's place.")).toBeVisible();
+	await expect(bob.getByText("You will pick the make or mar options for alice once alice has rolled.")).toBeVisible();
 	for (const [p, who] of [[alice, 'alice'], [carol, 'carol']] as const) {
-		await expect(p.getByText("bob will submit this plan's make/mar choices in alice's place.")).toBeVisible();
+		await expect(p.getByText("bob will pick the make or mar options for alice once alice has rolled.")).toBeVisible();
 		await expectWaitingOn(p, ['bob'], who);
 	}
 	await expectWaitingOn(bob, ['bob'], 'bob');
