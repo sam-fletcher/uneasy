@@ -80,6 +80,7 @@ const (
 	// Phase 3c: Propose Decree
 	EventLawEnacted            = "law.enacted"             // PD: law created
 	EventLawUpdated            = "law.updated"             // law text/addendum edited
+	EventTreatyAgreed          = "treaty.agreed"           // Make War: peace terms accepted by all, kept as a treaty
 	EventDecreeCouncilJoined   = "decree.council_joined"   // PD: player joined council
 	EventDecreeCouncilDeclined = "decree.council_declined" // PD: player declined to join
 	EventDecreeDebateStarted   = "decree.debate_started"   // PD: preparer opened the debate
@@ -465,6 +466,11 @@ type LawEnactedPayload struct {
 // LawUpdatedPayload is for EventLawUpdated (author edits).
 type LawUpdatedPayload struct {
 	Law any `json:"law"` // dbgen.Law
+}
+
+// TreatyAgreedPayload is for EventTreatyAgreed. Public to the whole table.
+type TreatyAgreedPayload struct {
+	Treaty any `json:"treaty"` // dbgen.ListTreatiesRow
 }
 
 // RumorUpdatedPayload is for EventRumorUpdated (author edits).

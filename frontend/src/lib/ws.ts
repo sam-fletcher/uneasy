@@ -125,6 +125,7 @@ export const EventTypes = {
 	// Laws & rumors (long-form narrative records)
 	LawEnacted: 'law.enacted',
 	LawUpdated: 'law.updated',
+	TreatyAgreed: 'treaty.agreed',
 	RumorCreated: 'rumor.created',
 	RumorUpdated: 'rumor.updated',
 	RumorTakeConsentRequested: 'rumor.take_consent_requested',

@@ -27,6 +27,12 @@ ack AS (
         AND l.rev > COALESCE(
           (SELECT s.laws_seen_rev FROM player_laws_rumors_seen s WHERE s.player_id = p.id), 0)
     )
+    AND NOT EXISTS (
+      SELECT 1 FROM war_peace_proposals t JOIN wars w ON w.id = t.war_id
+      WHERE w.game_id = p.game_id AND t.status = 'accepted'
+        AND t.rev > COALESCE(
+          (SELECT s.laws_seen_rev FROM player_laws_rumors_seen s WHERE s.player_id = p.id), 0)
+    )
   ON CONFLICT (player_id) DO UPDATE
     SET laws_seen_rev = GREATEST(player_laws_rumors_seen.laws_seen_rev, EXCLUDED.laws_seen_rev)
 )
@@ -54,7 +60,9 @@ type CreateLawParams struct {
 // marker follows the law (migration 058): your own write isn't news to you, as
 // chat never counts your own posts. The marker is one number, so it moves only
 // when the writer had no OTHER unseen law behind this one; otherwise it stays
-// and their own law shows as new, the safe direction.
+// and their own law shows as new, the safe direction. An unseen treaty (migration
+// 061) counts as unseen here too: the marker is one number on the same scale, so
+// moving it past a treaty would mark the treaty seen.
 //
 // The catch-up is a data-modifying CTE of THIS statement, not a follow-up
 // statement. A separate "best effort" statement that fails inside a transaction
@@ -309,7 +317,12 @@ VALUES (
   $1,
   LEAST(
     $2::BIGINT,
-    COALESCE((SELECT max(rev) FROM laws WHERE game_id = $3 AND is_active), 0)
+    GREATEST(
+      COALESCE((SELECT max(l.rev) FROM laws l WHERE l.game_id = $3 AND l.is_active), 0),
+      -- Treaties share the Laws tab and its marker (migration 061).
+      COALESCE((SELECT max(t.rev) FROM war_peace_proposals t JOIN wars w ON w.id = t.war_id
+                WHERE w.game_id = $3 AND t.status = 'accepted'), 0)
+    )
   )
 )
 ON CONFLICT (player_id) DO UPDATE
@@ -325,8 +338,8 @@ type MarkLawsSeenParams struct {
 
 // Moves the viewer's laws marker forward to requested_rev and returns the
 // stored value. Monotonic (GREATEST: a late or replayed request can't move it
-// back) and clamped to the game's newest law rev (LEAST: a client can't mark
-// laws that don't exist yet seen). The mirror of UpdateReadMarker for chat.
+// back) and clamped to the game's newest law or treaty rev (LEAST: a client can't mark
+// laws or treaties that don't exist yet seen). The mirror of UpdateReadMarker for chat.
 func (q *Queries) MarkLawsSeen(ctx context.Context, arg MarkLawsSeenParams) (int64, error) {
 	row := q.db.QueryRow(ctx, markLawsSeen, arg.PlayerID, arg.RequestedRev, arg.GameID)
 	var laws_seen_rev int64
@@ -388,6 +401,12 @@ ack AS (
       SELECT 1 FROM laws l
       WHERE l.game_id = p.game_id AND l.is_active AND l.id <> target.id
         AND l.rev > COALESCE(
+          (SELECT s.laws_seen_rev FROM player_laws_rumors_seen s WHERE s.player_id = p.id), 0)
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM war_peace_proposals t JOIN wars w ON w.id = t.war_id
+      WHERE w.game_id = p.game_id AND t.status = 'accepted'
+        AND t.rev > COALESCE(
           (SELECT s.laws_seen_rev FROM player_laws_rumors_seen s WHERE s.player_id = p.id), 0)
     )
   ON CONFLICT (player_id) DO UPDATE

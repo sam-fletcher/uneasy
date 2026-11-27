@@ -17,6 +17,14 @@
              An "About" line above it names the asset the rumor is about, with
              the shape of whoever owns that asset.
 
+  Treaties (a group of their own below the laws, shown only when the table has
+  one): the peace terms every active participant of a war agreed to. Peace terms
+  are kept, not enacted, so a treaty must never read as a law a decree could
+  amend; it has no Edit button, because everyone agreed to those words and no
+  one player may change them. Its byline names the war and everyone who agreed,
+  each with their shape. It comes from the server worked out from the accepted
+  peace proposal, and counts toward the Laws tab's "new" dot like a law does.
+
   A pale "new" dot starts an entry you haven't seen. The server keeps, per player
   and per list, the highest revision seen, and an edit draws a new revision, so an
   edit counts as new (lib/lawsRumorsSeen). The table page reports a list as seen
@@ -32,7 +40,7 @@
 	import { untrack } from 'svelte';
 	import {
 		updateLaw, updateRumor,
-		type Asset, type Law, type Rumor, type Plan, type Player,
+		type Asset, type Law, type Rumor, type Treaty, type Plan, type Player,
 	} from '$lib/api';
 	import { isNewEntry } from '$lib/lawsRumorsSeen';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -41,11 +49,14 @@
 	import PlayerShape from '$lib/components/shared/PlayerShape.svelte';
 	import PlayerName from '$lib/components/shared/PlayerName.svelte';
 	import AssetName from '$lib/components/shared/AssetName.svelte';
+	import WarName from '$lib/components/plans/war/WarName.svelte';
 
 	interface Props {
 		/** Which list the pane is showing. */
 		kind: 'laws' | 'rumors';
 		laws: Law[];
+		/** Agreed peace terms, listed below the laws. */
+		treaties?: Treaty[];
 		rumors: Rumor[];
 		plans: Plan[];
 		players: Player[];
@@ -60,7 +71,7 @@
 	}
 
 	const {
-		kind, laws, rumors, plans, players, playerNames, currentPlayerID,
+		kind, laws, treaties = [], rumors, plans, players, playerNames, currentPlayerID,
 		assets = [], seenLaws = null, seenRumors = null,
 	}: Props = $props();
 
@@ -113,6 +124,10 @@
 		if (!asset) return null;
 		return { name: asset.name, owner: playerOf(asset.owner_id) };
 	}
+
+	/** The war a treaty ended, as the plan that declared it. Null if that plan
+	 *  isn't on this client (the treaty then names no war rather than guessing). */
+	const warPlanOf = (t: Treaty) => plans.find((p) => p.id === t.origin_plan_id) ?? null;
 
 	function canEditLaw(law: Law): boolean {
 		if (currentPlayerID == null) return false;
@@ -254,6 +269,40 @@
 				</ul>
 			{/if}
 		</section>
+			{#if treaties.length > 0}
+			<!-- A group of its own, so a treaty never reads as a law. Plain entries, as
+			     laws are, and no Edit button: everyone agreed to these words. -->
+			<section class="lr-section" aria-label="Treaties">
+				<p class="lr-count">{plural(treaties.length, 'treaty', 'treaties')}</p>
+				<ul class="lr-list">
+					{#each treaties as treaty (treaty.id)}
+						{@const warPlan = warPlanOf(treaty)}
+						<li class="lr-item">
+							<div class="lr-body">
+								{#if dotsFrom != null && isNewEntry(treaty, dotsFrom)}<span class="lr-dot"><NewDot /></span>{/if}
+								<p class="lr-text">{treaty.terms}</p>
+							</div>
+							<div class="lr-bylines">
+								{#if warPlan}
+									<div class="lr-byline">
+										<span class="lr-byline-label">Ending</span>
+										<WarName plan={warPlan} {players} />
+									</div>
+								{/if}
+								<div class="lr-byline lr-byline-wrap">
+									<span class="lr-byline-label">Agreed by</span>
+									<span class="lr-names">
+										{#each treaty.agreed_by as id (id)}
+											<PlayerName player={playerOf(id)} name={playerName(id)} label />
+										{/each}
+									</span>
+								</div>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 	{:else}
 		<section class="lr-section" aria-label="Rumors">
 			{#if rumors.length === 0}
@@ -390,6 +439,18 @@
 		white-space: nowrap;
 	}
 	.lr-byline-label { color: var(--color-text-faint); }
+	/* A byline that can run long (every player who agreed to a treaty) wraps
+	   rather than pushing the page sideways at 375px. */
+	.lr-byline-wrap {
+		flex-wrap: wrap;
+		white-space: normal;
+	}
+	.lr-names {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-1) var(--space-3);
+	}
 
 	/* A bordered 44px button (the house secondary), pushed to the end. It is a
 	   little smaller in type than the body so it doesn't outweigh the byline. */

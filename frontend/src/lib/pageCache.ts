@@ -15,7 +15,7 @@
 
 import type {
 	Game, Player, ToneTopic, Ranking, Asset,
-	Law, Rumor, ChatPost, RecordRow, PresenceMember, PlayerActivity,
+	Law, Rumor, Treaty, ChatPost, RecordRow, PresenceMember, PlayerActivity,
 	DiceRoll, DiceRollDie, VoteView, RollParticipant, BankedDie,
 	Plan, PlanToken, Secret, Scene, ScenePeerView, RowState, MyTable, Account,
 } from '$lib/api';
@@ -44,6 +44,7 @@ export interface TableSnapshot {
 	rankings: Ranking[];
 	assets: Asset[];
 	laws: Law[];
+	treaties: Treaty[];
 	rumors: Rumor[];
 	members: PresenceMember[];
 	playerActivity: PlayerActivity[];

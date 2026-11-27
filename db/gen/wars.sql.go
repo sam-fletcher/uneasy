@@ -7,7 +7,36 @@ package dbgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const acceptPeaceProposal = `-- name: AcceptPeaceProposal :one
+UPDATE war_peace_proposals
+SET status = 'accepted', resolved_at = now(), rev = nextval('laws_rumors_rev_seq')
+WHERE id = $1 AND status = 'open'
+RETURNING id, war_id, proposer_id, terms, status, created_at, resolved_at, rev
+`
+
+// The proposal becomes a treaty (migration 061). It draws a rev from the laws
+// and rumors sequence, so the Laws tab's "new" dot lights for everyone whose
+// marker is behind it, exactly as for a new law. Only an open proposal can be
+// accepted: a second call gets no row.
+func (q *Queries) AcceptPeaceProposal(ctx context.Context, id int64) (WarPeaceProposal, error) {
+	row := q.db.QueryRow(ctx, acceptPeaceProposal, id)
+	var i WarPeaceProposal
+	err := row.Scan(
+		&i.ID,
+		&i.WarID,
+		&i.ProposerID,
+		&i.Terms,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+		&i.Rev,
+	)
+	return i, err
+}
 
 const addWarParticipant = `-- name: AddWarParticipant :exec
 
@@ -117,7 +146,7 @@ const createPeaceProposal = `-- name: CreatePeaceProposal :one
 
 INSERT INTO war_peace_proposals (war_id, proposer_id, terms)
 VALUES ($1, $2, $3)
-RETURNING id, war_id, proposer_id, terms, status, created_at, resolved_at
+RETURNING id, war_id, proposer_id, terms, status, created_at, resolved_at, rev
 `
 
 type CreatePeaceProposalParams struct {
@@ -138,6 +167,7 @@ func (q *Queries) CreatePeaceProposal(ctx context.Context, arg CreatePeacePropos
 		&i.Status,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.Rev,
 	)
 	return i, err
 }
@@ -229,7 +259,7 @@ func (q *Queries) FulfillSurrenderClaim(ctx context.Context, arg FulfillSurrende
 }
 
 const getOpenPeaceProposal = `-- name: GetOpenPeaceProposal :one
-SELECT id, war_id, proposer_id, terms, status, created_at, resolved_at FROM war_peace_proposals
+SELECT id, war_id, proposer_id, terms, status, created_at, resolved_at, rev FROM war_peace_proposals
 WHERE war_id = $1 AND status = 'open'
 ORDER BY id DESC LIMIT 1
 `
@@ -245,12 +275,13 @@ func (q *Queries) GetOpenPeaceProposal(ctx context.Context, warID int64) (WarPea
 		&i.Status,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.Rev,
 	)
 	return i, err
 }
 
 const getPeaceProposal = `-- name: GetPeaceProposal :one
-SELECT id, war_id, proposer_id, terms, status, created_at, resolved_at FROM war_peace_proposals WHERE id = $1
+SELECT id, war_id, proposer_id, terms, status, created_at, resolved_at, rev FROM war_peace_proposals WHERE id = $1
 `
 
 func (q *Queries) GetPeaceProposal(ctx context.Context, id int64) (WarPeaceProposal, error) {
@@ -264,6 +295,7 @@ func (q *Queries) GetPeaceProposal(ctx context.Context, id int64) (WarPeacePropo
 		&i.Status,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.Rev,
 	)
 	return i, err
 }
@@ -649,6 +681,66 @@ func (q *Queries) ListPeaceVotes(ctx context.Context, proposalID int64) ([]WarPe
 	return items, nil
 }
 
+const listTreaties = `-- name: ListTreaties :many
+SELECT p.id, p.war_id, w.origin_plan_id, p.terms, COALESCE(p.rev, 0)::BIGINT AS rev, p.resolved_at,
+       COALESCE(array_agg(v.player_id ORDER BY v.player_id)
+                FILTER (WHERE v.accepted AND wp.player_id IS NOT NULL), '{}')::BIGINT[] AS agreed_by
+FROM war_peace_proposals p
+JOIN wars w ON w.id = p.war_id
+LEFT JOIN war_peace_votes v ON v.proposal_id = p.id
+LEFT JOIN war_participants wp
+  ON wp.war_id = p.war_id AND wp.player_id = v.player_id
+ AND wp.surrendered_at_row IS NULL AND wp.entry_payment_complete = TRUE
+WHERE w.game_id = $1 AND p.status = 'accepted'
+GROUP BY p.id, w.origin_plan_id
+ORDER BY p.rev ASC
+`
+
+type ListTreatiesRow struct {
+	ID           int64              `db:"id" json:"id"`
+	WarID        int64              `db:"war_id" json:"war_id"`
+	OriginPlanID int64              `db:"origin_plan_id" json:"origin_plan_id"`
+	Terms        string             `db:"terms" json:"terms"`
+	Rev          int64              `db:"rev" json:"rev"`
+	ResolvedAt   pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
+	AgreedBy     []int64            `db:"agreed_by" json:"agreed_by"`
+}
+
+// A game's agreed peace terms, oldest agreement first, with the players who
+// agreed. Public to the whole table, like the laws they sit under: the terms
+// were posted to the log when proposed. agreed_by is the players whose accepts
+// closed the vote, the proposer's included (proposing is an acceptance): the
+// accepting votes of the war's ACTIVE participants, the same set the vote's
+// tally counts (ListActiveWarParticipants). A player who accepted and then
+// surrendered before the vote closed was no longer a party to the peace.
+func (q *Queries) ListTreaties(ctx context.Context, gameID int64) ([]ListTreatiesRow, error) {
+	rows, err := q.db.Query(ctx, listTreaties, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTreatiesRow{}
+	for rows.Next() {
+		var i ListTreatiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WarID,
+			&i.OriginPlanID,
+			&i.Terms,
+			&i.Rev,
+			&i.ResolvedAt,
+			&i.AgreedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWarParticipants = `-- name: ListWarParticipants :many
 SELECT war_id, player_id, side, joined_at_row, surrendered_at_row, entry_payment_complete FROM war_participants
 WHERE war_id = $1
@@ -693,6 +785,8 @@ type SetPeaceProposalStatusParams struct {
 	Status string `db:"status" json:"status"`
 }
 
+// For a rejection. Accepting goes through AcceptPeaceProposal, which also draws
+// the treaty's rev; the table's CHECK refuses an 'accepted' row without one.
 func (q *Queries) SetPeaceProposalStatus(ctx context.Context, arg SetPeaceProposalStatusParams) error {
 	_, err := q.db.Exec(ctx, setPeaceProposalStatus, arg.ID, arg.Status)
 	return err

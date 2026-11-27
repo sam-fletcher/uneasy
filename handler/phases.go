@@ -260,6 +260,9 @@ type gameStateReads struct {
 	lawsOK     bool
 	rumors     []dbgen.Rumor
 	rumorsOK   bool
+	// Agreed peace terms, which the Laws tab shows under the laws (migration 061).
+	treaties   []dbgen.ListTreatiesRow
+	treatiesOK bool
 	rankings   []dbgen.Ranking
 	rankingsOK bool
 	// The viewer's own "new" markers for laws and rumors (migration 058).
@@ -326,6 +329,13 @@ func loadGameStateReads(ctx context.Context, q *dbgen.Queries, game dbgen.Game, 
 		var e error
 		out.rumors, e = q.ListRumors(ctx, gameID)
 		out.rumorsOK = e == nil
+	})
+	// Treaties ride with the laws: peace terms are public, so every player gets
+	// them, and the Laws tab's "new" dot needs no second fetch.
+	run(func() {
+		var e error
+		out.treaties, e = q.ListTreaties(ctx, gameID)
+		out.treatiesOK = e == nil
 	})
 	// How far the viewer has read each list, for the "new" dots. Best-effort:
 	// without it the client shows nothing as new rather than everything.
@@ -411,6 +421,9 @@ func GetGameState(s *db.Store) http.HandlerFunc {
 		}
 		if reads.rumorsOK {
 			result["rumors"] = reads.rumors
+		}
+		if reads.treatiesOK {
+			result["treaties"] = reads.treaties
 		}
 		if reads.seenOK {
 			result["laws_rumors_seen"] = map[string]int64{
