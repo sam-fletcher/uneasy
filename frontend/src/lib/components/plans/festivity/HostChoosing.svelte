@@ -26,9 +26,10 @@
 	import AssetCreationForm from '../../AssetCreationForm.svelte';
 	import FormField from '../FormField.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
+	import DuelTermsFields from '../duel/DuelTermsFields.svelte';
 	import { playerName } from '../shared';
 	import {
-		MAKE_OPTS, earnedHostMakes, centeredPeerCards, centeredPeerPick, isDraftCard,
+		MAKE_OPTS, challengeReady, earnedHostMakes, centeredPeerCards, centeredPeerPick, isDraftCard,
 		type FestRes,
 	} from './options';
 	import { TEXT_LIMITS } from '$lib/textLimits';
@@ -88,7 +89,7 @@
 			case 'spread_rumor': return draft.rumor.trim().length > 0;
 			case 'introduce_peer': return draft.peerName.trim().length > 0 && draft.peerMarginalia.trim().length > 0;
 			case 'take_center_peer': return draft.assetID != null;
-			case 'challenge_duel': return draft.duelTargetID != null;
+			case 'challenge_duel': return challengeReady(draft.duelTargetID, draft.duelPlace);
 			default: return true;
 		}
 	});
@@ -101,11 +102,14 @@
 			const body: {
 				choice: string; rumor_text?: string; peer_name?: string;
 				peer_marginalia?: string[]; asset_id?: number; draft_id?: string;
-				target_player_id?: number;
+				target_player_id?: number; duel_type?: string; preparation_notes?: string;
 			} = { choice: hostPickedChoice };
 			if (draft.picked === 'challenge_duel') {
 				if (draft.duelTargetID == null) { hostPickerError = 'Pick someone to challenge.'; return; }
+				if (!draft.duelPlace.trim()) { hostPickerError = 'Describe the location of the duel.'; return; }
 				body.target_player_id = draft.duelTargetID;
+				body.duel_type = draft.duelType;
+				body.preparation_notes = draft.duelPlace.trim();
 			}
 			if (draft.picked === 'spread_rumor') {
 				if (!draft.rumor.trim()) { hostPickerError = 'Enter the rumor.'; return; }
@@ -199,6 +203,7 @@
 					</p>
 				{/if}
 			</FormField>
+			<DuelTermsFields bind:duelType={draft.duelType} bind:place={draft.duelPlace} />
 		{/if}
 		{#if hostPickerError}<ErrorText message={hostPickerError} variant="panel" />{/if}
 		<button class="action-btn primary"

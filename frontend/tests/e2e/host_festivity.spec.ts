@@ -294,7 +294,7 @@ test('the host\'s Make picker and pending Mar keep what she typed through a gues
 	// leave the page while the table waits on dave.
 	const rollID = await startRoll(g, 'carol', planID);
 	await forceRoll(g, rollID, 'make');
-	expect((await act(g, 'carol', planID, 'challenge-duel', { target_player_id: g.ids.dave })).status()).toBe(201);
+	expect((await act(g, 'carol', planID, 'challenge-duel', { target_player_id: g.ids.dave, duel_type: 'arms', preparation_notes: 'The orchard gate.' })).status()).toBe(201);
 	await expect(alice.getByText('Awaiting the target')).toBeVisible();
 	await expect(alice.getByText('bob insists you take a Mar')).toHaveCount(0);
 	await expect(alice.getByText('Your extra Makes')).toHaveCount(0);
@@ -416,9 +416,12 @@ test('the host spends an earned make on a duel; a guest bound by accept_duels ca
 	await expect(alice.getByText('0 of 2 taken')).toBeVisible();
 	await alice.getByRole('button', { name: 'Propose a duel' }).click();
 	await alice.getByRole('button', { name: 'dave', exact: true }).click();
+	await alice.getByRole('textbox', { name: 'Location' }).fill('The old orchard.');
 	await alice.getByRole('button', { name: 'Take this Make (2 left)' }).click();
 	await expect.poll(async () => (await festivity(g, planID)).host_makes_taken).toEqual(['challenge_duel']);
-	expect((await festivity(g, planID)).pending_challenge).toMatchObject({ challenger_id: g.ids.alice, target_id: g.ids.dave });
+	expect((await festivity(g, planID)).pending_challenge).toMatchObject({
+		challenger_id: g.ids.alice, target_id: g.ids.dave, duel_type: 'arms', notes: 'The old orchard.',
+	});
 	await expectLogContaining(g, planID, 'alice threw down a challenge across the hall, calling out dave to a duel.');
 
 	// Only the target is asked; everyone else sees the table paused.
@@ -439,6 +442,7 @@ test('the host spends an earned make on a duel; a guest bound by accept_duels ca
 	await alice.getByRole('button', { name: 'Propose a duel' }).click();
 	await alice.getByRole('button', { name: 'carol', exact: true }).click();
 	await expect(alice.getByText('This challenge must be accepted.')).toBeVisible();
+	await alice.getByRole('textbox', { name: 'Location' }).fill('The mill yard.');
 	await alice.getByRole('button', { name: 'Take this Make (1 left)' }).click();
 	await expect.poll(async () => (await festivity(g, planID)).host_makes_taken).toEqual(['challenge_duel', 'challenge_duel']);
 	await expect(carol.getByRole('button', { name: 'Accept challenge' })).toBeEnabled();

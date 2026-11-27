@@ -9,9 +9,24 @@
 import { describe, it, expect } from 'vitest';
 import type { Asset } from '$lib/api';
 import {
-	centeredPeerCards, centeredPeerNames, centeredPeerPick, draftPickID, isDraftCard,
+	centeredPeerCards, centeredPeerNames, centeredPeerPick, challengeReady, draftPickID, isDraftCard,
 	earnedHostMakes, festivityEndable, type FestRes,
 } from './options';
+
+describe('challengeReady', () => {
+	it('needs both a target and a typed place, as Propose Duel does', () => {
+		expect(challengeReady(3, 'The old orchard.')).toBe(true);
+	});
+
+	it('is off until a target is picked', () => {
+		expect(challengeReady(null, 'The old orchard.')).toBe(false);
+	});
+
+	it('is off until the place is typed, and a blank place is no place', () => {
+		expect(challengeReady(3, '')).toBe(false);
+		expect(challengeReady(3, '   ')).toBe(false);
+	});
+});
 
 const asset = (id: number, name: string, ownerID = 7): Asset => ({
 	id, game_id: 1, owner_id: ownerID, creator_id: ownerID,

@@ -5,12 +5,11 @@
 	import '$lib/components/shared/actionButton.css';
 	import { onDestroy } from 'svelte';
 	import { preparePlan } from '$lib/api';
-	import Chip from '$lib/components/shared/Chip.svelte';
 	import PlayerChips from '../PlayerChips.svelte';
 	import FormField from '../FormField.svelte';
+	import DuelTermsFields from './DuelTermsFields.svelte';
 	import { playersExcept } from '../shared';
 	import type { PlanContext } from '../types';
-	import { TEXT_LIMITS } from '$lib/textLimits';
 	import ErrorText from '$lib/components/shared/ErrorText.svelte';
 
 	let { ctx }: { ctx: PlanContext } = $props();
@@ -94,17 +93,7 @@
 				{readOnly}
 			/>
 		</FormField>
-		<FormField label="Duel of">
-			<div class="chip-row">
-				<Chip selected={prepDuelType === 'arms'} onclick={() => (prepDuelType = 'arms')}>Arms</Chip>
-				<Chip selected={prepDuelType === 'wits'} onclick={() => (prepDuelType = 'wits')}>Wits / Trial</Chip>
-			</div>
-		</FormField>
-		<label class="form-label">
-			Location
-			<textarea rows={2} bind:value={prepNotes} class="form-textarea" maxlength={TEXT_LIMITS.NARRATIVE}
-				placeholder="Where will the duel take place?" required></textarea>
-		</label>
+		<DuelTermsFields bind:duelType={prepDuelType} bind:place={prepNotes} />
 		{#if !readOnly}
 			<div class="form-actions">
 				<button class="action-btn primary" onclick={submitPrep}

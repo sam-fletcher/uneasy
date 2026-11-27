@@ -70,7 +70,7 @@ export type FestRes = {
 	unchosenHostMars: number[];
 	acceptDuels: number[];
 	pendingDuelPlanID: number | null;
-	pendingChallenge: { challenger_id: number; target_id: number; notes?: string } | null;
+	pendingChallenge: { challenger_id: number; target_id: number; duel_type?: 'arms' | 'wits'; notes?: string } | null;
 	/** Real peers shoved to the centre by a disagreement — still owned. */
 	centeredAssetIDs: number[];
 	/** Peers introduced at the party, who own no asset row until claimed (D7). */
@@ -93,6 +93,13 @@ export function earnedHostMakes(fest: FestRes, hostID: number): number {
  *  been chosen and settled by the host. Earned makes do NOT hold it open — the
  *  host may leave them unclaimed (owner ruling 2026-11-03). Peers still in the
  *  centre don't either — ending it is what settles them. */
+/** A duel challenge can be sent once a target is picked and the place is typed:
+ *  Propose Duel's preparation asks for both (book p.60), and the server refuses a
+ *  blank place, so the Make stays disabled until both are given. */
+export function challengeReady(targetID: number | null, place: string): boolean {
+	return targetID != null && place.trim().length > 0;
+}
+
 export function festivityEndable(fest: FestRes): boolean {
 	const allChosen = fest.guests.every((id) => String(id) in fest.outcomes);
 	return allChosen && fest.guestIOUs.length === 0 && fest.unchosenHostMars.length === 0;

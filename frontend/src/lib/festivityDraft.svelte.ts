@@ -26,6 +26,9 @@ class HostMakeDraft {
 	peerMarginalia = $state('');
 	assetID = $state<number | null>(null);
 	duelTargetID = $state<number | null>(null);
+	/** The duel's terms, named by a challenger as Propose Duel's preparation does. */
+	duelType = $state<'arms' | 'wits'>('arms');
+	duelPlace = $state('');
 
 	/** Start (or keep) the draft for this plan. The same plan keeps what was picked. */
 	begin(planId: number): void {
@@ -42,6 +45,8 @@ class HostMakeDraft {
 		this.peerMarginalia = '';
 		this.assetID = null;
 		this.duelTargetID = null;
+		this.duelType = 'arms';
+		this.duelPlace = '';
 	}
 }
 
