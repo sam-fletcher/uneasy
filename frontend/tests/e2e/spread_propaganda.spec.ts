@@ -24,9 +24,10 @@ import { expectRollOpen } from './helpers/roll_open';
 // each player *sees and can do* in the rendered panels. Players get separate
 // browser contexts because contexts, not pages, are what keep cookies apart.
 //
-// Not pinned: who learns the broken asset's secrets when a Make Demands
-// "perform steps" winner stands in for break-yourself — that waits on an owner
-// question (docs/work/questions/spread-propaganda-demand-secrets.md).
+// Not pinned here: a Make Demands "perform steps" winner standing in for
+// break-yourself learns the broken asset's secrets, as whoever breaks an asset
+// does. The server test TestMakeDemandsRulings_StandIn_BreakYourselfBreaksThePreparersAsset
+// pins it.
 
 interface PlanRow {
 	id: number;

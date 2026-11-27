@@ -540,9 +540,8 @@ test('parting: one player revealing 0 cancels the follow-up for both', async ({ 
 // Make Demands' perform_steps winner stands in for the preparer on the Liaise panel
 // and the preparer is locked out (the audit's Liaise fix, 031e43c). Alice prepares a
 // liaison with carol and bob demands against it, so bob is the winner, alice the
-// locked-out preparer and carol the partner. The retarget winner's wait on a Liaise
-// is an open question (questions/make-demands-retarget-wait-duel-liaise.md) and is
-// not asserted.
+// locked-out preparer and carol the partner. A retarget winner settles a liaison's
+// aim before its first step (`pendingAimSettler`); that wait is not asserted here.
 //
 // A demand on a liaison used to compute difficulty 0 and never got its roll; the
 // difficulty is now clamped to 1–6 (owner ruling, 2026-11-01).

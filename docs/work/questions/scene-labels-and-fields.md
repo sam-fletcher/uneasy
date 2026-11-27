@@ -11,4 +11,4 @@ The alternative is to give the field the selected border (2px bright gold) once 
 answer. It would then sit beside the focus ring, which is the same bright gold. Which?
 
 (The other half of this question, which small heading the scene's groups take, was answered on
-2026-11-26: they take the step sub-heading, and `next/consent-small-ui.md` builds it.)
+2026-11-26: they take the step sub-heading, built in #137.)
