@@ -238,7 +238,7 @@ export function mainEventWaitingOn(input: MainEventWaitingOnInput): WaitingOnSta
 		case 'await_battle_cost':
 			return { waitees: actingWaitees(), stepLabel: 'pay the cost of battle' };
 		case 'await_surrender_claim':
-			return { waitees: actingWaitees(), stepLabel: 'surrender-asset claims' };
+			return { waitees: actingWaitees(), stepLabel: 'take the spoils of war' };
 		case 'await_endgame_vote':
 			// Row 7's advance is paused while the whole table votes on how the
 			// game ends; the backend names every seated player who still owes a

@@ -35,7 +35,7 @@
 		players: Player[];
 		currentPlayerID?: number | null;
 		amParticipant: boolean;
-		/** The war has a row: its delay vote is over, so joining now owes entry. */
+		/** The war has a row: its delay vote is over, so joining now means entry to pay. */
 		begun: boolean;
 		onChanged: () => Promise<void> | void;
 		setError: (msg: string) => void;
@@ -113,7 +113,7 @@
 							{#if m.part.surrendered_at_row != null}
 								<span class="member-note">surrendered, row {m.part.surrendered_at_row}</span>
 							{:else if !m.part.entry_payment_complete}
-								<span class="member-note">joining, owes entry</span>
+								<span class="member-note">joining, entry to pay</span>
 							{/if}
 						</div>
 					{/each}

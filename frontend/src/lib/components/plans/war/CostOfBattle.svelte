@@ -1,6 +1,6 @@
 <!-- MakeWar/CostOfBattle.svelte
-  What is owed this row (every payer and the opponent they owe, in the order
-  they pay), the active payer's picker, and the late-joiner entry-payment
+  What is to pay this row (every payer and the opponent each payment is against,
+  in the order they pay), the active payer's picker, and the late-joiner entry-payment
   picker. All three are tied to the same refresh cycle and `BattleCostForm`
   sub-component. Whose turn it is to pay is the open step's heading, drawn by
   the page, so it is not repeated here.
@@ -27,7 +27,7 @@
 		myPart: WarParticipantInfo | null;
 		amFullParticipant: boolean;
 		/** In a war's sheet while the play area is settling this war: leave what is
-		 *  owed and the payer's form there, and keep only the late joiner's entry. */
+		 *  still to pay and the payer's form there, and keep only the late joiner's entry. */
 		settledInPlay?: boolean;
 		onChanged: () => Promise<void> | void;
 		setError: (msg: string) => void;
@@ -123,8 +123,8 @@
 		{/if}
 		<!-- Who pays is the open step's heading ("Your move", "Pay the cost of battle"),
 		     so it is not said again here. What the heading can't carry is the whole
-		     list: every payer and the opponent they owe, in the order they pay. -->
-		<div class="owed-label">Owed this row, in order</div>
+		     list: every payer and the opponent each payment is against, in the order they pay. -->
+		<div class="owed-label">To pay this row, in order</div>
 		<ul class="owed-list">
 			{#each war.outstanding_costs as k (`${k.payer_id}-${k.opponent_id}`)}
 				<li class="owed-line">
@@ -152,7 +152,7 @@
 			allowSurrender
 			onSubmit={handleCostSubmit}
 		/>
-		<EndsNote text="Play goes on once every battle cost and surrender claim at the table is settled." />
+		<EndsNote text="Play goes on once every battle cost is paid and every surrender's spoils are taken." />
 	</div>
 {/if}
 

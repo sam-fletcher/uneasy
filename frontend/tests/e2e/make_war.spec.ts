@@ -240,12 +240,12 @@ test('cost of battle: owed per opponent, shown in the play area to everyone, and
 	for (const who of ['alice', 'bob', 'carol'] as Who[]) {
 		const p = pages[who];
 		// The whole thing is in the play area, not behind the header chip.
-		await expect(p.getByText('Owed this row, in order')).toBeVisible();
+		await expect(p.getByText('To pay this row, in order')).toBeVisible();
 		await expect(stepHeading(p)).toContainText('Pay the cost of battle');
 		await expect(p.getByText('alice’s side')).toBeVisible();
 		await expect(warBand(p, 'alice’s war on bob')).toBeVisible();
 	}
-	// Every payer and the opponent they owe, in the order they pay: the one thing
+	// Every payer and the opponent each payment is against, in the order they pay: the one thing
 	// the heading cannot carry.
 	await expect(pages.bob.locator('.owed-line')).toHaveText([
 		'carol against bob', 'bob against alice', 'bob against carol', 'alice against bob',
@@ -352,7 +352,7 @@ test('cost of battle: leverage two pays it, and once every cost is paid the row 
 
 	expect((await warState(g)).outstanding_costs).toEqual([]);
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('Owed this row, in order')).toHaveCount(0);
+		await expect(p.getByText('To pay this row, in order')).toHaveCount(0);
 		await expect(stepHeading(p)).not.toContainText('Pay the cost of battle');
 	}
 	// An overpayment has nothing left to pay against.
@@ -430,7 +430,7 @@ test('peace: unanimous acceptance ends the war and clears the table', async ({ b
 	// Nothing was spent and nothing is owed; the war panel is gone for everyone.
 	expect((await assetNamed(g, "carol's holding")).marginalia[0].is_torn).toBe(false);
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('Owed this row, in order')).toHaveCount(0);
+		await expect(p.getByText('To pay this row, in order')).toHaveCount(0);
 		await expect(p.getByText('Peace proposal from carol')).toHaveCount(0);
 		await expect(stepHeading(p)).not.toContainText('Pay the cost of battle');
 	}
@@ -473,7 +473,7 @@ test('surrender: emptying a side ends the war while the claim stays open for the
 		await expect(p.getByRole('button', { name: /war on/ })).toHaveCount(0);
 		await expect(p.getByText('The war is over.')).toBeVisible();
 		await expect(p.getByText('(a side surrendered)')).toBeVisible();
-		await expect(stepHeading(p)).toContainText('Surrender-asset claims');
+		await expect(stepHeading(p)).toContainText('Take the spoils of war');
 	}
 	// The claimant's move is hers; the surrendered player and the bystander see alice named.
 	await expectWaitingOn(alice, ['alice'], 'alice');
@@ -481,11 +481,11 @@ test('surrender: emptying a side ends the war while the claim stays open for the
 	await expectWaitingOn(carol, ['alice'], 'carol');
 	// Claimant gets the form; the surrendered player and a bystander are told why
 	// the panel is up, in words, and given no form.
-	await expect(alice.getByText('Surrender claims')).toBeVisible();
-	await expect(alice.getByRole('button', { name: 'Claim' })).toBeVisible();
+	await expect(alice.getByText('Spoils of war', { exact: true })).toBeVisible();
+	await expect(alice.getByRole('button', { name: 'Take', exact: true })).toBeVisible();
 	for (const p of [bob, carol]) {
 		await expect(p.getByText("alice is choosing one of bob's assets to take.")).toBeVisible();
-		await expect(p.getByRole('button', { name: 'Claim' })).toHaveCount(0);
+		await expect(p.getByRole('button', { name: 'Take', exact: true })).toHaveCount(0);
 	}
 	await expectWaitingOn(alice, ['alice'], 'alice');
 	await expectWaitingOn(carol, ['alice'], 'carol');
@@ -495,10 +495,10 @@ test('surrender: the claimant takes an asset of their choice; then the panel and
 	const { g, pages } = await surrenderedWar(browser);
 	const { alice, bob, carol } = pages;
 
-	const claim = alice.getByRole('button', { name: 'Claim' });
+	const claim = alice.getByRole('button', { name: 'Take', exact: true });
 	await expect(claim).toBeDisabled(); // nothing picked
 	// The destroyed holding is not on offer; the artifact is.
-	const picker = alice.locator('.choices-section', { hasText: 'Surrender claims' });
+	const picker = alice.locator('.choices-section', { hasText: 'Spoils of war' });
 	await expect(picker.locator('.card', { hasText: "bob's artifact" })).toBeVisible();
 	await expect(picker.locator('.card', { hasText: "bob's holding" })).toHaveCount(0);
 	await alice.locator('.card', { hasText: "bob's artifact" }).getByRole('checkbox').click();
@@ -512,9 +512,9 @@ test('surrender: the claimant takes an asset of their choice; then the panel and
 	await expectLogged(g, 'seized');
 
 	for (const p of [alice, bob, carol]) {
-		await expect(p.getByText('Surrender claims')).toHaveCount(0);
+		await expect(p.getByText('Spoils of war', { exact: true })).toHaveCount(0);
 		await expect(p.getByText('War (ended)')).toHaveCount(0);
-		await expect(stepHeading(p)).not.toContainText('Surrender-asset claims');
+		await expect(stepHeading(p)).not.toContainText('Take the spoils of war');
 	}
 	// Taking twice is refused: the claim is spent.
 	const again = await g.ctx.alice.request.post(`/api/plans/${g.planID}/take-surrender-asset`, {
@@ -573,7 +573,7 @@ test('surrender: a lone side surrendering to two opponents opens two claims, one
 	expect((await assetNamed(g, "alice's artifact")).owner_id).toBe(g.ids.bob);
 	expect((await assetNamed(g, "alice's resource")).owner_id).toBe(g.ids.carol);
 	expect((await warState(g)).open_claims).toEqual([]);
-	for (const p of [alice, bob, carol]) await expect(stepHeading(p)).not.toContainText('Surrender-asset claims');
+	for (const p of [alice, bob, carol]) await expect(stepHeading(p)).not.toContainText('Take the spoils of war');
 });
 
 test('surrender: only the claimant may take, and only from the surrendered player', async ({ browser }) => {
@@ -613,7 +613,7 @@ test('surrender: a side with an ally left keeps the war going and the surrendere
 		'a surrendered player neither pays nor is owed').toBe(false);
 
 	const { alice, bob, carol } = await openAll(g);
-	await expect(bob.getByText('Surrender claims')).toBeVisible();
+	await expect(bob.getByText('Spoils of war', { exact: true })).toBeVisible();
 	await expect(alice.getByText("bob is choosing one of carol's assets to take.")).toHaveCount(0); // war still active: no ended-war note
 	await expect(carol.getByText('surrendered, row 5')).toBeVisible();
 	await expectWaitingOn(alice, ['bob'], 'alice');
@@ -624,7 +624,7 @@ test('a bystander who never joined sees the whole war but is never asked for any
 	await warAtCostRow(g); // alice v bob, carol outside
 	const { carol } = await openAll(g);
 
-	await expect(carol.getByText('Owed this row, in order')).toBeVisible();
+	await expect(carol.getByText('To pay this row, in order')).toBeVisible();
 	await expect(stepHeading(carol)).toContainText('Waiting on bob. Pay the cost of battle');
 	await expect(costForm(carol)).toHaveCount(0);
 	await expectWaitingOn(carol, ['bob'], 'carol');
@@ -677,8 +677,8 @@ test('the war band: one line at the top of Play for everyone, opening a sheet wh
 
 	await expect.poll(async () => (await warState(g)).participants.map(p => [p.player_id, p.side, p.entry_payment_complete]))
 		.toContainEqual([g.ids.carol, 1, false]);
-	// The late joiner now owes entry, said in words beside their name and as a form.
-	await expect(sheet.getByText('joining, owes entry')).toBeVisible();
+	// The late joiner now has entry to pay, said in words beside their name and as a form.
+	await expect(sheet.getByText('joining, entry to pay')).toBeVisible();
 	await expect(sheet.getByText('War entry payments')).toBeVisible();
 	await expect(alice.getByRole('dialog')).toHaveCount(0); // the sheet is carol's view only
 
@@ -792,7 +792,7 @@ test('the war band: while a cost is owed the sheet points to the play area inste
 	await expect(sheet.getByText('This war is holding up the row.')).toBeVisible();
 	await expect(sheet.getByText('Close this sheet to settle it in the play area.')).toBeVisible();
 	await expect(sheet.getByRole('group', { name: 'Your cost of battle' })).toHaveCount(0);
-	await expect(sheet.getByText('Owed this row, in order')).toHaveCount(0);
+	await expect(sheet.getByText('To pay this row, in order')).toHaveCount(0);
 	// The sides are still there, and so is the way to close.
 	await expect(sheet.locator('.side[data-side="2"]')).toContainText('bob');
 	await bob.keyboard.press('Escape');

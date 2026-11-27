@@ -483,7 +483,7 @@
 				/>
 			{:else if warGateTakeover}
 				<!-- ── War-gate takeover ─────────────────────────────────────
-					The row is blocked on a cost of battle or a surrender claim.
+					The row is blocked on a cost of battle, or on spoils of war still to be taken.
 					Everyone sees the war, whose turn it is to pay, and what is
 					outstanding; the payer sees their picker. Server precedence
 					puts this above plan resolution and the scene, so it is the

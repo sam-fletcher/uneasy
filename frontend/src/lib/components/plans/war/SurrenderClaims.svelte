@@ -37,13 +37,13 @@
 			claimAssetByClaim = { ...claimAssetByClaim, [claimID]: null };
 			await onChanged();
 		} catch (e) {
-			setError(e instanceof Error ? e.message : 'Could not claim asset.');
+			setError(e instanceof Error ? e.message : 'Could not take the asset.');
 		} finally { claimBusy = false; }
 	}
 </script>
 
 <div class="choices-section">
-	<p class="choices-header">Surrender claims</p>
+	<p class="choices-header">Spoils of war</p>
 	{#each claims as c (c.id)}
 		{@const claimable = targetAssetsFor(c.surrendered_id)}
 		{@const picked = claimAssetByClaim[c.id]}
@@ -52,16 +52,16 @@
 				label={`${playerName(players, c.surrendered_id)} surrendered. Pick one of their assets to take`}
 				items={claimable}
 				{players}
-				emptyMessage="No eligible assets to claim."
+				emptyMessage="No assets left to take."
 				selected={picked ?? null}
 				onSelect={(id) => (claimAssetByClaim = { ...claimAssetByClaim, [c.id]: id })}
 			/>
 			<button class="action-btn primary"
 				onclick={() => submitClaim(c.id, c.surrendered_id)}
 				disabled={claimBusy || claimAssetByClaim[c.id] == null}>
-				{claimBusy ? '…' : 'Claim'}
+				{claimBusy ? '…' : 'Take'}
 			</button>
-			<EndsNote text="Play goes on once every surrender claim and battle cost at the table is settled." />
+			<EndsNote text="Play goes on once every battle cost is paid and every surrender's spoils are taken." />
 		</div>
 	{/each}
 </div>

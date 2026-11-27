@@ -234,7 +234,7 @@ describe('Make War lines', () => {
 		const body = render(SurrenderClaims, {
 			props: { claims: [{ id: 1, surrendered_id: PREPARER }] as never, planID: 9, players, assets: [], onChanged: () => {}, setError: () => {} },
 		}).body;
-		expect(body).toContain('Play goes on once every surrender claim and battle cost at the table is settled');
+		expect(body).toContain('Play goes on once every battle cost is paid and every surrender');
 		expect(body).not.toContain('row moves on');
 	});
 });

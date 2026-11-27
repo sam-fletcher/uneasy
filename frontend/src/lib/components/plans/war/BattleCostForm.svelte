@@ -178,7 +178,7 @@
 		bind:checked={surrender}
 		disabled={kind === 'propose_peace'}
 		label="Surrender after this payment"
-		description="After this payment is recorded you are marked surrendered, and each opposing opponent who hasn't surrendered gets to claim one of your assets."
+		description="After this payment you surrender: each opponent who hasn't surrendered takes one asset of their choice from you."
 		reason="Doesn't apply when proposing peace."
 	/>
 {/if}
