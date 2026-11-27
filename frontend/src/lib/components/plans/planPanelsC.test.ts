@@ -598,7 +598,7 @@ describe('the Make Demands draft', () => {
 		const duel = draft(BOB, 'propose_duel');
 		expect(card(duel, 'Keep or change target')).toContain('Keep or change who is challenged.');
 		expect(card(duel, 'Keep assets')).toContain('Take the staked assets the preparer takes, in place of alice.');
-		expect(card(duel, 'Perform steps')).toContain('side of the bouts');
+		expect(card(duel, 'Perform steps')).toContain('alice still plays the bouts');
 		expect(card(duel, 'Perform steps')).not.toContain('Pick the make or mar options');
 		const rumors = draft(BOB, 'spread_rumors');
 		expect(card(rumors, 'Keep or change target')).toContain('Keep or change which asset the rumor is about.');

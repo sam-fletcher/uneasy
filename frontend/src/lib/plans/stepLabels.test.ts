@@ -557,7 +557,7 @@ describe('the duel bout label', () => {
 		expect(duelBoutLabel(duel(2), [2])).toBe('declare the bout');
 	});
 
-	it('stays "the bout" when it cannot tell (no plan, no initiative, a stand-in)', () => {
+	it('stays "the bout" when it cannot tell (no plan, no initiative, a non-duellist)', () => {
 		expect(duelBoutLabel(null, [1])).toBe('the bout');
 		expect(duelBoutLabel(duel(null), [1])).toBe('the bout');
 		expect(duelBoutLabel(duel(1), [9])).toBe('the bout');

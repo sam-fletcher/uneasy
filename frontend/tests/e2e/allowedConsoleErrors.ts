@@ -64,12 +64,6 @@ export const ALLOWED_CONSOLE_ERRORS: readonly AllowedConsoleError[] = [
 		reason: 'The style guide is opened logged out, and a 401 is how /accounts/me says so (getMe treats it as the answer, not a failure).',
 	},
 	{
-		spec: 'make_demands.spec.ts',
-		match: /status of 400 .* @ \S+\/api\/plans\/undefined$/,
-		reason: 'Bug: ws-handlers reads plan_id from demand.prepared, whose payload is { plan }, and fetches /plans/undefined.',
-		item: 'demand-prepared-plan-id',
-	},
-	{
 		// The guard's own canary (tests/e2e/fixtures.spec.ts): an allow-listed line must not fail a test.
 		spec: 'fixtures.spec.ts',
 		test: 'a console.error the allow-list names',

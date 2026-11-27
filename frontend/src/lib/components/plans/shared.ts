@@ -348,6 +348,35 @@ export function activeDemandAgainst(plan: Plan, allPlans: Plan[]): Plan | null {
 	return null;
 }
 
+/**
+ * The Make Demands decisions `viewerID` still owes before this plan's open roll can
+ * resolve: control_leverage (how many of the preparer's assets go onto the roll) and
+ * keep_or_change_target (keep or re-aim the plan). A winner holds the roll until they
+ * have decided, and the server refuses their Ready until then. Empty when the viewer
+ * holds nothing, is the plan's own preparer (no hand-off), has already decided, or the
+ * option is a dud here. The caller adds "and the roll is open", which the plan doesn't say.
+ *
+ * Mirrors `pendingDemandRollBlockers` in handler/demands.go, which is the authority:
+ * the plans whose aim settles before their first step (a duel, a liaison) hold no roll.
+ */
+export function heldRollDecisions(plan: Plan, allPlans: Plan[], viewerID: number | null): DemandOption[] {
+	if (viewerID == null || viewerID === plan.preparer_id) return [];
+	const demand = activeDemandAgainst(plan, allPlans);
+	if (!demand) return [];
+	const winners = demandWinnersFromPlan(demand);
+	const rd = parseResolutionData(plan);
+	const held: DemandOption[] = [];
+	if (winners.control_leverage === viewerID && targetHasPreparerRoll(plan.plan_type)
+		&& !rd.demand_leverage_finalized) {
+		held.push('control_leverage');
+	}
+	if (winners.keep_or_change_target === viewerID && targetIsRetargetable(plan.plan_type)
+		&& !aimSettlesFirst(plan.plan_type) && !rd.demand_retarget_finalized) {
+		held.push('keep_or_change_target');
+	}
+	return held;
+}
+
 /** Who drives a plan's resolution steps: the perform_steps winner of a made
  * Make Demands against it, else the preparer. Mirrors `actsForPreparer` in
  * handler/plan_access.go, the authority — the server 403s anyone else, so a

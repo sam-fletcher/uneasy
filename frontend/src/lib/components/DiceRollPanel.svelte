@@ -56,6 +56,11 @@
 		/** True when the actor cannot leverage their own assets (Make Demands
 		 *  control_leverage winner has authority). */
 		actorLeverageBlocked?: boolean;
+		/** What the viewer still owes as a Make Demands winner holding this roll, in words
+		 *  ("how many of bea's assets go onto the roll"), or empty. While they owe it the
+		 *  roll waits on them and the server refuses their Ready, so the button gives way
+		 *  to the decision. */
+		heldDecisions?: string[];
 		/** The open step's heading ("Your move" over "Aid or interfere"). Null where
 		 *  the surrounding screen already says it (Shake-Up). */
 		heading?: StepHeadingData | null;
@@ -72,6 +77,7 @@
 		players,
 		playerNameMap,
 		actorLeverageBlocked = false,
+		heldDecisions = [],
 		heading = null,
 	}: Props = $props();
 
@@ -508,7 +514,7 @@
 				     watch the dice fill in. -->
 				<p class="muted-text">{actorName} is rolling for {shakeUpCategoryLabel}…</p>
 			{:else}
-				{#if !isShakeUp && !myReady}
+				{#if !isShakeUp && !myReady && heldDecisions.length === 0}
 					<p class="roll-brief">
 						{isActor
 							? 'Leverage assets to add dice for the roll, then roll.'
@@ -606,6 +612,12 @@
 					{#if !canCommit}
 						<p class="muted-text">You have no dice left to add, so you are ready automatically.</p>
 					{/if}
+				{:else if heldDecisions.length > 0}
+					<!-- The demand's decision comes first: the roll waits on it, and the server
+					     refuses their Ready until it is made, so there is no button to press. -->
+					<Notice tone="warning">
+						The roll waits for your Make Demands choice: {joinNames(heldDecisions)}. Make it in the Demand section; Ready comes after.
+					</Notice>
 				{:else}
 					<div class="step-actions">
 						<button

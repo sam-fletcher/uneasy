@@ -25,7 +25,7 @@
 	import WarBands from '$lib/components/plans/war/WarBands.svelte';
 	import WarName from '$lib/components/plans/war/WarName.svelte';
 	import type { PlanContext } from '$lib/components/plans/types';
-	import { activeDemandAgainst, demandWinnersFromPlan } from '$lib/components/plans/shared';
+	import { activeDemandAgainst, demandWinnersFromPlan, heldRollDecisions, playerName } from '$lib/components/plans/shared';
 	import {
 		refreshAssets,
 		listWars,
@@ -330,6 +330,21 @@
 		return demandWinnersFromPlan(demand).control_leverage != null;
 	});
 
+	// A Make Demands winner holding this roll owes a decision before it can resolve
+	// (the server refuses their Ready until then). Said in words for the roll panel,
+	// which swaps its Ready button for the reminder [RULINGS, Make Demands].
+	const heldDecisions = $derived.by((): string[] => {
+		const planID = activeRoll?.plan_id;
+		if (planID == null || activeRoll?.outcome != null) return [];
+		const targetPlan = plans.find(p => p.id === planID);
+		if (!targetPlan) return [];
+		const preparer = playerName(players, targetPlan.preparer_id);
+		return heldRollDecisions(targetPlan, plans, currentPlayerID).map(option =>
+			option === 'control_leverage'
+				? `how many of ${preparer}’s assets go onto the roll`
+				: 'keep or change who the plan is aimed at');
+	});
+
 	/**
 	 * The make/mar outcome of a plan-linked roll, once resolved.
 	 * Only set when the active roll is tied to a plan — free-scene rolls
@@ -408,6 +423,7 @@
 			{players}
 			{playerNameMap}
 			{actorLeverageBlocked}
+			{heldDecisions}
 			heading={planHeading}
 		/>
 	{/if}

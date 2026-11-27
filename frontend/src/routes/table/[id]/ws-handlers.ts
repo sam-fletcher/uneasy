@@ -443,6 +443,14 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 			ctx.preparePlanDraft = null;
 			break;
 		}
+		// demand.prepared is the one event in the plan_id group below whose payload
+		// is a whole plan ({ plan }), not { plan_id }: reading plan_id fetched
+		// /api/plans/undefined. Both senders (an ordinary demand's OnPrepare and the
+		// counter-demand synthesis) also send plan.prepared with the same plan, which
+		// puts it on screen, so this only announces itself on window.
+		case EventTypes.DemandPrepared:
+			window.dispatchEvent(new CustomEvent(`uneasy:${msg.type}`, { detail: msg.payload }));
+			break;
 		case EventTypes.PlanResolving: {
 			const resolving = msg.payload.plan as Plan;
 			nextPlanSeq(resolving.id);
@@ -514,7 +522,6 @@ export function handleWSMessage(ctx: WSContext, msg: WSMessage) {
 		case EventTypes.FestivityChallengeDeclined:
 		case EventTypes.FestivityDuelTriggered:
 		case EventTypes.WarDeclared:
-		case EventTypes.DemandPrepared:
 		case EventTypes.DemandResolved:
 		case EventTypes.DemandDraftPick:
 		case EventTypes.DemandCounterPending:
