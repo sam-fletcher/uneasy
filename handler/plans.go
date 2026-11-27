@@ -398,9 +398,11 @@ func PreparePlan(s *db.Store, manager *hub.Manager) http.HandlerFunc {
 
 		// Reject duel_type early so we don't open a transaction for an
 		// avoidable validation failure.
-		if body.PlanType == model.PlanProposeDuel && body.DuelType != "arms" && body.DuelType != "wits" {
-			respondErr(w, http.StatusBadRequest, "duel_type must be 'arms' or 'wits'")
-			return
+		if body.PlanType == model.PlanProposeDuel {
+			if msg := pduelDuelTypeError(body.DuelType); msg != "" {
+				respondErr(w, http.StatusBadRequest, msg)
+				return
+			}
 		}
 
 		meta := validation.Meta

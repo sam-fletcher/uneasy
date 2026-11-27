@@ -898,7 +898,7 @@ func TestHostFestivity_Make_ChallengeDuel_Accept(t *testing.T) {
 	h.forceRoll(rollID, "make", 0)
 
 	cdPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/challenge-duel"
-	code, body := h.post(challenger, cdPath, map[string]any{"target_player_id": targetID})
+	code, body := h.post(challenger, cdPath, hfChallengeBody(targetID))
 	require.Equalf(t, http.StatusCreated, code, "challenge-duel after rolling make: %v", body)
 
 	// The make is now spent and recorded as challenge_duel.
@@ -935,7 +935,7 @@ func TestHostFestivity_Make_ChallengeDuel_Decline(t *testing.T) {
 	h.forceRoll(rollID, "make", 0)
 
 	cdPath := "/api/plans/" + strconv.FormatInt(plan.ID, 10) + "/challenge-duel"
-	code, body := h.post(challenger, cdPath, map[string]any{"target_player_id": targetID})
+	code, body := h.post(challenger, cdPath, hfChallengeBody(targetID))
 	require.Equalf(t, http.StatusCreated, code, "challenge-duel after rolling make: %v", body)
 
 	// The target declines (they have not taken the accept_duels mar).
@@ -1310,12 +1310,20 @@ func TestHostFestivity_PerformStepsWinnerEndsTheEvent(t *testing.T) {
 
 // ── Q9: the host may spend an earned make on a duel ──────────────────────────
 
+// hfChallengeBody is a valid challenge body: the challenged guest, and the
+// duel's terms as Propose Duel's preparation names them (type and place).
+func hfChallengeBody(targetID int64) map[string]any {
+	return map[string]any{
+		"target_player_id": targetID, "duel_type": "arms", "preparation_notes": "the bridge at dusk",
+	}
+}
+
 // hfHostDuel posts a host-choice challenge_duel as players[actorIdx].
 func hfHostDuel(t *testing.T, h *planLifecycle, planID int64, actorIdx int, targetID int64) (int, map[string]any) {
 	t.Helper()
-	return h.post(actorIdx, hfPath(planID, "host-choice"), map[string]any{
-		"choice": "challenge_duel", "target_player_id": targetID,
-	})
+	body := hfChallengeBody(targetID)
+	body["choice"] = "challenge_duel"
+	return h.post(actorIdx, hfPath(planID, "host-choice"), body)
 }
 
 // TestHostFestivity_HostSpendsMakeOnDuel_Accept: the host's earned make buys a
@@ -1594,4 +1602,117 @@ func TestHostFestivity_Disagreement_RejectsMainCharacter(t *testing.T) {
 	st := hfChallengeState(t, h, plan.ID)
 	assert.Equal(t, []int64{h.tg.Players[g1].ID}, st.UnchosenHostMars)
 	assert.Empty(t, st.CenteredAssetIDs, "the main character was not centred")
+}
+
+// ── Duel terms: a challenge names the duel's type and place ──────────────────
+
+// hfSpawnedDuel reads the Propose Duel a festivity challenge spawned: its place
+// (the preparation notes), its type (the duel's resolution data) and the log.
+func hfSpawnedDuel(t *testing.T, h *planLifecycle, duelID int64) (place, duelType string) {
+	t.Helper()
+	duel, err := h.q.GetPlanByID(context.Background(), duelID)
+	require.NoError(t, err)
+	require.NotNil(t, duel.PreparationNotes, "the spawned duel carries the place")
+	rd := loadResolutionData(duel.ResolutionData)
+	require.NotNil(t, rd.Duel, "the spawned duel carries its duel state")
+	return *duel.PreparationNotes, rd.Duel.DuelType
+}
+
+// TestHostFestivity_ChallengeDuel_NamesTypeAndPlace proves a guest's challenge
+// names the duel's type and place, and that the Propose Duel it spawns carries
+// both: its place and type on the plan, and its prepared log line naming them.
+// The make skips the delay, not the preparation (RULINGS, Host Festivity).
+func TestHostFestivity_ChallengeDuel_NamesTypeAndPlace(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	challenger := (hostIdx + 1) % len(h.tg.Players)
+	target := (hostIdx + 2) % len(h.tg.Players)
+	targetID := h.tg.Players[target].ID
+
+	rollID := hfStartRoll(t, h, plan.ID, challenger)
+	h.forceRoll(rollID, "make", 0)
+	code, body := h.post(challenger, hfPath(plan.ID, "challenge-duel"), map[string]any{
+		"target_player_id": targetID, "duel_type": "wits", "preparation_notes": "the sunken garden",
+	})
+	require.Equalf(t, http.StatusCreated, code, "challenge: %v", body)
+
+	st := hfChallengeState(t, h, plan.ID)
+	require.NotNil(t, st.PendingChallenge)
+	assert.Equal(t, "wits", st.PendingChallenge.DuelType, "the challenge carries the type")
+	assert.Equal(t, "the sunken garden", st.PendingChallenge.Notes, "and the place")
+
+	code, body = h.post(target, hfPath(plan.ID, "respond-challenge"), map[string]any{"accept": true})
+	require.Equalf(t, http.StatusCreated, code, "accept: %v", body)
+	duelID := int64(body["duel_plan_id"].(float64))
+
+	place, duelType := hfSpawnedDuel(t, h, duelID)
+	assert.Equal(t, "the sunken garden", place, "the spawned duel's place")
+	assert.Equal(t, "wits", duelType, "the spawned duel's type")
+	assert.Contains(t, hfAllLogBodies(t, h), `a duel of wits — "the sunken garden"`,
+		"the duel's prepared log line names the type and the place")
+}
+
+// TestHostFestivity_HostDuel_NamesTypeAndPlace is the same for the host's own
+// make: the spawned duel is the host's, and it names the type and place the host
+// gave.
+func TestHostFestivity_HostDuel_NamesTypeAndPlace(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	target := (hostIdx + 1) % len(h.tg.Players)
+	targetID := h.tg.Players[target].ID
+
+	code, body := h.post(hostIdx, hfPath(plan.ID, "host-choice"), map[string]any{
+		"choice": "challenge_duel", "target_player_id": targetID,
+		"duel_type": "arms", "preparation_notes": "the old mill yard",
+	})
+	require.Equalf(t, http.StatusCreated, code, "host challenges: %v", body)
+
+	code, body = h.post(target, hfPath(plan.ID, "respond-challenge"), map[string]any{"accept": true})
+	require.Equalf(t, http.StatusCreated, code, "accept: %v", body)
+	duelID := int64(body["duel_plan_id"].(float64))
+
+	place, duelType := hfSpawnedDuel(t, h, duelID)
+	assert.Equal(t, "the old mill yard", place, "the host's duel names the place")
+	assert.Equal(t, "arms", duelType, "and the type")
+	assert.Contains(t, hfAllLogBodies(t, h), `a duel of arms — "the old mill yard"`)
+}
+
+// TestHostFestivity_ChallengeDuel_RefusesMissingTerms proves a challenge without
+// a valid type or a place is refused before anything is spent: the guest's make
+// stays unspent, the host's make stays theirs, and nothing is pending. Both
+// challenge routes (the guest's and the host's) refuse the same way.
+func TestHostFestivity_ChallengeDuel_RefusesMissingTerms(t *testing.T) {
+	h := newPlanLifecycle(t, 3)
+	plan, hostIdx := hfPrepareToSocializing(t, h)
+	challenger := (hostIdx + 1) % len(h.tg.Players)
+	target := (hostIdx + 2) % len(h.tg.Players)
+	targetID := h.tg.Players[target].ID
+	ck := strconv.FormatInt(h.tg.Players[challenger].ID, 10)
+
+	bad := map[string]map[string]any{
+		"no type":     {"target_player_id": targetID, "preparation_notes": "the bridge"},
+		"unknown":     {"target_player_id": targetID, "duel_type": "fists", "preparation_notes": "the bridge"},
+		"no place":    {"target_player_id": targetID, "duel_type": "arms"},
+		"blank place": {"target_player_id": targetID, "duel_type": "arms", "preparation_notes": "   "},
+	}
+	// The host's refusals come first: a guest's open roll blocks every other
+	// festivity action until it concludes, and refused calls change nothing.
+	for name, req := range bad {
+		req["choice"] = "challenge_duel"
+		code, body := h.post(hostIdx, hfPath(plan.ID, "host-choice"), req)
+		assert.Equalf(t, http.StatusBadRequest, code, "host, %s: %v", name, body)
+	}
+	st := hfChallengeState(t, h, plan.ID)
+	assert.Nil(t, st.PendingChallenge, "a refused host challenge opens nothing")
+	assert.Empty(t, st.HostMakesTaken, "and spends no host make")
+
+	rollID := hfStartRoll(t, h, plan.ID, challenger)
+	h.forceRoll(rollID, "make", 0)
+	for name, req := range bad {
+		code, body := h.post(challenger, hfPath(plan.ID, "challenge-duel"), req)
+		assert.Equalf(t, http.StatusBadRequest, code, "guest, %s: %v", name, body)
+	}
+	st = hfChallengeState(t, h, plan.ID)
+	assert.Nil(t, st.PendingChallenge, "a refused challenge opens nothing")
+	assert.NotContains(t, st.GuestMakes, ck, "and spends no make")
 }

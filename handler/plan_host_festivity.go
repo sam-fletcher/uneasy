@@ -38,8 +38,12 @@ package handler
 //	                                            answer to an insistence and settles it.
 //	POST /api/plans/:planId/host-choice       — {choice, ...option params}; a
 //	                                            challenge_duel also names
-//	                                            target_player_id.
-//	POST /api/plans/:planId/challenge-duel    — {target_player_id}.
+//	                                            target_player_id, duel_type
+//	                                            (arms|wits) and preparation_notes
+//	                                            (the place).
+//	POST /api/plans/:planId/challenge-duel    — {target_player_id, duel_type,
+//	                                            preparation_notes}: the guest's
+//	                                            challenge, with the duel's terms.
 //	POST /api/plans/:planId/respond-challenge — {accept:bool}, target only.
 //	POST /api/plans/:planId/end-event         — host winds the event down.
 //

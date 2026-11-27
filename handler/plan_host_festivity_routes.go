@@ -256,6 +256,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 			AssetID        int64    `json:"asset_id"`
 			DraftID        string   `json:"draft_id"`
 			TargetPlayerID int64    `json:"target_player_id"`
+			DuelType       string   `json:"duel_type"`
 			Notes          string   `json:"preparation_notes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -295,7 +296,7 @@ func hfHostChoiceHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 
 		if body.Choice == gamepkg.FestivityMakeChallengeDuel {
-			hfHostChallengeDuel(ctx, w, r, deps, plan, &resData, roster, body.TargetPlayerID, notes)
+			hfHostChallengeDuel(ctx, w, r, deps, plan, &resData, roster, body.TargetPlayerID, body.DuelType, notes)
 			return
 		}
 
@@ -347,7 +348,7 @@ func hfHostChallengeDuel(
 	resData *ResolutionData,
 	roster []int64,
 	targetID int64,
-	notes string,
+	duelType, notes string,
 ) {
 	state := resData.EnsureFestivity()
 	if targetID == 0 {
@@ -362,8 +363,12 @@ func hfHostChallengeDuel(
 		respondErr(w, http.StatusBadRequest, "challenge target must be a guest")
 		return
 	}
+	if msg := hfChallengeTermsError(duelType, notes); msg != "" {
+		respondErr(w, http.StatusBadRequest, msg)
+		return
+	}
 	state.HostMakesTaken = append(state.HostMakesTaken, gamepkg.FestivityMakeChallengeDuel)
-	if err := hfOpenChallenge(ctx, deps, plan, resData, plan.PreparerID, targetID, notes); err != nil {
+	if err := hfOpenChallenge(ctx, deps, plan, resData, plan.PreparerID, targetID, duelType, notes); err != nil {
 		respondInternalErr(w, r, "could not save challenge state", err)
 		return
 	}
@@ -392,23 +397,51 @@ func hfNestedDuelInProgress(ctx context.Context, q *dbgen.Queries, state *gamepk
 	return false
 }
 
+// hfChallengeTermsError is the check on a challenge's terms, the duel's type
+// and place. The challenger names both as a Propose Duel's preparation does
+// (the make skips the delay, not the preparation; RULINGS, Host Festivity,
+// 2026-11-26), so it uses the same checks and wording.
+func hfChallengeTermsError(duelType, place string) string {
+	if msg := pduelDuelTypeError(duelType); msg != "" {
+		return msg
+	}
+	return pduelPlaceError(place)
+}
+
+// hfStampDuelType records the challenger's duel type on a spawned Propose Duel
+// (an empty type leaves it as Propose Duel prepares it) and returns the plan as
+// stored, so its prepared line and heading see the type.
+func hfStampDuelType(ctx context.Context, q *dbgen.Queries, duelPlan dbgen.Plan, duelType string) (dbgen.Plan, error) {
+	if duelType == "" {
+		return duelPlan, nil
+	}
+	duelRes := loadResolutionData(duelPlan.ResolutionData)
+	duelRes.EnsureDuel().DuelType = duelType
+	if err := saveResolutionData(ctx, q, duelPlan.ID, duelRes); err != nil {
+		return duelPlan, err
+	}
+	return q.GetPlanByID(ctx, duelPlan.ID)
+}
+
 // hfOpenChallenge records a duel challenge awaiting the target's response —
 // pausing every other festivity action until they accept or decline — then
 // persists it, announces it and logs it. The caller has already recorded the
 // challenger's spent make (a guest's choice or a host make), which is spent
-// whatever the target answers.
+// whatever the target answers. The terms are checked by the caller
+// (hfChallengeTermsError) before any state changes.
 func hfOpenChallenge(
 	ctx context.Context,
 	deps *PlanDeps,
 	plan *dbgen.Plan,
 	resData *ResolutionData,
 	challengerID, targetID int64,
-	notes string,
+	duelType, notes string,
 ) error {
 	state := resData.EnsureFestivity()
 	state.PendingChallenge = &gamepkg.PendingChallenge{
 		ChallengerID: challengerID,
 		TargetID:     targetID,
+		DuelType:     duelType,
 		Notes:        notes,
 	}
 	if err := saveResolutionData(ctx, deps.Q, plan.ID, *resData); err != nil {
@@ -450,6 +483,7 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 		}
 		var body struct {
 			TargetPlayerID int64  `json:"target_player_id"`
+			DuelType       string `json:"duel_type"`
 			Notes          string `json:"preparation_notes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.TargetPlayerID == 0 {
@@ -516,6 +550,10 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 		if hfBlockWhilePaused(ctx, deps.Q, w, state) {
 			return
 		}
+		if msg := hfChallengeTermsError(body.DuelType, body.Notes); msg != "" {
+			respondErr(w, http.StatusBadRequest, msg)
+			return
+		}
 
 		// Record the challenger's make pick up front: challenge_duel is spent
 		// whether or not the target accepts (per house rule).
@@ -530,7 +568,16 @@ func hfChallengeDuelHandler(deps *PlanDeps) http.HandlerFunc {
 			state.GuestMakes[ck] = gamepkg.FestivityMakeChallengeDuel
 			state.GuestIOUs = append(state.GuestIOUs, player.ID)
 		}
-		if err := hfOpenChallenge(ctx, deps, plan, &resData, player.ID, body.TargetPlayerID, body.Notes); err != nil {
+		if err := hfOpenChallenge(
+			ctx,
+			deps,
+			plan,
+			&resData,
+			player.ID,
+			body.TargetPlayerID,
+			body.DuelType,
+			body.Notes,
+		); err != nil {
 			respondInternalErr(w, r, "could not save challenge state", err)
 			return
 		}
@@ -630,6 +677,13 @@ func hfRespondChallengeHandler(deps *PlanDeps) http.HandlerFunc {
 		})
 		if err != nil {
 			respondInternalErr(w, r, "could not create nested duel", err)
+			return
+		}
+		// The challenger's type goes on the duel before its prepared line is
+		// posted, so the line and the duel's heading name it ("a duel of arms").
+		duelPlan, err = hfStampDuelType(ctx, deps.Q, duelPlan, pc.DuelType)
+		if err != nil {
+			respondInternalErr(w, r, "could not save nested duel type", err)
 			return
 		}
 		hfLog(ctx, deps, plan, model.SeverityImportant, fmt.Sprintf(

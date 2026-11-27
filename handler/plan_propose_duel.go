@@ -105,10 +105,30 @@ func (pduelHandler) ValidatePreparation(_ context.Context, v *ValidationContext)
 	if v.Player != nil && *v.TargetPlayerID == v.Player.ID {
 		return nil, "you cannot duel yourself"
 	}
-	if v.Notes == "" {
-		return nil, "propose_duel requires preparation_notes (location and type of duel)"
+	if msg := pduelPlaceError(v.Notes); msg != "" {
+		return nil, msg
 	}
 	return nil, ""
+}
+
+// pduelDuelTypeError is Propose Duel's check on the duel's type (arms or wits).
+// Its preparation and a Host Festivity challenge (which also names the type and
+// place, p.60) share it, so both refuse the same things in the same words.
+func pduelDuelTypeError(duelType string) string {
+	if duelType != "arms" && duelType != "wits" {
+		return "duel_type must be 'arms' or 'wits'"
+	}
+	return ""
+}
+
+// pduelPlaceError is Propose Duel's check on the duel's place, which its
+// preparation notes carry. Shared with a Host Festivity challenge for the same
+// reason as pduelDuelTypeError.
+func pduelPlaceError(place string) string {
+	if place == "" {
+		return "propose_duel requires preparation_notes (location and type of duel)"
+	}
+	return ""
 }
 
 func (pduelHandler) ComputeDifficulty(
